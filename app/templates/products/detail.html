@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row">
+        <div class="col-md-6">
+            <h3>{{ product.name }}</h3>
+            <p><b>Kod:</b> {{ product.code }}</p>
+            <p><b>Shtixkod:</b> {{ product.barcode }}</p>
+            {% if product.image %}
+            <img src="/static/images/products/{{ product.image }}" alt="Rasm" class="img-thumbnail mb-3" style="max-width:200px;">
+            {% endif %}
+            <hr>
+            <h5>Barcode (shtixkod) rasmi:</h5>
+            {% if product.barcode %}
+            <img src="/products/barcode/{{ product.id }}" alt="Barcode" class="mb-3" style="max-width:200px;">
+            <br>
+            <a href="/products/barcode/{{ product.id }}?download=1" class="btn btn-outline-primary">Yuklab olish / Chop etish</a>
+            {% else %}
+            <span class="text-muted">Shtixkod kiritilmagan</span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,315 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h4><i class="bi bi-binoculars"></i> Supervayzer dashboardи</h4>
+    <div>
+        <span class="badge bg-light text-dark">
+            <i class="bi bi-clock"></i> {{ now.strftime('%d.%m.%Y %H:%M') if now is defined else '' }}
+        </span>
+    </div>
+</div>
+
+<!-- KPI kartalar -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card border-primary">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="text-muted">Jami agentlar</h6>
+                        <h2>{{ agents|length }}</h2>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-people text-primary" style="font-size: 2.5rem;"></i>
+                    </div>
+                </div>
+                <div class="progress mt-2" style="height: 5px;">
+                    {% set online_count = agents|selectattr('is_active', 'eq', true)|list|length %}
+                    <div class="progress-bar bg-success" style="width: {{ (online_count / agents|length * 100) if agents|length > 0 else 0 }}%"></div>
+                </div>
+                <small class="text-success">{{ online_count }} online</small>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card border-info">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="text-muted">Jami haydovchilar</h6>
+                        <h2>{{ drivers|length }}</h2>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-truck text-info" style="font-size: 2.5rem;"></i>
+                    </div>
+                </div>
+                <div class="progress mt-2" style="height: 5px;">
+                    {% set active_drivers = drivers|selectattr('is_active', 'eq', true)|list|length %}
+                    <div class="progress-bar bg-info" style="width: {{ (active_drivers / drivers|length * 100) if drivers|length > 0 else 0 }}%"></div>
+                </div>
+                <small class="text-info">{{ active_drivers }} faol</small>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card border-warning">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="text-muted">Bugungi tashriflar</h6>
+                        <h2>{{ stats.visits_today if stats is defined else 0 }}</h2>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-calendar-check text-warning" style="font-size: 2.5rem;"></i>
+                    </div>
+                </div>
+                <small class="text-muted">O'tgan hafta: {{ stats.visits_week if stats is defined else 0 }}</small>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card border-success">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="text-muted">Yetkazilgan</h6>
+                        <h2>{{ stats.delivered_today if stats is defined else 0 }}</h2>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-box-seam-fill text-success" style="font-size: 2.5rem;"></i>
+                    </div>
+                </div>
+                <small class="text-muted">Yo'lda: {{ stats.in_transit if stats is defined else 0 }}</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <!-- Agentlar holati -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between">
+                <span><i class="bi bi-person-walking"></i> Agent holati</span>
+                <a href="/agents" class="btn btn-sm btn-outline-primary">Barchasi</a>
+            </div>
+            <div class="card-body p-0" style="max-height: 350px; overflow-y: auto;">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light sticky-top">
+                        <tr>
+                            <th>Agent</th>
+                            <th>Hudud</th>
+                            <th>Oxirgi faollik</th>
+                            <th>🔋</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for agent in agents %}
+                        <tr>
+                            <td>
+                                <a href="/agents/{{ agent.id }}" class="text-decoration-none">
+                                    {{ agent.full_name }}
+                                </a>
+                            </td>
+                            <td><small>{{ agent.region or '-' }}</small></td>
+                            <td>
+                                {% if agent.locations %}
+                                <small class="{% if agent.is_active %}text-success{% else %}text-danger{% endif %}">
+                                    {{ agent.locations[0].recorded_at.strftime('%H:%M') }}
+                                </small>
+                                {% else %}
+                                <small class="text-muted">-</small>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if agent.locations %}
+                                <small>{{ agent.locations[0].battery }}%</small>
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="4" class="text-center text-muted py-3">Agentlar yo'q</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Haydovchilar holati -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between">
+                <span><i class="bi bi-truck"></i> Haydovchi holati</span>
+                <a href="/delivery" class="btn btn-sm btn-outline-info">Barchasi</a>
+            </div>
+            <div class="card-body p-0" style="max-height: 350px; overflow-y: auto;">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light sticky-top">
+                        <tr>
+                            <th>Haydovchi</th>
+                            <th>Transport</th>
+                            <th>Oxirgi joy</th>
+                            <th>Tezlik</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for driver in drivers %}
+                        <tr>
+                            <td>
+                                <a href="/delivery/{{ driver.id }}" class="text-decoration-none">
+                                    {{ driver.full_name }}
+                                </a>
+                            </td>
+                            <td><small>{{ driver.vehicle_number or '-' }}</small></td>
+                            <td>
+                                {% if driver.locations %}
+                                <small class="text-success">
+                                    {{ driver.locations[0].recorded_at.strftime('%H:%M') }}
+                                </small>
+                                {% else %}
+                                <small class="text-muted">-</small>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if driver.locations and driver.locations[0].speed %}
+                                <small>{{ "%.0f"|format(driver.locations[0].speed) }} km/h</small>
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="4" class="text-center text-muted py-3">Haydovchilar yo'q</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Mini xarita -->
+<div class="row mt-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between">
+                <span><i class="bi bi-geo-alt"></i> Real vaqtda joylashuvlar</span>
+                <a href="/map" class="btn btn-sm btn-outline-primary">Katta xarita</a>
+            </div>
+            <div class="card-body p-0">
+                <div id="supervisorMap" style="height: 300px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Oxirgi faoliyatlar -->
+<div class="row mt-3">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-activity"></i> Oxirgi tashriflar
+            </div>
+            <div class="card-body p-0">
+                <ul class="list-group list-group-flush">
+                    {% for visit in recent_visits[:5] if recent_visits is defined %}
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>{{ visit.agent.full_name if visit.agent else 'Agent' }}</span>
+                        <small class="text-muted">{{ visit.visit_date.strftime('%H:%M') }}</small>
+                    </li>
+                    {% else %}
+                    <li class="list-group-item text-center text-muted">Ma'lumot yo'q</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-box-seam"></i> Oxirgi yetkazishlar
+            </div>
+            <div class="card-body p-0">
+                <ul class="list-group list-group-flush">
+                    {% for delivery in recent_deliveries[:5] if recent_deliveries is defined %}
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>
+                            {{ delivery.driver.full_name if delivery.driver else 'Haydovchi' }}
+                            <small class="text-muted">→ {{ delivery.delivery_address[:30] }}...</small>
+                        </span>
+                        <span class="badge bg-{{ 'success' if delivery.status == 'delivered' else 'warning' }}">
+                            {{ delivery.status }}
+                        </span>
+                    </li>
+                    {% else %}
+                    <li class="list-group-item text-center text-muted">Ma'lumot yo'q</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    var map = L.map('supervisorMap').setView([41.311081, 69.240562], 11);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap'
+    }).addTo(map);
+    
+    var markers = [];
+    
+    // Agentlar
+    {% for agent in agents %}
+    {% if agent.locations %}
+    var marker = L.circleMarker([{{ agent.locations[0].latitude }}, {{ agent.locations[0].longitude }}], {
+        radius: 8,
+        fillColor: '#0d6efd',
+        color: '#fff',
+        weight: 2,
+        fillOpacity: 0.8
+    }).bindPopup('<b>{{ agent.full_name }}</b>');
+    marker.addTo(map);
+    markers.push([{{ agent.locations[0].latitude }}, {{ agent.locations[0].longitude }}]);
+    {% endif %}
+    {% endfor %}
+    
+    // Haydovchilar
+    {% for driver in drivers %}
+    {% if driver.locations %}
+    var marker = L.circleMarker([{{ driver.locations[0].latitude }}, {{ driver.locations[0].longitude }}], {
+        radius: 8,
+        fillColor: '#0dcaf0',
+        color: '#fff',
+        weight: 2,
+        fillOpacity: 0.8
+    }).bindPopup('<b>{{ driver.full_name }}</b>');
+    marker.addTo(map);
+    markers.push([{{ driver.locations[0].latitude }}, {{ driver.locations[0].longitude }}]);
+    {% endif %}
+    {% endfor %}
+    
+    // Xaritani markerlar bo'yicha fit qilish
+    if (markers.length > 0) {
+        map.fitBounds(markers);
+    }
+</script>
+{% endblock %}

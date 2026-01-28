@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-12">
+            <a href="/purchases" class="btn btn-outline-secondary mb-3">
+                <i class="bi bi-arrow-left"></i> Orqaga
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">{{ purchase.number }}</h5>
+                    <div>
+                        {% if purchase.status == 'draft' %}
+                        <form method="POST" action="/purchases/{{ purchase.id }}/confirm" style="display: inline;">
+                            <button type="submit" class="btn btn-success btn-sm"
+                                onclick="return confirm('Tovar kirimini tasdiqlaysizmi?')">
+                                <i class="bi bi-check-circle"></i> Tasdiqlash
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <strong>Ta'minotchi:</strong> {{ purchase.partner.name if purchase.partner else '-' }}
+                        </div>
+                        <div class="col-md-6">
+                            <strong>Ombor:</strong> {{ purchase.warehouse.name if purchase.warehouse else '-' }}
+                        </div>
+                    </div>
+
+                    <h6 class="mb-3">Mahsulotlar</h6>
+                    {% if purchase.items %}
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>№</th>
+                                    <th>Mahsulot</th>
+                                    <th>Miqdor</th>
+                                    <th>Narx</th>
+                                    <th>Summa</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in purchase.items %}
+                                <tr>
+                                    <td>{{ loop.index }}</td>
+                                    <td>{{ item.product.name if item.product else '-' }}</td>
+                                    <td>{{ item.quantity }} {{ item.product.unit.name if item.product and
+                                        item.product.unit else '' }}</td>
+                                    <td>{{ "{:,.0f}".format(item.price) }} so'm</td>
+                                    <td><strong>{{ "{:,.0f}".format(item.total) }} so'm</strong></td>
+                                    <td>
+                                        {% if purchase.status == 'draft' %}
+                                        <form method="POST"
+                                            action="/purchases/{{ purchase.id }}/delete-item/{{ item.id }}"
+                                            style="display: inline;">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger"
+                                                onclick="return confirm('O\'chirmoqchimisiz?')">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <th colspan="4" class="text-end">Jami:</th>
+                                    <th colspan="2"><strong>{{ "{:,.0f}".format(purchase.total) }} so'm</strong></th>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info">
+                        Hozircha mahsulotlar qo'shilmagan
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            {% if purchase.status == 'draft' %}
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0">Mahsulot qo'shish</h6>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="/purchases/{{ purchase.id }}/add-item">
+                        <div class="mb-3">
+                            <label class="form-label">Mahsulot</label>
+                            <select name="product_id" class="form-select" required>
+                                <option value="">Tanlang...</option>
+                                {% for product in products %}
+                                <option value="{{ product.id }}">{{ product.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Miqdor</label>
+                            <input type="number" name="quantity" class="form-control" step="0.01" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Narx (so'm)</label>
+                            <input type="number" name="price" class="form-control" step="0.01" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-plus-circle"></i> Qo'shish
+                        </button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

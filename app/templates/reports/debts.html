@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row g-4 mb-4">
+    <div class="col-md-6">
+        <div class="stat-card border-danger">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <p>Jami qarzdorlik</p>
+                    <h3 class="text-danger">{{ "{:,.0f}".format(total_debt) }}</h3>
+                    <small class="text-muted">Olish kerak</small>
+                </div>
+                <div class="icon red">
+                    <i class="bi bi-arrow-down"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="stat-card border-success">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <p>Jami avans</p>
+                    <h3 class="text-success">{{ "{:,.0f}".format(total_credit) }}</h3>
+                    <small class="text-muted">Berish kerak</small>
+                </div>
+                <div class="icon green">
+                    <i class="bi bi-arrow-up"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-exclamation-triangle"></i> Qarzdorlik hisoboti
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-hover">
+            <thead class="table-light">
+                <tr>
+                    <th>#</th>
+                    <th>Kodi</th>
+                    <th>Kontragent</th>
+                    <th>Turi</th>
+                    <th>Telefon</th>
+                    <th>Balans</th>
+                    <th>Holat</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if debtors %}
+                    {% for partner in debtors %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td><code>{{ partner.code }}</code></td>
+                        <td><strong>{{ partner.name }}</strong></td>
+                        <td>
+                            {% if partner.type == 'customer' %}
+                                <span class="badge bg-primary">Mijoz</span>
+                            {% elif partner.type == 'supplier' %}
+                                <span class="badge bg-info">Yetkazib beruvchi</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Ikkalasi</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ partner.phone or '-' }}</td>
+                        <td class="fw-bold {% if partner.balance > 0 %}text-danger{% else %}text-success{% endif %}">
+                            {{ "{:,.0f}".format(partner.balance) }}
+                        </td>
+                        <td>
+                            {% if partner.balance > 0 %}
+                                <span class="badge bg-danger">Qarzdor</span>
+                            {% else %}
+                                <span class="badge bg-success">Avans</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-5">
+                            <i class="bi bi-check-circle fs-1 d-block mb-2 text-success"></i>
+                            Qarzdorlar topilmadi 🎉
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

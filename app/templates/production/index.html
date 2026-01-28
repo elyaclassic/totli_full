@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h4><i class="bi bi-gear-fill"></i> Ishlab chiqarish</h4>
+    <a href="/production/new" class="btn btn-primary">
+        <i class="bi bi-plus"></i> Yangi ishlab chiqarish
+    </a>
+</div>
+
+<!-- Statistika -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <p>Retseptlar</p>
+                    <h3>{{ total_recipes }}</h3>
+                </div>
+                <div class="icon blue">
+                    <i class="bi bi-journal-text"></i>
+                </div>
+            </div>
+            <a href="/production/recipes" class="text-primary small">Barchasi →</a>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <p>Bugun ishlab chiqarildi</p>
+                    <h3>{{ "%.1f"|format(today_quantity) }} kg</h3>
+                </div>
+                <div class="icon green">
+                    <i class="bi bi-box-seam"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <p>Kutilmoqda</p>
+                    <h3>{{ pending_productions }}</h3>
+                </div>
+                <div class="icon orange">
+                    <i class="bi bi-hourglass-split"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <p>Buyurtmalar</p>
+                    <h3>{{ recent_productions|length }}</h3>
+                </div>
+                <div class="icon purple">
+                    <i class="bi bi-clipboard-check"></i>
+                </div>
+            </div>
+            <a href="/production/orders" class="text-primary small">Barchasi →</a>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Tezkor ishlab chiqarish -->
+    <div class="col-md-5">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-lightning-fill text-warning"></i> Tezkor ishlab chiqarish
+            </div>
+            <div class="card-body">
+                <form method="POST" action="/production/create">
+                    <div class="mb-3">
+                        <label class="form-label">Retsept</label>
+                        <select class="form-select" name="recipe_id" required>
+                            <option value="">Tanlang...</option>
+                            {% for recipe in recipes %}
+                            <option value="{{ recipe.id }}">{{ recipe.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Miqdori (kg)</label>
+                        <input type="number" class="form-control" name="quantity" step="0.1" min="0.1" value="10" required>
+                    </div>
+                    <input type="hidden" name="warehouse_id" value="1">
+                    <button type="submit" class="btn btn-success w-100">
+                        <i class="bi bi-play-fill"></i> Boshlash
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Retseptlar -->
+        <div class="card mt-3">
+            <div class="card-header d-flex justify-content-between">
+                <span><i class="bi bi-journal-text"></i> Retseptlar</span>
+                <a href="/production/recipes" class="btn btn-sm btn-outline-primary">Barchasi</a>
+            </div>
+            <div class="card-body p-0">
+                <ul class="list-group list-group-flush">
+                    {% for recipe in recipes[:5] %}
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>{{ recipe.name }}</span>
+                        <span class="badge bg-primary">{{ recipe.items|length }} xom ashyo</span>
+                    </li>
+                    {% else %}
+                    <li class="list-group-item text-center text-muted">Retseptlar yo'q</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Oxirgi ishlab chiqarishlar -->
+    <div class="col-md-7">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between">
+                <span><i class="bi bi-clock-history"></i> Oxirgi ishlab chiqarishlar</span>
+                <a href="/production/orders" class="btn btn-sm btn-outline-primary">Barchasi</a>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Raqam</th>
+                            <th>Retsept</th>
+                            <th>Miqdor</th>
+                            <th>Sana</th>
+                            <th>Holat</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for prod in recent_productions %}
+                        <tr>
+                            <td><strong>{{ prod.number }}</strong></td>
+                            <td>
+                                {% if prod.recipe_id %}
+                                Retsept #{{ prod.recipe_id }}
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
+                            <td>{{ "%.1f"|format(prod.quantity) }} kg</td>
+                            <td>{{ prod.date.strftime('%d.%m.%Y %H:%M') }}</td>
+                            <td>
+                                {% if prod.status == 'completed' %}
+                                <span class="badge bg-success">Yakunlandi</span>
+                                {% elif prod.status == 'draft' %}
+                                <span class="badge bg-warning">Kutilmoqda</span>
+                                {% else %}
+                                <span class="badge bg-danger">Bekor</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" class="text-center text-muted py-4">
+                                <i class="bi bi-inbox fs-1"></i><br>
+                                Ishlab chiqarish yo'q
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

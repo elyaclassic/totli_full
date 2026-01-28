@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <div>
+        <a href="/production/recipes" class="btn btn-outline-secondary btn-sm mb-2">
+            <i class="bi bi-arrow-left"></i> Orqaga
+        </a>
+        <h4><i class="bi bi-journal-text"></i> {{ recipe.name }}</h4>
+    </div>
+    <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#produceModal">
+        <i class="bi bi-play-fill"></i> Ishlab chiqarish
+    </button>
+</div>
+
+<div class="row">
+    <!-- Retsept ma'lumotlari -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-info-circle"></i> Ma'lumotlar
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr>
+                        <td>Mahsulot:</td>
+                        <td><strong>{% if recipe.product_id %}Mahsulot #{{ recipe.product_id }}{% else %}-{% endif %}</strong></td>
+                    </tr>
+                    <tr>
+                        <td>Chiqish miqdori:</td>
+                        <td><strong>{{ recipe.output_quantity }} kg</strong></td>
+                    </tr>
+                    <tr>
+                        <td>Holati:</td>
+                        <td>
+                            {% if recipe.is_active %}
+                            <span class="badge bg-success">Faol</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Nofaol</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </table>
+                
+                {% if recipe.description %}
+                <hr>
+                <p class="text-muted mb-0">{{ recipe.description }}</p>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Tannarx hisoblash -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <i class="bi bi-calculator"></i> Tannarx
+            </div>
+            <div class="card-body">
+                {% set ns = namespace(total_cost=0) %}
+                {% for item in recipe.items %}
+                    {% if item.product %}
+                        {% set ns.total_cost = ns.total_cost + (item.quantity * item.product.purchase_price) %}
+                    {% endif %}
+                {% endfor %}
+                <h4 class="text-center text-primary">{{ "{:,.0f}".format(ns.total_cost) }} so'm</h4>
+                <p class="text-center text-muted mb-0">1 kg uchun: {{ "{:,.0f}".format(ns.total_cost / recipe.output_quantity if recipe.output_quantity > 0 else 0) }} so'm</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Tarkib -->
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between">
+                <span><i class="bi bi-list-check"></i> Tarkibi (xom ashyolar)</span>
+                <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addItemModal">
+                    <i class="bi bi-plus"></i> Qo'shish
+                </button>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>#</th>
+                            <th>Xom ashyo</th>
+                            <th>Miqdor</th>
+                            <th>Narx</th>
+                            <th>Summa</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in recipe.items %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td>
+                                <strong>{{ item.product.name if item.product else 'Noma\'lum' }}</strong>
+                                {% if item.product %}<br><small class="text-muted">{{ item.product.code }}</small>{% endif %}
+                            </td>
+                            <td>{{ item.quantity }} kg</td>
+                            <td>{{ "{:,.0f}".format(item.product.purchase_price) if item.product else 0 }} so'm</td>
+                            <td><strong>{{ "{:,.0f}".format(item.quantity * item.product.purchase_price) if item.product else 0 }} so'm</strong></td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" class="text-center text-muted py-4">
+                                <i class="bi bi-inbox fs-1"></i><br>
+                                Tarkib bo'sh. Xom ashyo qo'shing.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    {% if recipe.items %}
+                    <tfoot class="table-light">
+                        <tr>
+                            <td colspan="4" class="text-end"><strong>Jami:</strong></td>
+                            <td>
+                                <strong class="text-primary">
+                                    {% set total = namespace(value=0) %}
+                                    {% for item in recipe.items %}
+                                        {% if item.product %}
+                                            {% set total.value = total.value + (item.quantity * item.product.purchase_price) %}
+                                        {% endif %}
+                                    {% endfor %}
+                                    {{ "{:,.0f}".format(total.value) }} so'm
+                                </strong>
+                            </td>
+                        </tr>
+                    </tfoot>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Xom ashyo qo'shish modal -->
+<div class="modal fade" id="addItemModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="/production/recipes/{{ recipe.id }}/add-item">
+                <div class="modal-header">
+                    <h5 class="modal-title">Xom ashyo qo'shish</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Xom ashyo</label>
+                        <select class="form-select" name="product_id" required>
+                            <option value="">Tanlang...</option>
+                            {% for m in materials %}
+                            <option value="{{ m.id }}">{{ m.name }} ({{ m.code }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Miqdor (kg)</label>
+                        <input type="number" class="form-control" name="quantity" step="0.01" min="0.01" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor</button>
+                    <button type="submit" class="btn btn-primary">Qo'shish</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Ishlab chiqarish modal -->
+<div class="modal fade" id="produceModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="/production/create">
+                <div class="modal-header">
+                    <h5 class="modal-title">Ishlab chiqarish: {{ recipe.name }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="recipe_id" value="{{ recipe.id }}">
+                    <input type="hidden" name="warehouse_id" value="1">
+                    <div class="mb-3">
+                        <label class="form-label">Miqdor (kg)</label>
+                        <input type="number" class="form-control" name="quantity" value="10" step="0.1" min="0.1" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Izoh</label>
+                        <textarea class="form-control" name="note" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-play-fill"></i> Boshlash
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

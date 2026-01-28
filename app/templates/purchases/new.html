@@ -1,0 +1,313 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    #partner_search_results {
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        border: 1px solid #dee2e6;
+        border-radius: 0.25rem;
+        margin-top: 2px;
+        background: white;
+    }
+
+    #partner_search_results .list-group-item {
+        border-left: none;
+        border-right: none;
+    }
+
+    #partner_search_results .list-group-item:first-child {
+        border-top: none;
+    }
+
+    #partner_search_results .list-group-item:last-child {
+        border-bottom: none;
+    }
+
+    #partner_search_results .list-group-item:hover {
+        background-color: #f8f9fa;
+        cursor: pointer;
+    }
+</style>
+
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-12">
+            <a href="/purchases" class="btn btn-outline-secondary mb-3">
+                <i class="bi bi-arrow-left"></i> Orqaga
+            </a>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Yangi tovar kirimi</h5>
+        </div>
+        <div class="card-body">
+            <form method="POST" action="/purchases/create">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3 position-relative">
+                            <label class="form-label">Ta'minotchi *</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="partner_search_input"
+                                    placeholder="Tartib raqami, nomi yoki telefon kiriting..." autocomplete="off"
+                                    required>
+                                <input type="hidden" name="partner_id" id="partner_id_hidden" required>
+                                <button type="button" class="btn btn-success" data-bs-toggle="modal"
+                                    data-bs-target="#addPartnerModal">
+                                    <i class="bi bi-plus-circle"></i>
+                                </button>
+                            </div>
+                            <!-- Qidiruv natijalari dropdown -->
+                            <div id="partner_search_results" class="list-group position-absolute"
+                                style="z-index: 1000; max-height: 300px; overflow-y: auto; display: none; left: 0; right: 0;">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label">Ombor *</label>
+                            <select name="warehouse_id" class="form-select" required>
+                                <option value="">Tanlang...</option>
+                                {% for warehouse in warehouses %}
+                                <option value="{{ warehouse.id }}">{{ warehouse.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Hidden select for data storage -->
+                <select id="partner_select" style="display: none;">
+                    <option value="">Tanlang...</option>
+                    {% for partner in partners %}
+                    <option value="{{ partner.id }}" data-name="{{ partner.name }}"
+                        data-phone="{{ partner.phone or '' }}">
+                        {{ partner.name }} (#{{ partner.id }})
+                    </option>
+                    {% endfor %}
+                </select>
+
+                <div class="text-end">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-circle"></i> Davom etish
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Kontragent qo'shish modal -->
+<div class="modal fade" id="addPartnerModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form id="addPartnerForm">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle"></i> Yangi kontragent</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Yangi kontragent qo'shish -->
+                    <div class="row g-3">
+                        <div class="col-md-9">
+                            <label class="form-label">Nomi *</label>
+                            <input type="text" class="form-control" name="name" id="new_partner_name" required>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Turi *</label>
+                            <select class="form-select" name="type" id="new_partner_type" required>
+                                <option value="supplier" selected>Yetkazib beruvchi</option>
+                                <option value="customer">Mijoz</option>
+                                <option value="both">Ikkalasi</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Telefon</label>
+                            <input type="text" class="form-control" name="phone" id="new_partner_phone"
+                                placeholder="+998 XX XXX XX XX">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Manzil</label>
+                            <input type="text" class="form-control" name="address" id="new_partner_address">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Kredit limiti</label>
+                            <input type="number" class="form-control" name="credit_limit" value="0" step="100000">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Chegirma %</label>
+                            <input type="number" class="form-control" name="discount_percent" value="0" step="0.5"
+                                max="100">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor qilish</button>
+                    <button type="submit" class="btn btn-success"><i class="bi bi-check-lg"></i> Saqlash</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Live search for partner input
+    const partnerInput = document.getElementById('partner_search_input');
+    const partnerIdHidden = document.getElementById('partner_id_hidden');
+    const searchResults = document.getElementById('partner_search_results');
+    const partnerSelect = document.getElementById('partner_select');
+
+    partnerInput.addEventListener('input', function (e) {
+        const searchTerm = e.target.value.toLowerCase().trim();
+
+        if (searchTerm.length < 1) {
+            searchResults.style.display = 'none';
+            searchResults.innerHTML = '';
+            partnerIdHidden.value = '';
+            return;
+        }
+
+        const options = Array.from(partnerSelect.options).slice(1);
+
+        const matches = options.filter(option => {
+            const name = option.dataset.name.toLowerCase();
+            const phone = (option.dataset.phone || '').toLowerCase();
+            const id = option.value;
+
+            return name.includes(searchTerm) ||
+                phone.includes(searchTerm) ||
+                id === searchTerm;
+        });
+
+        if (matches.length > 0) {
+            searchResults.innerHTML = '';
+            matches.forEach(option => {
+                const item = document.createElement('a');
+                item.href = '#';
+                item.className = 'list-group-item list-group-item-action';
+                item.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>${option.dataset.name}</strong> <span class="badge bg-secondary">#${option.value}</span><br>
+                        <small class="text-muted">${option.dataset.phone || 'Telefon yo\'q'}</small>
+                    </div>
+                </div>
+            `;
+                item.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    selectPartner(option.value, option.dataset.name);
+                });
+                searchResults.appendChild(item);
+            });
+            searchResults.style.display = 'block';
+        } else {
+            searchResults.innerHTML = '<div class="list-group-item text-muted">Topilmadi. "+" tugmasini bosing.</div>';
+            searchResults.style.display = 'block';
+        }
+    });
+
+    // Select partner from dropdown
+    function selectPartner(partnerId, partnerName) {
+        partnerInput.value = partnerName;
+        partnerIdHidden.value = partnerId;
+        searchResults.style.display = 'none';
+    }
+
+    // Hide dropdown when clicking outside
+    document.addEventListener('click', function (e) {
+        if (!partnerInput.contains(e.target) && !searchResults.contains(e.target)) {
+            searchResults.style.display = 'none';
+        }
+    });
+
+    // Mavjud kontragentni tanlash (modal-dan)
+    function selectExistingPartner(partnerId, partnerName) {
+        partnerInput.value = partnerName;
+        partnerIdHidden.value = partnerId;
+        const modal = bootstrap.Modal.getInstance(document.getElementById('addPartnerModal'));
+        modal.hide();
+    }
+
+    // Yangi kontragent qo'shish
+    document.getElementById('addPartnerForm').addEventListener('submit', async function (e) {
+        e.preventDefault();
+
+        const formData = new FormData(this);
+
+        try {
+            const response = await fetch('/partners/add', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                // Muvaffaqiyatli saqlandi
+                showNotification('Kontragent muvaffaqiyatli saqlandi!', 'success');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1000);
+            } else {
+                // Xato yuz berdi
+                const errorText = await response.text();
+
+                // Xato matnidan faqat muhim qismni olish
+                let errorMessage = 'Xatolik yuz berdi!';
+                if (errorText.includes('allaqachon mavjud')) {
+                    // "detail":"..." qismini topish
+                    const match = errorText.match(/"detail":"([^"]+)"/);
+                    if (match) {
+                        errorMessage = match[1];
+                    }
+                }
+
+                showNotification(errorMessage, 'danger');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            showNotification('Tarmoq xatosi yuz berdi!', 'danger');
+        }
+    });
+
+    // Notification ko'rsatish funksiyasi
+    function showNotification(message, type = 'info') {
+        // Toast container yaratish (agar yo'q bo'lsa)
+        let toastContainer = document.getElementById('toastContainer');
+        if (!toastContainer) {
+            toastContainer = document.createElement('div');
+            toastContainer.id = 'toastContainer';
+            toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
+            toastContainer.style.zIndex = '9999';
+            document.body.appendChild(toastContainer);
+        }
+
+        // Toast yaratish
+        const toastId = 'toast_' + Date.now();
+        const toastHtml = `
+        <div id="${toastId}" class="toast align-items-center text-white bg-${type} border-0" role="alert">
+            <div class="d-flex">
+                <div class="toast-body">
+                    <i class="bi bi-${type === 'success' ? 'check-circle' : 'exclamation-triangle'}"></i>
+                    ${message}
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        </div>
+    `;
+
+        toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+
+        const toastElement = document.getElementById(toastId);
+        const toast = new bootstrap.Toast(toastElement, {
+            autohide: true,
+            delay: 5000
+        });
+        toast.show();
+
+        // Toast yopilgandan keyin o'chirish
+        toastElement.addEventListener('hidden.bs.toast', function () {
+            toastElement.remove();
+        });
+    }
+</script>
+{% endblock %}

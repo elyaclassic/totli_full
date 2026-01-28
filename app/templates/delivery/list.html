@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h4><i class="bi bi-truck"></i> Haydovchilar va yetkazish</h4>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addDriverModal">
+        <i class="bi bi-plus"></i> Yangi haydovchi
+    </button>
+</div>
+
+<!-- Haydovchilar jadvali -->
+<div class="card">
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Haydovchi</th>
+                    <th>Transport</th>
+                    <th>Raqami</th>
+                    <th>Yetkazishlar</th>
+                    <th>Holat</th>
+                    <th>Amallar</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for driver in drivers %}
+                <tr>
+                    <td>
+                        <strong>{{ driver.full_name }}</strong><br>
+                        <small class="text-muted">{{ driver.phone or 'Telefon yo\'q' }}</small>
+                    </td>
+                    <td>{{ driver.vehicle_type or 'Noma\'lum' }}</td>
+                    <td>{{ driver.vehicle_number or '-' }}</td>
+                    <td>
+                        <span class="badge bg-success">{{ driver.deliveries|selectattr('status', 'eq', 'delivered')|list|length }}</span>
+                        /
+                        <span class="badge bg-warning">{{ driver.deliveries|selectattr('status', 'eq', 'in_transit')|list|length }}</span>
+                        /
+                        <span class="badge bg-secondary">{{ driver.deliveries|length }}</span>
+                    </td>
+                    <td>
+                        {% if driver.is_active %}
+                        <span class="badge bg-success">Faol</span>
+                        {% else %}
+                        <span class="badge bg-secondary">Nofaol</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="/delivery/{{ driver.id }}" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-eye"></i>
+                        </a>
+                        <a href="/map?driver={{ driver.id }}" class="btn btn-sm btn-outline-info">
+                            <i class="bi bi-geo-alt"></i>
+                        </a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="text-center text-muted py-4">
+                        <i class="bi bi-truck fs-1"></i><br>
+                        Haydovchilar yo'q
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Faol yetkazishlar -->
+<h5 class="mt-4 mb-3"><i class="bi bi-box-seam"></i> Faol yetkazishlar</h5>
+<div class="row g-3">
+    {% for delivery in deliveries %}
+    {% if delivery.status in ['pending', 'picked_up', 'in_transit'] %}
+    <div class="col-md-4">
+        <div class="card border-{% if delivery.status == 'pending' %}warning{% elif delivery.status == 'in_transit' %}primary{% else %}info{% endif %}">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <h6>#{{ delivery.id }}</h6>
+                    <span class="badge bg-{% if delivery.status == 'pending' %}warning{% elif delivery.status == 'in_transit' %}primary{% else %}info{% endif %}">
+                        {% if delivery.status == 'pending' %}Kutilmoqda
+                        {% elif delivery.status == 'picked_up' %}Olib ketildi
+                        {% elif delivery.status == 'in_transit' %}Yo'lda
+                        {% endif %}
+                    </span>
+                </div>
+                <p class="mb-1"><i class="bi bi-geo"></i> {{ delivery.delivery_address }}</p>
+                <p class="mb-1 text-muted">
+                    <small><i class="bi bi-clock"></i> {{ delivery.created_at.strftime('%d.%m %H:%M') }}</small>
+                </p>
+                {% if delivery.driver %}
+                <p class="mb-0">
+                    <small><i class="bi bi-person"></i> {{ delivery.driver.full_name }}</small>
+                </p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="addDriverModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="/delivery/add-driver">
+                <div class="modal-header">
+                    <h5 class="modal-title">Yangi haydovchi</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">F.I.O</label>
+                        <input type="text" class="form-control" name="full_name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Telefon</label>
+                        <input type="text" class="form-control" name="phone" placeholder="+998901234567">
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Transport turi</label>
+                                <select class="form-select" name="vehicle_type">
+                                    <option value="car">Avtomobil</option>
+                                    <option value="truck">Yuk mashinasi</option>
+                                    <option value="motorcycle">Mototsikl</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Davlat raqami</label>
+                                <input type="text" class="form-control" name="vehicle_number" placeholder="01A123BC">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Telegram ID</label>
+                        <input type="text" class="form-control" name="telegram_id" placeholder="@username">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor qilish</button>
+                    <button type="submit" class="btn btn-primary">Saqlash</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

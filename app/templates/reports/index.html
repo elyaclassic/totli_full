@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row g-4 mb-4">
+    <div class="col-md-4">
+        <a href="/reports/sales" class="text-decoration-none">
+            <div class="stat-card">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5>Savdo hisoboti</h5>
+                        <p class="text-muted mb-0">Sotuvlar va daromad</p>
+                    </div>
+                    <div class="icon green">
+                        <i class="bi bi-cart-check"></i>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+    
+    <div class="col-md-4">
+        <a href="/reports/stock" class="text-decoration-none">
+            <div class="stat-card">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5>Qoldiq hisoboti</h5>
+                        <p class="text-muted mb-0">Ombor qoldiqlari</p>
+                    </div>
+                    <div class="icon blue">
+                        <i class="bi bi-boxes"></i>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+    
+    <div class="col-md-4">
+        <a href="/reports/debts" class="text-decoration-none">
+            <div class="stat-card">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5>Qarzdorlik</h5>
+                        <p class="text-muted mb-0">Qarzlar va avanslar</p>
+                    </div>
+                    <div class="icon red">
+                        <i class="bi bi-exclamation-triangle"></i>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-md-4">
+        <a href="/reports/production" class="text-decoration-none">
+            <div class="stat-card">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5>Ishlab chiqarish</h5>
+                        <p class="text-muted mb-0">Mahsulot ishlab chiqarish</p>
+                    </div>
+                    <div class="icon orange">
+                        <i class="bi bi-gear"></i>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+    
+    <div class="col-md-4">
+        <a href="/reports/employees" class="text-decoration-none">
+            <div class="stat-card">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5>Xodimlar</h5>
+                        <p class="text-muted mb-0">Oylik va avans</p>
+                    </div>
+                    <div class="icon purple">
+                        <i class="bi bi-people"></i>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+    
+    <div class="col-md-4">
+        <a href="/reports/profit" class="text-decoration-none">
+            <div class="stat-card">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5>Foyda hisoboti</h5>
+                        <p class="text-muted mb-0">Daromad va xarajat</p>
+                    </div>
+                    <div class="icon green">
+                        <i class="bi bi-graph-up-arrow"></i>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+</div>
+{% endblock %}

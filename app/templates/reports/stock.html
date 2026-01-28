@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-boxes"></i> Qoldiq hisoboti
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-hover">
+            <thead class="table-light">
+                <tr>
+                    <th>#</th>
+                    <th>Kodi</th>
+                    <th>Tovar nomi</th>
+                    <th>Ombor</th>
+                    <th>Qoldiq</th>
+                    <th>O'lchov</th>
+                    <th>Tannarx</th>
+                    <th>Summa</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if stocks %}
+                    {% for stock in stocks %}
+                    <tr class="{% if stock.quantity <= stock.product.min_stock %}table-warning{% endif %}">
+                        <td>{{ loop.index }}</td>
+                        <td><code>{{ stock.product.code }}</code></td>
+                        <td>
+                            <strong>{{ stock.product.name }}</strong>
+                            {% if stock.quantity <= stock.product.min_stock %}
+                            <br><small class="text-danger">Kam qoldi!</small>
+                            {% endif %}
+                        </td>
+                        <td>{{ stock.warehouse.name }}</td>
+                        <td class="fw-bold">{{ "{:,.2f}".format(stock.quantity) }}</td>
+                        <td>{{ stock.product.unit.code if stock.product.unit else '-' }}</td>
+                        <td>{{ "{:,.0f}".format(stock.avg_cost) }}</td>
+                        <td class="text-success">{{ "{:,.0f}".format(stock.quantity * stock.avg_cost) }}</td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="8" class="text-center text-muted py-5">
+                            <i class="bi bi-boxes fs-1 d-block mb-2"></i>
+                            Qoldiqlar topilmadi
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-building"></i> Omborlar</span>
+                <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addWarehouseModal">
+                    <i class="bi bi-plus-circle"></i> Yangi ombor
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    {% if warehouses %}
+                        {% for wh in warehouses %}
+                        <div class="col-md-4">
+                            <div class="card h-100">
+                                <div class="card-body">
+                                    <h5><i class="bi bi-building"></i> {{ wh.name }}</h5>
+                                    <p class="text-muted mb-0">{{ wh.address or 'Manzil ko\'rsatilmagan' }}</p>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="col-12 text-center text-muted py-4">
+                            <i class="bi bi-building fs-1 d-block mb-2"></i>
+                            Omborlar yo'q
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Qoldiqlar -->
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-boxes"></i> Ombor qoldiqlari
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-hover">
+            <thead class="table-light">
+                <tr>
+                    <th>#</th>
+                    <th>Tovar</th>
+                    <th>Ombor</th>
+                    <th>Qoldiq</th>
+                    <th>Tannarx</th>
+                    <th>Summa</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if stocks %}
+                    {% for stock in stocks %}
+                    <tr class="{% if stock.quantity <= stock.product.min_stock %}table-warning{% endif %}">
+                        <td>{{ loop.index }}</td>
+                        <td>
+                            <strong>{{ stock.product.name }}</strong>
+                            <br><small class="text-muted">{{ stock.product.code }}</small>
+                        </td>
+                        <td>{{ stock.warehouse.name }}</td>
+                        <td class="fw-bold">{{ "{:,.2f}".format(stock.quantity) }}</td>
+                        <td>{{ "{:,.0f}".format(stock.avg_cost) }}</td>
+                        <td class="text-success">{{ "{:,.0f}".format(stock.quantity * stock.avg_cost) }}</td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-5">
+                            <i class="bi bi-boxes fs-1 d-block mb-2"></i>
+                            Qoldiqlar topilmadi
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Ombor qo'shish modal -->
+<div class="modal fade" id="addWarehouseModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="/warehouse/add" method="POST">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle"></i> Yangi ombor</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Nomi *</label>
+                        <input type="text" class="form-control" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Manzil</label>
+                        <input type="text" class="form-control" name="address">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor qilish</button>
+                    <button type="submit" class="btn btn-success"><i class="bi bi-check-lg"></i> Saqlash</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

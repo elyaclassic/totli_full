@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-person-walking"></i> Savdo agentlari</span>
+                <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addAgentModal">
+                    <i class="bi bi-plus-circle"></i> Yangi agent
+                </button>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th width="50">#</th>
+                            <th>Kodi</th>
+                            <th>F.I.O</th>
+                            <th>Telefon</th>
+                            <th>Hudud</th>
+                            <th>Holat</th>
+                            <th>Bugun</th>
+                            <th width="100">Amallar</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if agents %}
+                            {% for agent in agents %}
+                            <tr>
+                                <td>{{ loop.index }}</td>
+                                <td><code>{{ agent.code }}</code></td>
+                                <td>
+                                    <strong>{{ agent.full_name }}</strong>
+                                    {% if agent.telegram_id %}
+                                    <br><small class="text-muted"><i class="bi bi-telegram"></i> {{ agent.telegram_id }}</small>
+                                    {% endif %}
+                                </td>
+                                <td>{{ agent.phone or '-' }}</td>
+                                <td>{{ agent.region or '-' }}</td>
+                                <td>
+                                    {% if agent.last_location %}
+                                        {% set mins_ago = ((now() - agent.last_location.recorded_at).total_seconds() / 60)|int if now is defined else 999 %}
+                                        {% if mins_ago < 10 %}
+                                            <span class="badge bg-success"><i class="bi bi-circle-fill"></i> Online</span>
+                                        {% elif mins_ago < 60 %}
+                                            <span class="badge bg-warning">{{ mins_ago }} min oldin</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">Offline</span>
+                                        {% endif %}
+                                        <br><small class="text-muted">
+                                            <i class="bi bi-battery-half"></i> {{ agent.last_location.battery }}%
+                                        </small>
+                                    {% else %}
+                                        <span class="badge bg-secondary">Ma'lumot yo'q</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge bg-primary">{{ agent.today_visits }} tashrif</span>
+                                </td>
+                                <td>
+                                    <a href="/agents/{{ agent.id }}" class="btn btn-sm btn-outline-primary" title="Batafsil">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                    <a href="/map?agent={{ agent.id }}" class="btn btn-sm btn-outline-info" title="Xaritada">
+                                        <i class="bi bi-geo-alt"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="8" class="text-center text-muted py-5">
+                                    <i class="bi bi-person-walking fs-1 d-block mb-2"></i>
+                                    Hozircha agentlar yo'q<br>
+                                    <small>Yuqoridagi "Yangi agent" tugmasini bosing</small>
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Agent qo'shish modal -->
+<div class="modal fade" id="addAgentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="/agents/add" method="POST">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle"></i> Yangi agent</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-8">
+                            <label class="form-label">F.I.O *</label>
+                            <input type="text" class="form-control" name="full_name" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Kodi *</label>
+                            <input type="text" class="form-control" name="code" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Telefon</label>
+                            <input type="text" class="form-control" name="phone" placeholder="+998 XX XXX XX XX">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Hudud</label>
+                            <input type="text" class="form-control" name="region" placeholder="Toshkent">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Telegram ID</label>
+                            <input type="text" class="form-control" name="telegram_id" placeholder="@username yoki ID">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor qilish</button>
+                    <button type="submit" class="btn btn-success"><i class="bi bi-check-lg"></i> Saqlash</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,1333 @@
+﻿
+# --- Barcha importlar ---
+
+from fastapi import FastAPI, Request, Depends, HTTPException, Form
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
+from sqlalchemy.orm import Session
+from datetime import datetime, timedelta
+import uvicorn
+import barcode
+from barcode.writer import ImageWriter
+from PIL import Image
+import os
+from app.models.database import (
+    get_db, init_db, 
+    User, Product, Category, Unit, Warehouse, Stock,
+    Partner, Order, OrderItem, Payment, CashRegister,
+    Recipe, RecipeItem, Production, Employee, Salary,
+    Agent, AgentLocation, Route, RoutePoint, Visit,
+    Driver, DriverLocation, Delivery, PartnerLocation,
+    Purchase, PurchaseItem
+)
+
+app = FastAPI(title="TOTLI HOLVA", description="Biznes boshqaruv tizimi", version="1.0")
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+templates = Jinja2Templates(directory="app/templates")
+
+# ==========================================
+# MA'LUMOTLAR BO'LIMI
+# ==========================================
+@app.get("/info", response_class=HTMLResponse)
+async def info_index(request: Request):
+    return templates.TemplateResponse("info/index.html", {"request": request, "page_title": "Ma'lumotlar"})
+
+# Omborlar bo'limi
+@app.get("/info/warehouses", response_class=HTMLResponse)
+async def info_warehouses(request: Request, db: Session = Depends(get_db)):
+    warehouses = db.query(Warehouse).all()
+    return templates.TemplateResponse("info/warehouses.html", {"request": request, "warehouses": warehouses, "page_title": "Omborlar"})
+
+@app.post("/info/warehouses/add")
+async def info_warehouses_add(request: Request, name: str = Form(...), code: str = Form(...), address: str = Form(""), db: Session = Depends(get_db)):
+    warehouse = Warehouse(name=name, code=code, address=address)
+    db.add(warehouse)
+    db.commit()
+    return RedirectResponse(url="/info/warehouses", status_code=303)
+# --- MAHSULOT DETAIL VA BARCODE ---
+
+@app.get("/products/{product_id}", response_class=HTMLResponse)
+async def product_detail(request: Request, product_id: int, db: Session = Depends(get_db)):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        return HTMLResponse("<h3>Mahsulot topilmadi</h3>", status_code=404)
+    return templates.TemplateResponse("products/detail.html", {"request": request, "product": product})
+
+@app.get("/products/barcode/{product_id}")
+async def product_barcode(product_id: int, download: int = 0, db: Session = Depends(get_db)):
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product or not product.barcode:
+        return HTMLResponse("<h3>Shtixkod topilmadi</h3>", status_code=404)
+    # Barcode rasm faylini yaratish
+    barcode_path = f"app/static/images/products/barcode_{product.id}.png"
+    if not os.path.exists(barcode_path):
+        code128 = barcode.get('code128', product.barcode, writer=ImageWriter())
+        code128.save(barcode_path[:-4])
+    if download:
+        return FileResponse(barcode_path, media_type="image/png", filename=f"barcode_{product.code}.png")
+    return FileResponse(barcode_path, media_type="image/png")
+
+
+
+# ==========================================
+# ASOSIY SAHIFALAR
+# ==========================================
+
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request, db: Session = Depends(get_db)):
+    """Bosh sahifa - Dashboard"""
+    
+    # Statistika
+    stats = {
+        "tayyor_count": db.query(Product).filter(Product.type == "tayyor").count(),
+        "yarim_tayyor_count": db.query(Product).filter(Product.type == "yarim_tayyor").count(),
+        "hom_ashyo_count": db.query(Product).filter(Product.type == "hom_ashyo").count(),
+        "partners_count": db.query(Partner).count(),
+        "employees_count": db.query(Employee).count(),
+    }
+    
+    # Bugungi savdo
+    today = datetime.now().date()
+    today_sales = db.query(Order).filter(
+        Order.type == "sale",
+        Order.date >= today
+    ).all()
+    stats["today_sales"] = sum(o.total for o in today_sales)
+    stats["today_orders"] = len(today_sales)
+    
+    # Kassa qoldig'i
+    cash = db.query(CashRegister).first()
+    stats["cash_balance"] = cash.balance if cash else 0
+    
+    # Qarzdorlik
+    debtors = db.query(Partner).filter(Partner.balance > 0).all()
+    stats["total_debt"] = sum(p.balance for p in debtors)
+    
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+        "stats": stats,
+        "page_title": "Bosh sahifa"
+    })
+
+
+
+# ==========================================
+# TOVARLAR
+# ==========================================
+from fastapi import UploadFile, File
+from fastapi.responses import StreamingResponse
+import io
+import openpyxl
+
+# --- EXPORT PRODUCTS TO EXCEL ---
+@app.get("/products/export")
+async def export_products(db: Session = Depends(get_db)):
+    products = db.query(Product).all()
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Products"
+    ws.append(["ID", "Kod", "Nomi", "Turi", "Kategoriya", "O'lchov", "Sotish narxi", "Olish narxi"])
+    for p in products:
+        ws.append([
+            p.id, p.code, p.name, p.type,
+            p.category.name if p.category else "",
+            p.unit.name if p.unit else "",
+            p.sale_price, p.purchase_price
+        ])
+    stream = io.BytesIO()
+    wb.save(stream)
+    stream.seek(0)
+    return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=products.xlsx"})
+
+# --- IMPORT PRODUCTS FROM EXCEL ---
+@app.post("/products/import")
+async def import_products(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    contents = await file.read()
+    wb = openpyxl.load_workbook(io.BytesIO(contents))
+    ws = wb.active
+    rows = list(ws.iter_rows(min_row=2, values_only=True))
+    for row in rows:
+        code, name, type_, category_name, unit_name, sale_price, purchase_price = row[1:8]
+        # Kategoriya va o'lchov birligini topish yoki yaratish
+        category = db.query(Category).filter(Category.name == category_name).first()
+        if not category and category_name:
+            category = Category(name=category_name, code=category_name.lower(), type="product")
+            db.add(category)
+            db.commit()
+        unit = db.query(Unit).filter(Unit.name == unit_name).first()
+        if not unit and unit_name:
+            unit = Unit(name=unit_name, code=unit_name.lower())
+            db.add(unit)
+            db.commit()
+        # Mahsulotni qo'shish yoki yangilash
+        product = db.query(Product).filter(Product.code == code).first()
+        if not product:
+            product = Product(code=code)
+            db.add(product)
+        product.name = name
+        product.type = type_
+        product.category_id = category.id if category else None
+        product.unit_id = unit.id if unit else None
+        product.sale_price = sale_price or 0
+        product.purchase_price = purchase_price or 0
+        db.commit()
+    return RedirectResponse(url="/products", status_code=303)
+
+@app.get("/products", response_class=HTMLResponse)
+async def products_list(request: Request, type: str = "all", db: Session = Depends(get_db)):
+    """Tovarlar ro'yxati"""
+    query = db.query(Product)
+    if type == "tayyor":
+        query = query.filter(Product.type == "tayyor")
+    elif type == "yarim_tayyor":
+        query = query.filter(Product.type == "yarim_tayyor")
+    elif type == "hom_ashyo":
+        query = query.filter(Product.type == "hom_ashyo")
+    
+    products = query.all()
+    categories = db.query(Category).all()
+    units = db.query(Unit).all()
+    
+    return templates.TemplateResponse("products/list.html", {
+        "request": request,
+        "products": products,
+        "categories": categories,
+        "units": units,
+        "current_type": type,
+        "page_title": "Tovarlar"
+    })
+
+
+
+@app.post("/products/add")
+async def product_add(
+    request: Request,
+    name: str = Form(...),
+    type: str = Form(...),
+    category_id: int = Form(None),
+    unit_id: int = Form(None),
+    barcode: str = Form(None),
+    image: UploadFile = File(None),
+    db: Session = Depends(get_db)
+):
+    """Tovar qo'shish"""
+    image_filename = None
+    if image and image.filename:
+        import shutil, os
+        ext = image.filename.split('.')[-1]
+        # Временно используем имя на основе времени, код добавим после сохранения
+        image_filename = f"tmp_{int(datetime.now().timestamp())}.{ext}"
+        image_path = os.path.join("app/static/images/products", image_filename)
+        with open(image_path, "wb") as buffer:
+            shutil.copyfileobj(image.file, buffer)
+    product = Product(
+        name=name,
+        code=None,
+        type=type,
+        category_id=category_id,
+        unit_id=unit_id,
+        barcode=barcode,
+        image=image_filename
+    )
+    db.add(product)
+    db.commit()
+    # Генерируем код на основе id (например, P00001)
+    product.code = f"P{product.id:05d}"
+    db.commit()
+    # Если была картинка, переименуем файл с временного имени на имя с кодом
+    if image_filename:
+        import os
+        ext = image_filename.split('.')[-1]
+        new_image_filename = f"{product.code}.{ext}"
+        old_path = os.path.join("app/static/images/products", image_filename)
+        new_path = os.path.join("app/static/images/products", new_image_filename)
+        os.rename(old_path, new_path)
+        product.image = new_image_filename
+        db.commit()
+    return RedirectResponse(url="/products", status_code=303)
+
+
+# ==========================================
+# OMBOR
+# ==========================================
+
+@app.get("/warehouse", response_class=HTMLResponse)
+async def warehouse_list(request: Request, db: Session = Depends(get_db)):
+    """Ombor qoldiqlari"""
+    warehouses = db.query(Warehouse).all()
+    
+    # Qoldiqlar
+    stocks = db.query(Stock).join(Product).join(Warehouse).all()
+    
+    return templates.TemplateResponse("warehouse/list.html", {
+        "request": request,
+        "warehouses": warehouses,
+        "stocks": stocks,
+        "page_title": "Ombor"
+    })
+
+
+@app.get("/warehouse/movement", response_class=HTMLResponse)
+async def warehouse_movement(request: Request, db: Session = Depends(get_db)):
+    """Ombor harakatlari"""
+    products = db.query(Product).all()
+    warehouses = db.query(Warehouse).all()
+    
+    return templates.TemplateResponse("warehouse/movement.html", {
+        "request": request,
+        "products": products,
+        "warehouses": warehouses,
+        "page_title": "Ombor harakati"
+    })
+
+
+# ==========================================
+# MIJOZLAR
+# ==========================================
+
+@app.get("/partners", response_class=HTMLResponse)
+async def partners_list(request: Request, type: str = "all", db: Session = Depends(get_db)):
+    """Kontragentlar ro'yxati"""
+    query = db.query(Partner)
+    if type != "all":
+        query = query.filter(Partner.type == type)
+    
+    partners = query.all()
+    
+    return templates.TemplateResponse("partners/list.html", {
+        "request": request,
+        "partners": partners,
+        "current_type": type,
+        "page_title": "Kontragentlar"
+    })
+
+
+@app.post("/partners/add")
+async def partner_add(
+    request: Request,
+    name: str = Form(...),
+    type: str = Form(...),
+    phone: str = Form(""),
+    address: str = Form(""),
+    credit_limit: float = Form(0),
+    discount_percent: float = Form(0),
+    db: Session = Depends(get_db)
+):
+    """Kontragent qo'shish"""
+    partner = Partner(
+        name=name,
+        type=type,
+        phone=phone,
+        address=address,
+        credit_limit=credit_limit,
+        discount_percent=discount_percent
+    )
+    db.add(partner)
+    db.commit()
+    return RedirectResponse(url="/partners", status_code=303)
+
+
+# ==========================================
+# SAVDO
+# ==========================================
+
+@app.get("/sales", response_class=HTMLResponse)
+async def sales_list(request: Request, db: Session = Depends(get_db)):
+    """Sotuvlar ro'yxati"""
+    orders = db.query(Order).filter(Order.type == "sale").order_by(Order.date.desc()).limit(100).all()
+    
+    return templates.TemplateResponse("sales/list.html", {
+        "request": request,
+        "orders": orders,
+        "page_title": "Sotuvlar"
+    })
+
+
+@app.get("/sales/new", response_class=HTMLResponse)
+async def sales_new(request: Request, db: Session = Depends(get_db)):
+    """Yangi sotuv"""
+    products = db.query(Product).filter(Product.type.in_(["tayyor", "yarim_tayyor"]), Product.is_active == True).all()
+    partners = db.query(Partner).filter(Partner.type.in_(["customer", "both"])).all()
+    warehouses = db.query(Warehouse).all()
+    
+    return templates.TemplateResponse("sales/new.html", {
+        "request": request,
+        "products": products,
+        "partners": partners,
+        "warehouses": warehouses,
+        "page_title": "Yangi sotuv"
+    })
+
+
+@app.post("/sales/create")
+async def sales_create(
+    request: Request,
+    partner_id: int = Form(...),
+    warehouse_id: int = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Sotuv yaratish"""
+    # Yangi raqam generatsiya
+    last_order = db.query(Order).filter(Order.type == "sale").order_by(Order.id.desc()).first()
+    new_number = f"S-{datetime.now().strftime('%Y%m%d')}-{(last_order.id + 1) if last_order else 1:04d}"
+    
+    order = Order(
+        number=new_number,
+        type="sale",
+        partner_id=partner_id,
+        warehouse_id=warehouse_id,
+        status="draft"
+    )
+    db.add(order)
+    db.commit()
+    
+    return RedirectResponse(url=f"/sales/edit/{order.id}", status_code=303)
+
+
+# ==========================================
+# MOLIYA
+# ==========================================
+
+@app.get("/finance", response_class=HTMLResponse)
+async def finance(request: Request, db: Session = Depends(get_db)):
+    """Moliya - kassa"""
+    cash_registers = db.query(CashRegister).all()
+    
+    # So'nggi to'lovlar
+    payments = db.query(Payment).order_by(Payment.date.desc()).limit(50).all()
+    
+    # Bugungi statistika
+    today = datetime.now().date()
+    today_income = db.query(Payment).filter(
+        Payment.type == "income",
+        Payment.date >= today
+    ).all()
+    today_expense = db.query(Payment).filter(
+        Payment.type == "expense",
+        Payment.date >= today
+    ).all()
+    
+    stats = {
+        "today_income": sum(p.amount for p in today_income),
+        "today_expense": sum(p.amount for p in today_expense),
+    }
+    
+    return templates.TemplateResponse("finance/index.html", {
+        "request": request,
+        "cash_registers": cash_registers,
+        "payments": payments,
+        "stats": stats,
+        "page_title": "Moliya"
+    })
+
+
+# ==========================================
+# XODIMLAR
+# ==========================================
+
+@app.get("/employees", response_class=HTMLResponse)
+async def employees_list(request: Request, db: Session = Depends(get_db)):
+    """Xodimlar ro'yxati"""
+    employees = db.query(Employee).all()
+    
+    return templates.TemplateResponse("employees/list.html", {
+        "request": request,
+        "employees": employees,
+        "page_title": "Xodimlar"
+    })
+
+
+@app.post("/employees/add")
+async def employee_add(
+    request: Request,
+    full_name: str = Form(...),
+    code: str = Form(...),
+    position: str = Form(""),
+    department: str = Form(""),
+    phone: str = Form(""),
+    salary: float = Form(0),
+    db: Session = Depends(get_db)
+):
+    """Xodim qo'shish"""
+    employee = Employee(
+        full_name=full_name,
+        code=code,
+        position=position,
+        department=department,
+        phone=phone,
+        salary=salary
+    )
+    db.add(employee)
+    db.commit()
+    return RedirectResponse(url="/employees", status_code=303)
+
+
+# ==========================================
+# HISOBOTLAR
+# ==========================================
+
+@app.get("/reports", response_class=HTMLResponse)
+async def reports(request: Request):
+    """Hisobotlar"""
+    return templates.TemplateResponse("reports/index.html", {
+        "request": request,
+        "page_title": "Hisobotlar"
+    })
+
+
+@app.get("/reports/sales", response_class=HTMLResponse)
+async def report_sales(
+    request: Request,
+    start_date: str = None,
+    end_date: str = None,
+    db: Session = Depends(get_db)
+):
+    """Savdo hisoboti"""
+    if not start_date:
+        start_date = datetime.now().replace(day=1).strftime("%Y-%m-%d")
+    if not end_date:
+        end_date = datetime.now().strftime("%Y-%m-%d")
+    
+    orders = db.query(Order).filter(
+        Order.type == "sale",
+        Order.date >= start_date,
+        Order.date <= end_date + " 23:59:59"
+    ).all()
+    
+    total = sum(o.total for o in orders)
+    
+    return templates.TemplateResponse("reports/sales.html", {
+        "request": request,
+        "orders": orders,
+        "total": total,
+        "start_date": start_date,
+        "end_date": end_date,
+        "page_title": "Savdo hisoboti"
+    })
+
+
+@app.get("/reports/stock", response_class=HTMLResponse)
+async def report_stock(request: Request, db: Session = Depends(get_db)):
+    """Qoldiq hisoboti"""
+    stocks = db.query(Stock).join(Product).all()
+    
+    return templates.TemplateResponse("reports/stock.html", {
+        "request": request,
+        "stocks": stocks,
+        "page_title": "Qoldiq hisoboti"
+    })
+
+
+@app.get("/reports/debts", response_class=HTMLResponse)
+async def report_debts(request: Request, db: Session = Depends(get_db)):
+    """Qarzdorlik hisoboti"""
+    debtors = db.query(Partner).filter(Partner.balance != 0).all()
+    
+    total_debt = sum(p.balance for p in debtors if p.balance > 0)
+    total_credit = sum(abs(p.balance) for p in debtors if p.balance < 0)
+    
+    return templates.TemplateResponse("reports/debts.html", {
+        "request": request,
+        "debtors": debtors,
+        "total_debt": total_debt,
+        "total_credit": total_credit,
+        "page_title": "Qarzdorlik hisoboti"
+    })
+
+
+# ==========================================
+# ISHLAB CHIQARISH
+# ==========================================
+
+@app.get("/production", response_class=HTMLResponse)
+async def production_dashboard(request: Request, db: Session = Depends(get_db)):
+    """Ishlab chiqarish bosh sahifasi"""
+    today = datetime.now().date()
+    
+    # Statistika
+    total_recipes = db.query(Recipe).filter(Recipe.is_active == True).count()
+    today_productions = db.query(Production).filter(
+        Production.date >= today,
+        Production.status == "completed"
+    ).all()
+    today_quantity = sum(p.quantity for p in today_productions)
+    
+    pending_productions = db.query(Production).filter(
+        Production.status == "draft"
+    ).count()
+    
+    # Oxirgi ishlab chiqarishlar
+    recent_productions = db.query(Production).order_by(
+        Production.date.desc()
+    ).limit(10).all()
+    
+    # Retseptlar
+    recipes = db.query(Recipe).filter(Recipe.is_active == True).all()
+    
+    return templates.TemplateResponse("production/index.html", {
+        "request": request,
+        "total_recipes": total_recipes,
+        "today_quantity": today_quantity,
+        "pending_productions": pending_productions,
+        "recent_productions": recent_productions,
+        "recipes": recipes,
+        "page_title": "Ishlab chiqarish"
+    })
+
+
+@app.get("/production/recipes", response_class=HTMLResponse)
+async def production_recipes(request: Request, db: Session = Depends(get_db)):
+    """Retseptlar ro'yxati"""
+    recipes = db.query(Recipe).all()
+    products = db.query(Product).filter(Product.type.in_(["tayyor", "yarim_tayyor"])).all()
+    materials = db.query(Product).filter(Product.type == "hom_ashyo").all()
+    
+    return templates.TemplateResponse("production/recipes.html", {
+        "request": request,
+        "recipes": recipes,
+        "products": products,
+        "materials": materials,
+        "page_title": "Retseptlar"
+    })
+
+
+@app.get("/production/recipes/{recipe_id}", response_class=HTMLResponse)
+async def production_recipe_detail(request: Request, recipe_id: int, db: Session = Depends(get_db)):
+    """Retsept tafsilotlari"""
+    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Retsept topilmadi")
+    
+    materials = db.query(Product).filter(Product.type == "material").all()
+    
+    return templates.TemplateResponse("production/recipe_detail.html", {
+        "request": request,
+        "recipe": recipe,
+        "materials": materials,
+        "page_title": f"Retsept: {recipe.name}"
+    })
+
+
+@app.post("/production/recipes/add")
+async def add_recipe(
+    request: Request,
+    name: str = Form(...),
+    product_id: int = Form(...),
+    output_quantity: float = Form(1),
+    description: str = Form(""),
+    db: Session = Depends(get_db)
+):
+    """Yangi retsept qo'shish"""
+    recipe = Recipe(
+        name=name,
+        product_id=product_id,
+        output_quantity=output_quantity,
+        description=description,
+        is_active=True
+    )
+    db.add(recipe)
+    db.commit()
+    return RedirectResponse(url=f"/production/recipes/{recipe.id}", status_code=303)
+
+
+@app.post("/production/recipes/{recipe_id}/add-item")
+async def add_recipe_item(
+    recipe_id: int,
+    product_id: int = Form(...),
+    quantity: float = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Retseptga xom ashyo qo'shish"""
+    item = RecipeItem(
+        recipe_id=recipe_id,
+        product_id=product_id,
+        quantity=quantity
+    )
+    db.add(item)
+    db.commit()
+    return RedirectResponse(url=f"/production/recipes/{recipe_id}", status_code=303)
+
+
+@app.get("/production/orders", response_class=HTMLResponse)
+async def production_orders(request: Request, db: Session = Depends(get_db)):
+    """Ishlab chiqarish buyurtmalari"""
+    productions = db.query(Production).order_by(Production.date.desc()).all()
+    
+    return templates.TemplateResponse("production/orders.html", {
+        "request": request,
+        "productions": productions,
+        "page_title": "Ishlab chiqarish buyurtmalari"
+    })
+
+
+@app.get("/production/new", response_class=HTMLResponse)
+async def production_new(request: Request, db: Session = Depends(get_db)):
+    """Yangi ishlab chiqarish"""
+    recipes = db.query(Recipe).filter(Recipe.is_active == True).all()
+    warehouses = db.query(Warehouse).all()
+    
+    return templates.TemplateResponse("production/new_order.html", {
+        "request": request,
+        "recipes": recipes,
+        "warehouses": warehouses,
+        "page_title": "Yangi ishlab chiqarish"
+    })
+
+
+
+from typing import List
+
+@app.post("/production/create")
+async def create_production(
+    request: Request,
+    recipe_id: int = Form(...),
+    warehouse_id: int = Form(...),
+    quantity: float = Form(...),
+    note: str = Form(""),
+    material_product_id: List[int] = Form([]),
+    material_quantity: List[float] = Form([]),
+    db: Session = Depends(get_db)
+):
+    """Ishlab chiqarish yaratish (tarkibni qo'lda o'zgartirish bilan)"""
+    today = datetime.now()
+    count = db.query(Production).filter(
+        Production.date >= today.replace(hour=0, minute=0, second=0)
+    ).count()
+    number = f"PR-{today.strftime('%Y%m%d')}-{str(count + 1).zfill(3)}"
+
+    production = Production(
+        number=number,
+        recipe_id=recipe_id,
+        warehouse_id=warehouse_id,
+        quantity=quantity,
+        note=note,
+        status="draft"
+    )
+    db.add(production)
+    db.flush()  # production.id olish uchun
+
+    # Foydalanuvchi o'zgartirgan tarkibni saqlash (Production tarkibi sifatida)
+    # (Agar kerak bo'lsa, alohida ProductionMaterial model qilish mumkin, hozircha RecipeItem orqali)
+    for pid, qty in zip(material_product_id, material_quantity):
+        if pid and qty:
+            db.add(RecipeItem(recipe_id=production.id, product_id=pid, quantity=qty))
+
+    db.commit()
+    return RedirectResponse(url="/production/orders", status_code=303)
+
+
+@app.post("/production/{prod_id}/complete")
+async def complete_production(prod_id: int, db: Session = Depends(get_db)):
+    """Ishlab chiqarishni yakunlash"""
+    production = db.query(Production).filter(Production.id == prod_id).first()
+    if not production:
+        raise HTTPException(status_code=404, detail="Topilmadi")
+    
+    recipe = db.query(Recipe).filter(Recipe.id == production.recipe_id).first()
+    
+    # Xom ashyolarni ayirish
+    for item in recipe.items:
+        stock = db.query(Stock).filter(
+            Stock.warehouse_id == production.warehouse_id,
+            Stock.product_id == item.product_id
+        ).first()
+        if stock:
+            stock.quantity -= item.quantity * production.quantity
+    
+    # Tayyor mahsulotni qo'shish
+    product_stock = db.query(Stock).filter(
+        Stock.warehouse_id == production.warehouse_id,
+        Stock.product_id == recipe.product_id
+    ).first()
+    
+    if product_stock:
+        product_stock.quantity += production.quantity * recipe.output_quantity
+    else:
+        new_stock = Stock(
+            warehouse_id=production.warehouse_id,
+            product_id=recipe.product_id,
+            quantity=production.quantity * recipe.output_quantity
+        )
+        db.add(new_stock)
+    
+    production.status = "completed"
+    db.commit()
+    return RedirectResponse(url="/production/orders", status_code=303)
+
+
+@app.post("/production/{prod_id}/cancel")
+async def cancel_production(prod_id: int, db: Session = Depends(get_db)):
+    """Ishlab chiqarishni bekor qilish"""
+    production = db.query(Production).filter(Production.id == prod_id).first()
+    if not production:
+        raise HTTPException(status_code=404, detail="Topilmadi")
+    
+    production.status = "cancelled"
+    db.commit()
+    return RedirectResponse(url="/production/orders", status_code=303)
+
+
+# ==========================================
+# API (Telegram bot uchun)
+# ==========================================
+
+@app.get("/api/stats")
+async def api_stats(db: Session = Depends(get_db)):
+    """Statistika API"""
+    today = datetime.now().date()
+    
+    today_sales = db.query(Order).filter(
+        Order.type == "sale",
+        Order.date >= today
+    ).all()
+    
+    cash = db.query(CashRegister).first()
+    
+    return {
+        "today_sales": sum(o.total for o in today_sales),
+        "today_orders": len(today_sales),
+        "cash_balance": cash.balance if cash else 0,
+        "products_count": db.query(Product).count(),
+        "partners_count": db.query(Partner).count(),
+    }
+
+
+@app.get("/api/products")
+async def api_products(db: Session = Depends(get_db)):
+    """Tovarlar API"""
+    products = db.query(Product).filter(Product.is_active == True).all()
+    return [{"id": p.id, "name": p.name, "code": p.code, "price": p.sale_price} for p in products]
+
+
+@app.get("/api/partners")
+async def api_partners(db: Session = Depends(get_db)):
+    """Kontragentlar API"""
+    partners = db.query(Partner).filter(Partner.is_active == True).all()
+    return [{"id": p.id, "name": p.name, "balance": p.balance} for p in partners]
+
+
+# ==========================================
+# AGENTLAR
+# ==========================================
+
+@app.get("/agents", response_class=HTMLResponse)
+async def agents_list(request: Request, db: Session = Depends(get_db)):
+    """Agentlar ro'yxati"""
+    agents = db.query(Agent).all()
+    
+    # Har bir agent uchun oxirgi lokatsiya
+    for agent in agents:
+        last_loc = db.query(AgentLocation).filter(
+            AgentLocation.agent_id == agent.id
+        ).order_by(AgentLocation.recorded_at.desc()).first()
+        agent.last_location = last_loc
+        
+        # Bugungi tashriflar
+        today = datetime.now().date()
+        agent.today_visits = db.query(Visit).filter(
+            Visit.agent_id == agent.id,
+            Visit.visit_date >= today
+        ).count()
+    
+    return templates.TemplateResponse("agents/list.html", {
+        "request": request,
+        "agents": agents,
+        "page_title": "Agentlar"
+    })
+
+
+@app.post("/agents/add")
+async def agent_add(
+    request: Request,
+    full_name: str = Form(...),
+    phone: str = Form(""),
+    region: str = Form(""),
+    telegram_id: str = Form(""),
+    db: Session = Depends(get_db)
+):
+    """Agent qo'shish"""
+    agent = Agent(
+        full_name=full_name,
+        phone=phone,
+        region=region,
+        telegram_id=telegram_id
+    )
+    db.add(agent)
+    db.commit()
+    return RedirectResponse(url="/agents", status_code=303)
+
+
+@app.get("/agents/{agent_id}", response_class=HTMLResponse)
+async def agent_detail(request: Request, agent_id: int, db: Session = Depends(get_db)):
+    """Agent tafsilotlari"""
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent topilmadi")
+    
+    # Oxirgi lokatsiyalar
+    locations = db.query(AgentLocation).filter(
+        AgentLocation.agent_id == agent_id
+    ).order_by(AgentLocation.recorded_at.desc()).limit(50).all()
+    
+    # Tashriflar
+    visits = db.query(Visit).filter(
+        Visit.agent_id == agent_id
+    ).order_by(Visit.visit_date.desc()).limit(30).all()
+    
+    return templates.TemplateResponse("agents/detail.html", {
+        "request": request,
+        "agent": agent,
+        "locations": locations,
+        "visits": visits,
+        "page_title": f"Agent: {agent.full_name}"
+    })
+
+
+# ==========================================
+# YETKAZIB BERISH
+# ==========================================
+
+@app.get("/delivery", response_class=HTMLResponse)
+async def delivery_list(request: Request, db: Session = Depends(get_db)):
+    """Yetkazib berish ro'yxati"""
+    drivers = db.query(Driver).all()
+    
+    # Har bir haydovchi uchun statistika
+    for driver in drivers:
+        last_loc = db.query(DriverLocation).filter(
+            DriverLocation.driver_id == driver.id
+        ).order_by(DriverLocation.recorded_at.desc()).first()
+        driver.last_location = last_loc
+        
+        # Bugungi yetkazilganlar
+        today = datetime.now().date()
+        driver.today_deliveries = db.query(Delivery).filter(
+            Delivery.driver_id == driver.id,
+            Delivery.created_at >= today
+        ).count()
+        
+        driver.pending_deliveries = db.query(Delivery).filter(
+            Delivery.driver_id == driver.id,
+            Delivery.status == "pending"
+        ).count()
+    
+    # Barcha yetkazishlar
+    deliveries = db.query(Delivery).order_by(Delivery.created_at.desc()).limit(50).all()
+    
+    return templates.TemplateResponse("delivery/list.html", {
+        "request": request,
+        "drivers": drivers,
+        "deliveries": deliveries,
+        "page_title": "Yetkazib berish"
+    })
+
+
+@app.post("/drivers/add")
+async def driver_add(
+    request: Request,
+    full_name: str = Form(...),
+    phone: str = Form(""),
+    vehicle_number: str = Form(""),
+    vehicle_type: str = Form(""),
+    telegram_id: str = Form(""),
+    db: Session = Depends(get_db)
+):
+    """Haydovchi qo'shish"""
+    driver = Driver(
+        full_name=full_name,
+        phone=phone,
+        vehicle_number=vehicle_number,
+        vehicle_type=vehicle_type,
+        telegram_id=telegram_id
+    )
+    db.add(driver)
+    db.commit()
+    return RedirectResponse(url="/delivery", status_code=303)
+
+
+@app.get("/delivery/{driver_id}", response_class=HTMLResponse)
+async def driver_detail(request: Request, driver_id: int, db: Session = Depends(get_db)):
+    """Haydovchi tafsilotlari"""
+    driver = db.query(Driver).filter(Driver.id == driver_id).first()
+    if not driver:
+        raise HTTPException(status_code=404, detail="Haydovchi topilmadi")
+    
+    # Lokatsiya tarixi
+    locations = db.query(DriverLocation).filter(
+        DriverLocation.driver_id == driver_id
+    ).order_by(DriverLocation.recorded_at.desc()).limit(100).all()
+    
+    # Yetkazishlar
+    deliveries = db.query(Delivery).filter(
+        Delivery.driver_id == driver_id
+    ).order_by(Delivery.created_at.desc()).limit(30).all()
+    
+    return templates.TemplateResponse("delivery/detail.html", {
+        "request": request,
+        "driver": driver,
+        "locations": locations,
+        "deliveries": deliveries,
+        "page_title": f"Haydovchi: {driver.full_name}"
+    })
+
+
+# ==========================================
+# XARITA
+# ==========================================
+
+@app.get("/map", response_class=HTMLResponse)
+async def map_view(request: Request, db: Session = Depends(get_db)):
+    """Xarita - barcha joylashuvlar"""
+    
+    # Agentlar
+    agents = db.query(Agent).filter(Agent.is_active == True).all()
+    agent_markers = []
+    for agent in agents:
+        last_loc = db.query(AgentLocation).filter(
+            AgentLocation.agent_id == agent.id
+        ).order_by(AgentLocation.recorded_at.desc()).first()
+        if last_loc:
+            agent_markers.append({
+                "id": agent.id,
+                "name": agent.full_name,
+                "type": "agent",
+                "lat": last_loc.latitude,
+                "lng": last_loc.longitude,
+                "time": last_loc.recorded_at.strftime("%H:%M")
+            })
+    
+    # Haydovchilar
+    drivers = db.query(Driver).filter(Driver.is_active == True).all()
+    driver_markers = []
+    for driver in drivers:
+        last_loc = db.query(DriverLocation).filter(
+            DriverLocation.driver_id == driver.id
+        ).order_by(DriverLocation.recorded_at.desc()).first()
+        if last_loc:
+            driver_markers.append({
+                "id": driver.id,
+                "name": driver.full_name,
+                "type": "driver",
+                "lat": last_loc.latitude,
+                "lng": last_loc.longitude,
+                "time": last_loc.recorded_at.strftime("%H:%M"),
+                "vehicle": driver.vehicle_number
+            })
+    
+    # Mijozlar
+    partners = db.query(Partner).filter(Partner.is_active == True).all()
+    partner_locations = db.query(PartnerLocation).all()
+    partner_markers = []
+    for loc in partner_locations:
+        partner = db.query(Partner).filter(Partner.id == loc.partner_id).first()
+        if partner and loc.latitude and loc.longitude:
+            partner_markers.append({
+                "id": loc.partner_id,
+                "name": partner.name,
+                "type": "partner",
+                "lat": loc.latitude,
+                "lng": loc.longitude,
+                "address": loc.address
+            })
+    
+    return templates.TemplateResponse("map/index.html", {
+        "request": request,
+        "agents": agents,
+        "drivers": drivers,
+        "partner_locations": partner_locations,
+        "agent_markers": agent_markers,
+        "driver_markers": driver_markers,
+        "partner_markers": partner_markers,
+        "page_title": "Xarita"
+    })
+
+
+# ==========================================
+# SUPERVAYZER DASHBOARD
+# ==========================================
+
+@app.get("/supervisor", response_class=HTMLResponse)
+async def supervisor_dashboard(request: Request, db: Session = Depends(get_db)):
+    """Supervayzer dashboard"""
+    today = datetime.now().date()
+    
+    # Agentlar statistikasi
+    total_agents = db.query(Agent).filter(Agent.is_active == True).count()
+    active_agents = 0
+    for agent in db.query(Agent).filter(Agent.is_active == True).all():
+        last_loc = db.query(AgentLocation).filter(
+            AgentLocation.agent_id == agent.id,
+            AgentLocation.recorded_at >= today
+        ).first()
+        if last_loc:
+            active_agents += 1
+    
+    # Bugungi tashriflar
+    today_visits = db.query(Visit).filter(Visit.visit_date >= today).count()
+    
+    # Bugungi buyurtmalar
+    today_orders = db.query(Order).filter(
+        Order.type == "sale",
+        Order.date >= today
+    ).all()
+    today_sales_sum = sum(o.total for o in today_orders)
+    
+    # Yetkazib berish statistikasi
+    total_drivers = db.query(Driver).filter(Driver.is_active == True).count()
+    pending_deliveries = db.query(Delivery).filter(Delivery.status == "pending").count()
+    today_delivered = db.query(Delivery).filter(
+        Delivery.status == "delivered",
+        Delivery.delivered_at >= today
+    ).count()
+    
+    # Agent reytingi (bugungi savdo bo'yicha)
+    agent_stats = []
+    for agent in db.query(Agent).filter(Agent.is_active == True).all():
+        visits = db.query(Visit).filter(
+            Visit.agent_id == agent.id,
+            Visit.visit_date >= today
+        ).count()
+        
+        # So'nggi lokatsiya
+        last_loc = db.query(AgentLocation).filter(
+            AgentLocation.agent_id == agent.id
+        ).order_by(AgentLocation.recorded_at.desc()).first()
+        
+        agent_stats.append({
+            "agent": agent,
+            "visits": visits,
+            "last_seen": last_loc.recorded_at if last_loc else None,
+            "is_online": last_loc and (datetime.now() - last_loc.recorded_at).seconds < 600 if last_loc else False
+        })
+    
+    # Eng faol agentlar
+    agent_stats.sort(key=lambda x: x["visits"], reverse=True)
+    
+    stats = {
+        "total_agents": total_agents,
+        "active_agents": active_agents,
+        "today_visits": today_visits,
+        "today_orders": len(today_orders),
+        "today_sales": today_sales_sum,
+        "total_drivers": total_drivers,
+        "pending_deliveries": pending_deliveries,
+        "today_delivered": today_delivered,
+    }
+    
+    # Barcha agentlar va haydovchilar
+    agents = db.query(Agent).filter(Agent.is_active == True).all()
+    drivers = db.query(Driver).filter(Driver.is_active == True).all()
+    
+    # Oxirgi tashriflar va yetkazishlar
+    recent_visits = db.query(Visit).order_by(Visit.visit_date.desc()).limit(10).all()
+    recent_deliveries = db.query(Delivery).order_by(Delivery.created_at.desc()).limit(10).all()
+    
+    return templates.TemplateResponse("supervisor/dashboard.html", {
+        "request": request,
+        "stats": stats,
+        "agents": agents,
+        "drivers": drivers,
+        "agent_stats": agent_stats[:10],
+        "recent_visits": recent_visits,
+        "recent_deliveries": recent_deliveries,
+        "page_title": "Supervayzer",
+        "now": datetime.now()
+    })
+
+
+# ==========================================
+# POST Routes - Agent va Driver qo'shish
+# ==========================================
+
+@app.post("/agents/add")
+async def add_agent(
+    request: Request,
+    full_name: str = Form(...),
+    phone: str = Form(None),
+    region: str = Form(None),
+    telegram_id: str = Form(None),
+    db: Session = Depends(get_db)
+):
+    """Yangi agent qo'shish"""
+    # Kod generatsiya
+    last_agent = db.query(Agent).order_by(Agent.id.desc()).first()
+    code = f"AG{str((last_agent.id if last_agent else 0) + 1).zfill(3)}"
+    
+    agent = Agent(
+        code=code,
+        full_name=full_name,
+        phone=phone,
+        region=region,
+        telegram_id=telegram_id,
+        is_active=True
+    )
+    db.add(agent)
+    db.commit()
+    return RedirectResponse(url="/agents", status_code=303)
+
+
+@app.post("/delivery/add-driver")
+async def add_driver(
+    request: Request,
+    full_name: str = Form(...),
+    phone: str = Form(None),
+    vehicle_type: str = Form(None),
+    vehicle_number: str = Form(None),
+    telegram_id: str = Form(None),
+    db: Session = Depends(get_db)
+):
+    """Yangi haydovchi qo'shish"""
+    # Kod generatsiya
+    last_driver = db.query(Driver).order_by(Driver.id.desc()).first()
+    code = f"DR{str((last_driver.id if last_driver else 0) + 1).zfill(3)}"
+    
+    driver = Driver(
+        code=code,
+        full_name=full_name,
+        phone=phone,
+        vehicle_type=vehicle_type,
+        vehicle_number=vehicle_number,
+        telegram_id=telegram_id,
+        is_active=True
+    )
+    db.add(driver)
+    db.commit()
+    return RedirectResponse(url="/delivery", status_code=303)
+
+
+@app.post("/delivery/add-order")
+async def add_delivery_order(
+    request: Request,
+    driver_id: int = Form(...),
+    order_number: str = Form(...),
+    delivery_address: str = Form(...),
+    notes: str = Form(None),
+    db: Session = Depends(get_db)
+):
+    """Yangi yetkazish buyurtmasi qo'shish"""
+    delivery = Delivery(
+        driver_id=driver_id,
+        order_number=order_number,
+        delivery_address=delivery_address,
+        notes=notes,
+        status="pending"
+    )
+    db.add(delivery)
+    db.commit()
+    return RedirectResponse(url=f"/delivery/{driver_id}", status_code=303)
+
+
+# ==========================================
+# GPS API (Mobil ilova uchun)
+# ==========================================
+
+@app.post("/api/agent/location")
+async def update_agent_location(
+    agent_code: str = Form(...),
+    latitude: float = Form(...),
+    longitude: float = Form(...),
+    accuracy: float = Form(0),
+    battery: int = Form(100),
+    db: Session = Depends(get_db)
+):
+    """Agent lokatsiyasini yangilash"""
+    agent = db.query(Agent).filter(Agent.code == agent_code).first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent topilmadi")
+    
+    location = AgentLocation(
+        agent_id=agent.id,
+        latitude=latitude,
+        longitude=longitude,
+        accuracy=accuracy,
+        battery=battery
+    )
+    db.add(location)
+    db.commit()
+    return {"status": "ok", "message": "Lokatsiya saqlandi"}
+
+
+@app.post("/api/driver/location")
+async def update_driver_location(
+    driver_code: str = Form(...),
+    latitude: float = Form(...),
+    longitude: float = Form(...),
+    speed: float = Form(0),
+    db: Session = Depends(get_db)
+):
+    """Haydovchi lokatsiyasini yangilash"""
+    driver = db.query(Driver).filter(Driver.code == driver_code).first()
+    if not driver:
+        raise HTTPException(status_code=404, detail="Haydovchi topilmadi")
+    
+    location = DriverLocation(
+        driver_id=driver.id,
+        latitude=latitude,
+        longitude=longitude,
+        speed=speed
+    )
+    db.add(location)
+    db.commit()
+    return {"status": "ok", "message": "Lokatsiya saqlandi"}
+
+
+@app.get("/api/agents/locations")
+async def get_agents_locations(db: Session = Depends(get_db)):
+    """Barcha agentlarning oxirgi joylashuvi"""
+    agents = db.query(Agent).filter(Agent.is_active == True).all()
+    result = []
+    for agent in agents:
+        last_loc = db.query(AgentLocation).filter(
+            AgentLocation.agent_id == agent.id
+        ).order_by(AgentLocation.recorded_at.desc()).first()
+        if last_loc:
+            result.append({
+                "id": agent.id,
+                "name": agent.full_name,
+                "code": agent.code,
+                "lat": last_loc.latitude,
+                "lng": last_loc.longitude,
+                "time": last_loc.recorded_at.isoformat(),
+                "battery": last_loc.battery
+            })
+    return result
+
+
+@app.get("/api/drivers/locations")
+async def get_drivers_locations(db: Session = Depends(get_db)):
+    """Barcha haydovchilarning oxirgi joylashuvi"""
+    drivers = db.query(Driver).filter(Driver.is_active == True).all()
+    result = []
+    for driver in drivers:
+        last_loc = db.query(DriverLocation).filter(
+            DriverLocation.driver_id == driver.id
+        ).order_by(DriverLocation.recorded_at.desc()).first()
+        if last_loc:
+            result.append({
+                "id": driver.id,
+                "name": driver.full_name,
+                "code": driver.code,
+                "vehicle": driver.vehicle_number,
+                "lat": last_loc.latitude,
+                "lng": last_loc.longitude,
+                "time": last_loc.recorded_at.isoformat(),
+                "speed": last_loc.speed
+            })
+    return result
+
+
+# ==========================================
+# STARTUP
+# ==========================================
+
+@app.on_event("startup")
+async def startup():
+    """Dastur ishga tushganda"""
+    init_db()
+    print("рџљЂ TOTLI HOLVA Business System ishga tushdi!")
+
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="0.0.0.0", port=8080, reload=False)
+

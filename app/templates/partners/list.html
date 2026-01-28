@@ -1,0 +1,347 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <a href="/partners"
+                        class="btn btn-sm {% if current_type == 'all' %}btn-primary{% else %}btn-outline-primary{% endif %}">Hammasi</a>
+                    <a href="/partners?type=customer"
+                        class="btn btn-sm {% if current_type == 'customer' %}btn-primary{% else %}btn-outline-primary{% endif %}">Mijozlar</a>
+                    <a href="/partners?type=supplier"
+                        class="btn btn-sm {% if current_type == 'supplier' %}btn-primary{% else %}btn-outline-primary{% endif %}">Yetkazib
+                        beruvchilar</a>
+                </div>
+                <div class="d-flex gap-2">
+                    <form action="/partners/export" method="get" style="display:inline;">
+                        <button type="submit" class="btn btn-outline-success btn-sm"><i
+                                class="bi bi-file-earmark-excel"></i> Export</button>
+                    </form>
+                    <a href="/partners/template" class="btn btn-outline-secondary btn-sm"
+                        title="Import uchun andoza yuklab olish">
+                        <i class="bi bi-download"></i> Andoza
+                    </a>
+                    <form action="/partners/import" method="post" enctype="multipart/form-data" style="display:inline;">
+                        <label class="btn btn-outline-primary btn-sm mb-0">
+                            <i class="bi bi-upload"></i> Import
+                            <input type="file" name="excel_file" accept=".xlsx" style="display:none;"
+                                onchange="this.form.submit()">
+                        </label>
+                    </form>
+                    <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addPartnerModal">
+                        <i class="bi bi-plus-circle"></i> Yangi kontragent
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th width="50">#</th>
+                            <th>Nomi</th>
+                            <th>Turi</th>
+                            <th>Telefon</th>
+                            <th>Manzil</th>
+                            <th>Balans</th>
+                            <th width="100">Amallar</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if partners %}
+                        {% for partner in partners %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td>
+                                <strong>{{ partner.name }}</strong>
+                                {% if partner.discount_percent > 0 %}
+                                <br><small class="text-success">{{ partner.discount_percent }}% chegirma</small>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if partner.type == 'customer' %}
+                                <span class="badge bg-primary">Mijoz</span>
+                                {% elif partner.type == 'supplier' %}
+                                <span class="badge bg-info">Yetkazib beruvchi</span>
+                                {% else %}
+                                <span class="badge bg-secondary">Ikkalasi</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ partner.phone or '-' }}</td>
+                            <td>{{ partner.address or '-' }}</td>
+                            <td>
+                                {% if partner.balance > 0 %}
+                                <span class="text-danger">{{ "{:,.0f}".format(partner.balance) }}</span>
+                                <small class="text-muted">qarzdor</small>
+                                {% elif partner.balance < 0 %} <span class="text-success">{{
+                                    "{:,.0f}".format(-partner.balance) }}</span>
+                                    <small class="text-muted">avans</small>
+                                    {% else %}
+                                    <span class="text-muted">0</span>
+                                    {% endif %}
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary" title="Tahrirlash"
+                                    onclick="editPartner({{ partner.id }}, `{{ partner.name }}`, `{{ partner.type }}`, `{{ partner.phone or '' }}`, `{{ partner.address or '' }}`, {{ partner.credit_limit }}, {{ partner.discount_percent }})">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" title="O'chirish"
+                                    onclick="deletePartner({{ partner.id }}, `{{ partner.name }}`)">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% else %}
+                        <tr>
+                            <td colspan="7" class="text-center text-muted py-5">
+                                <i class="bi bi-people fs-1 d-block mb-2"></i>
+                                Hozircha kontragentlar yo'q<br>
+                                <small>Yuqoridagi "Yangi kontragent" tugmasini bosing</small>
+                            </td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Kontragent qo'shish modal -->
+<div class="modal fade" id="addPartnerModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form action="/partners/add" method="POST">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle"></i> Yangi kontragent</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-9">
+                            <label class="form-label">Nomi *</label>
+                            <input type="text" class="form-control" name="name" required>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Turi *</label>
+                            <select class="form-select" name="type" required>
+                                <option value="customer">Mijoz</option>
+                                <option value="supplier">Yetkazib beruvchi</option>
+                                <option value="both">Ikkalasi</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Telefon</label>
+                            <input type="text" class="form-control" name="phone" placeholder="+998 XX XXX XX XX">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Manzil</label>
+                            <input type="text" class="form-control" name="address">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Kredit limiti</label>
+                            <input type="number" class="form-control" name="credit_limit" value="0" step="100000">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Chegirma %</label>
+                            <input type="number" class="form-control" name="discount_percent" value="0" step="0.5"
+                                max="100">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor qilish</button>
+                    <button type="submit" class="btn btn-success"><i class="bi bi-check-lg"></i> Saqlash</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Kontragent tahrirlash modal -->
+<div class="modal fade" id="editPartnerModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form id="editPartnerForm" method="POST">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil"></i> Kontragentni tahrirlash</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-12">
+                            <label class="form-label">Nomi *</label>
+                            <input type="text" class="form-control" name="name" id="edit_name" required>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label">Turi *</label>
+                            <select class="form-select" name="type" id="edit_type" required>
+                                <option value="customer">Mijoz</option>
+                                <option value="supplier">Yetkazib beruvchi</option>
+                                <option value="both">Ikkalasi</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Telefon</label>
+                            <input type="text" class="form-control" name="phone" id="edit_phone"
+                                placeholder="+998 XX XXX XX XX">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Manzil</label>
+                            <input type="text" class="form-control" name="address" id="edit_address">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Kredit limiti</label>
+                            <input type="number" class="form-control" name="credit_limit" id="edit_credit_limit"
+                                value="0" step="100000">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Chegirma %</label>
+                            <input type="number" class="form-control" name="discount_percent" id="edit_discount_percent"
+                                value="0" step="0.5" max="100">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor qilish</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Saqlash</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Yangi kontragent qo'shish
+    document.querySelector('#addPartnerModal form').addEventListener('submit', async function (e) {
+        e.preventDefault();
+
+        const formData = new FormData(this);
+
+        try {
+            const response = await fetch('/partners/add', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                showNotification('Kontragent muvaffaqiyatli saqlandi!', 'success');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1000);
+            } else {
+                const errorText = await response.text();
+                let errorMessage = 'Xatolik yuz berdi!';
+                if (errorText.includes('allaqachon mavjud')) {
+                    const match = errorText.match(/"detail":"([^"]+)"/);
+                    if (match) {
+                        errorMessage = match[1];
+                    }
+                }
+                showNotification(errorMessage, 'danger');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            showNotification('Tarmoq xatosi yuz berdi!', 'danger');
+        }
+    });
+
+    // Tahrirlash
+    document.querySelector('#editPartnerModal form').addEventListener('submit', async function (e) {
+        e.preventDefault();
+
+        const formData = new FormData(this);
+        const action = this.action;
+
+        try {
+            const response = await fetch(action, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                showNotification('Kontragent muvaffaqiyatli yangilandi!', 'success');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1000);
+            } else {
+                const errorText = await response.text();
+                let errorMessage = 'Xatolik yuz berdi!';
+                if (errorText.includes('allaqachon mavjud')) {
+                    const match = errorText.match(/"detail":"([^"]+)"/);
+                    if (match) {
+                        errorMessage = match[1];
+                    }
+                }
+                showNotification(errorMessage, 'danger');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            showNotification('Tarmoq xatosi yuz berdi!', 'danger');
+        }
+    });
+
+    function editPartner(id, name, type, phone, address, credit_limit, discount_percent) {
+        document.getElementById('editPartnerForm').action = '/partners/edit/' + id;
+        document.getElementById('edit_name').value = name;
+        document.getElementById('edit_type').value = type;
+        document.getElementById('edit_phone').value = phone;
+        document.getElementById('edit_address').value = address;
+        document.getElementById('edit_credit_limit').value = credit_limit;
+        document.getElementById('edit_discount_percent').value = discount_percent;
+
+        var modal = new bootstrap.Modal(document.getElementById('editPartnerModal'));
+        modal.show();
+    }
+
+    function deletePartner(id, name) {
+        if (confirm('Haqiqatan ham "' + name + '" kontragentni o\'chirmoqchimisiz?')) {
+            var form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/partners/delete/' + id;
+            document.body.appendChild(form);
+            form.submit();
+        }
+    }
+
+    // Notification ko'rsatish funksiyasi
+    function showNotification(message, type = 'info') {
+        let toastContainer = document.getElementById('toastContainer');
+        if (!toastContainer) {
+            toastContainer = document.createElement('div');
+            toastContainer.id = 'toastContainer';
+            toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
+            toastContainer.style.zIndex = '9999';
+            document.body.appendChild(toastContainer);
+        }
+
+        const toastId = 'toast_' + Date.now();
+        const toastHtml = `
+        <div id="${toastId}" class="toast align-items-center text-white bg-${type} border-0" role="alert">
+            <div class="d-flex">
+                <div class="toast-body">
+                    <i class="bi bi-${type === 'success' ? 'check-circle' : 'exclamation-triangle'}"></i>
+                    ${message}
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        </div>
+    `;
+
+        toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+
+        const toastElement = document.getElementById(toastId);
+        const toast = new bootstrap.Toast(toastElement, {
+            autohide: true,
+            delay: 5000
+        });
+        toast.show();
+
+        toastElement.addEventListener('hidden.bs.toast', function () {
+            toastElement.remove();
+        });
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- Kassa statistikasi -->
+<div class="row g-4 mb-4">
+    <div class="col-md-4">
+        <div class="stat-card">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <p>Bugungi kirim</p>
+                    <h3 class="text-success">{{ "{:,.0f}".format(stats.today_income) }}</h3>
+                </div>
+                <div class="icon green">
+                    <i class="bi bi-arrow-down-circle"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="stat-card">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <p>Bugungi chiqim</p>
+                    <h3 class="text-danger">{{ "{:,.0f}".format(stats.today_expense) }}</h3>
+                </div>
+                <div class="icon red">
+                    <i class="bi bi-arrow-up-circle"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="stat-card">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <p>Bugungi foyda</p>
+                    <h3 class="{% if stats.today_income - stats.today_expense >= 0 %}text-success{% else %}text-danger{% endif %}">
+                        {{ "{:,.0f}".format(stats.today_income - stats.today_expense) }}
+                    </h3>
+                </div>
+                <div class="icon blue">
+                    <i class="bi bi-graph-up"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Kassalar -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-safe"></i> Kassalar</span>
+                <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addPaymentModal">
+                    <i class="bi bi-plus-circle"></i> To'lov kiritish
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    {% if cash_registers %}
+                        {% for cash in cash_registers %}
+                        <div class="col-md-4">
+                            <div class="card border-{% if cash.balance >= 0 %}success{% else %}danger{% endif %}">
+                                <div class="card-body">
+                                    <h5>{{ cash.name }}</h5>
+                                    <h3 class="{% if cash.balance >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                        {{ "{:,.0f}".format(cash.balance) }}
+                                    </h3>
+                                    <small class="text-muted">{{ cash.type }}</small>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="col-12 text-center text-muted py-4">
+                            <i class="bi bi-safe fs-1 d-block mb-2"></i>
+                            Kassalar yo'q
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- So'nggi to'lovlar -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-clock-history"></i> So'nggi to'lovlar
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th width="50">#</th>
+                            <th>Sana</th>
+                            <th>Turi</th>
+                            <th>Kontragent</th>
+                            <th>Izoh</th>
+                            <th>Summa</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if payments %}
+                            {% for payment in payments %}
+                            <tr>
+                                <td>{{ loop.index }}</td>
+                                <td>{{ payment.date.strftime('%d.%m.%Y %H:%M') }}</td>
+                                <td>
+                                    {% if payment.type == 'income' %}
+                                        <span class="badge bg-success">Kirim</span>
+                                    {% else %}
+                                        <span class="badge bg-danger">Chiqim</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ payment.partner.name if payment.partner else '-' }}</td>
+                                <td>{{ payment.description or '-' }}</td>
+                                <td class="{% if payment.type == 'income' %}text-success{% else %}text-danger{% endif %} fw-bold">
+                                    {% if payment.type == 'income' %}+{% else %}-{% endif %}{{ "{:,.0f}".format(payment.amount) }}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="6" class="text-center text-muted py-5">
+                                    <i class="bi bi-cash-stack fs-1 d-block mb-2"></i>
+                                    Hozircha to'lovlar yo'q
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- To'lov kiritish modal -->
+<div class="modal fade" id="addPaymentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="/finance/payment" method="POST">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-cash"></i> To'lov kiritish</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label">Turi *</label>
+                            <div class="btn-group w-100" role="group">
+                                <input type="radio" class="btn-check" name="type" id="income" value="income" checked>
+                                <label class="btn btn-outline-success" for="income">Kirim</label>
+                                <input type="radio" class="btn-check" name="type" id="expense" value="expense">
+                                <label class="btn btn-outline-danger" for="expense">Chiqim</label>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Summa *</label>
+                            <input type="number" class="form-control form-control-lg" name="amount" required step="1000">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Kassa</label>
+                            <select class="form-select" name="cash_register_id">
+                                {% for cash in cash_registers %}
+                                <option value="{{ cash.id }}">{{ cash.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Izoh</label>
+                            <textarea class="form-control" name="description" rows="2"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor qilish</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Saqlash</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

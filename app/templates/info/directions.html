@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <h4><i class="bi bi-signpost-split"></i> Yo'nalishlar</h4>
+                <div class="d-flex gap-2">
+                    <form action="/info/directions/export" method="get" style="display:inline;">
+                        <button type="submit" class="btn btn-outline-success btn-sm"><i
+                                class="bi bi-file-earmark-excel"></i> Export</button>
+                    </form>
+                    <a href="/info/directions/template" class="btn btn-outline-secondary btn-sm"
+                        title="Import uchun andoza yuklab olish">
+                        <i class="bi bi-download"></i> Andoza
+                    </a>
+                    <form action="/info/directions/import" method="post" enctype="multipart/form-data"
+                        style="display:inline;">
+                        <label class="btn btn-outline-primary btn-sm mb-0">
+                            <i class="bi bi-upload"></i> Import
+                            <input type="file" name="excel_file" accept=".xlsx" style="display:none;"
+                                onchange="this.form.submit()">
+                        </label>
+                    </form>
+                    <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addDirectionModal">
+                        <i class="bi bi-plus-circle"></i> Yangi yo'nalish
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <table class="table table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th width="50">#</th>
+                        <th>Kod</th>
+                        <th>Nomi</th>
+                        <th>Tavsif</th>
+                        <th>Holati</th>
+                        <th width="100">Amallar</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if directions %}
+                    {% for dir in directions %}
+                    <tr>
+                        <td>{{ dir.id }}</td>
+                        <td><code>{{ dir.code }}</code></td>
+                        <td><strong>{{ dir.name }}</strong></td>
+                        <td><small class="text-muted">{{ dir.description or '-' }}</small></td>
+                        <td>
+                            {% if dir.is_active %}
+                            <span class="badge bg-success">Faol</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Nofaol</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" title="Tahrirlash" data-id="{{ dir.id }}"
+                                data-code="{{ dir.code }}" data-name="{{ dir.name }}"
+                                data-description="{{ dir.description or '' }}" onclick="editDirection(this)">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" title="O'chirish" data-id="{{ dir.id }}"
+                                data-name="{{ dir.name }}" onclick="deleteDirection(this)">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-5">
+                            <i class="bi bi-signpost-split fs-1 d-block mb-2"></i>
+                            Hozircha yo'nalishlar yo'q<br>
+                            <small>Yuqoridagi "Yangi yo'nalish" tugmasini bosing</small>
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Yangi yo'nalish qo'shish modal -->
+<div class="modal fade" id="addDirectionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="addDirectionForm">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle"></i> Yangi yo'nalish</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Kod *</label>
+                        <input type="text" class="form-control" name="code" placeholder="HALVA" required>
+                        <small class="text-muted">Masalan: HALVA, KONFET, SHIRINLIK</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Nomi *</label>
+                        <input type="text" class="form-control" name="name" placeholder="Halva ishlab chiqarish"
+                            required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Tavsif</label>
+                        <textarea class="form-control" name="description" rows="2"
+                            placeholder="Yo'nalish haqida qisqacha ma'lumot"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor qilish</button>
+                    <button type="submit" class="btn btn-success"><i class="bi bi-check-lg"></i> Saqlash</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Tahrirlash modal -->
+<div class="modal fade" id="editDirectionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="editDirectionForm" method="POST">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil"></i> Yo'nalishni tahrirlash</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Kod *</label>
+                        <input type="text" class="form-control" name="code" id="edit_code" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Nomi *</label>
+                        <input type="text" class="form-control" name="name" id="edit_name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Tavsif</label>
+                        <textarea class="form-control" name="description" id="edit_description" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor qilish</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Saqlash</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('addDirectionForm').addEventListener('submit', async function (e) {
+        e.preventDefault();
+        const formData = new FormData(this);
+
+        try {
+            const response = await fetch('/info/directions/add', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                showNotification('Yo\'nalish muvaffaqiyatli saqlandi!', 'success');
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                const errorText = await response.text();
+                let errorMessage = 'Xatolik yuz berdi!';
+                if (errorText.includes('allaqachon mavjud')) {
+                    const match = errorText.match(/"detail":"([^"]+)"/);
+                    if (match) errorMessage = match[1];
+                }
+                showNotification(errorMessage, 'danger');
+            }
+        } catch (error) {
+            showNotification('Tarmoq xatosi yuz berdi!', 'danger');
+        }
+    });
+
+    document.getElementById('editDirectionForm').addEventListener('submit', async function (e) {
+        e.preventDefault();
+        const formData = new FormData(this);
+
+        try {
+            const response = await fetch(this.action, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                showNotification('Yo\'nalish muvaffaqiyatli yangilandi!', 'success');
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                showNotification('Xatolik yuz berdi!', 'danger');
+            }
+        } catch (error) {
+            showNotification('Tarmoq xatosi yuz berdi!', 'danger');
+        }
+    });
+
+    function editDirection(btn) {
+        const id = btn.dataset.id;
+        const code = btn.dataset.code;
+        const name = btn.dataset.name;
+        const description = btn.dataset.description;
+
+        document.getElementById('editDirectionForm').action = '/info/directions/edit/' + id;
+        document.getElementById('edit_code').value = code;
+        document.getElementById('edit_name').value = name;
+        document.getElementById('edit_description').value = description;
+        new bootstrap.Modal(document.getElementById('editDirectionModal')).show();
+    }
+
+    function deleteDirection(btn) {
+        const id = btn.dataset.id;
+        const name = btn.dataset.name;
+        if (confirm('Haqiqatan ham "' + name + '" yo\'nalishni o\'chirmoqchimisiz?')) {
+            var form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/info/directions/delete/' + id;
+            document.body.appendChild(form);
+            form.submit();
+        }
+    }
+
+    function showNotification(message, type = 'info') {
+        let toastContainer = document.getElementById('toastContainer');
+        if (!toastContainer) {
+            toastContainer = document.createElement('div');
+            toastContainer.id = 'toastContainer';
+            toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
+            toastContainer.style.zIndex = '9999';
+            document.body.appendChild(toastContainer);
+        }
+
+        const toastId = 'toast_' + Date.now();
+        const toastHtml = `
+        <div id="${toastId}" class="toast align-items-center text-white bg-${type} border-0" role="alert">
+            <div class="d-flex">
+                <div class="toast-body">
+                    <i class="bi bi-${type === 'success' ? 'check-circle' : 'exclamation-triangle'}"></i>
+                    ${message}
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        </div>
+    `;
+
+        toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+        const toastElement = document.getElementById(toastId);
+        const toast = new bootstrap.Toast(toastElement, { autohide: true, delay: 5000 });
+        toast.show();
+        toastElement.addEventListener('hidden.bs.toast', function () {
+            toastElement.remove();
+        });
+    }
+</script>
+{% endblock %}

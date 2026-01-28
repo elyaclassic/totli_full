@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <div>
+        <a href="/production" class="btn btn-outline-secondary btn-sm mb-2">
+            <i class="bi bi-arrow-left"></i> Orqaga
+        </a>
+        <h4><i class="bi bi-plus-circle"></i> Yangi ishlab chiqarish</h4>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-gear"></i> Ishlab chiqarish ma'lumotlari
+            </div>
+            <div class="card-body">
+                <form method="POST" action="/production/create" id="productionForm">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Retsept <span class="text-danger">*</span></label>
+                            <select class="form-select" name="recipe_id" id="recipeSelect" required onchange="updateRecipeInfo()">
+                                <option value="">Tanlang...</option>
+                                {% for recipe in recipes %}
+                                <option value="{{ recipe.id }}" 
+                                        data-items="{{ recipe.items|length }}"
+                                        data-output="{{ recipe.output_quantity }}">
+                                    {{ recipe.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Ombor <span class="text-danger">*</span></label>
+                            <select class="form-select" name="warehouse_id" required>
+                                {% for wh in warehouses %}
+                                <option value="{{ wh.id }}">{{ wh.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Ishlab chiqarish miqdori (kg) <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control form-control-lg" name="quantity" 
+                                   id="quantityInput" value="10" step="0.1" min="0.1" required 
+                                   onchange="calculateMaterials()">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Chiqish miqdori</label>
+                            <div class="form-control form-control-lg bg-light" id="outputQuantity">
+                                - kg
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Izoh</label>
+                        <textarea class="form-control" name="note" rows="2" placeholder="Qo'shimcha ma'lumotlar..."></textarea>
+                    </div>
+                    
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-success btn-lg">
+                            <i class="bi bi-play-fill"></i> Ishlab chiqarishni boshlash
+                        </button>
+                        <a href="/production" class="btn btn-outline-secondary btn-lg">Bekor qilish</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <!-- Retsept ma'lumoti -->
+        <div class="card" id="recipeInfoCard" style="display: none;">
+            <div class="card-header">
+                <i class="bi bi-journal-text"></i> Retsept ma'lumoti
+            </div>
+            <div class="card-body">
+                <div id="recipeInfo">
+                    <p class="text-muted">Retsept tanlang</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Kerakli xom ashyolar -->
+        <div class="card mt-3" id="materialsCard" style="display: none;">
+            <div class="card-header">
+                <i class="bi bi-list-check"></i> Kerakli xom ashyolar
+            </div>
+            <div class="card-body p-0">
+                <ul class="list-group list-group-flush" id="materialsList">
+                </ul>
+            </div>
+        </div>
+        
+        <!-- Qisqa yo'riqnoma -->
+        <div class="card mt-3 border-info">
+            <div class="card-body">
+                <h6><i class="bi bi-info-circle text-info"></i> Yo'riqnoma</h6>
+                <ol class="small mb-0">
+                    <li>Retseptni tanlang</li>
+                    <li>Miqdorni kiriting (kg)</li>
+                    <li>Omborni tanlang</li>
+                    <li>"Boshlash" tugmasini bosing</li>
+                    <li>Yakunlagandan keyin "Yakunlash" bosing</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+var recipes = {
+    {% for recipe in recipes %}
+    {{ recipe.id }}: {
+        name: "{{ recipe.name }}",
+        output: {{ recipe.output_quantity }},
+        items: [
+            {% for item in recipe.items %}
+            {
+                name: "{{ item.product.name if item.product else 'Noma\'lum' }}",
+                quantity: {{ item.quantity }}
+            }{% if not loop.last %},{% endif %}
+            {% endfor %}
+        ]
+    }{% if not loop.last %},{% endif %}
+    {% endfor %}
+};
+
+function updateRecipeInfo() {
+    var select = document.getElementById('recipeSelect');
+    var recipeId = select.value;
+    
+    if (recipeId && recipes[recipeId]) {
+        var recipe = recipes[recipeId];
+        
+        document.getElementById('recipeInfoCard').style.display = 'block';
+        document.getElementById('materialsCard').style.display = 'block';
+        
+        document.getElementById('recipeInfo').innerHTML = 
+            '<strong>' + recipe.name + '</strong><br>' +
+            '<span class="text-muted">' + recipe.items.length + ' xom ashyo</span><br>' +
+            '<span class="text-muted">Chiqish: ' + recipe.output + ' kg</span>';
+        
+        calculateMaterials();
+    } else {
+        document.getElementById('recipeInfoCard').style.display = 'none';
+        document.getElementById('materialsCard').style.display = 'none';
+    }
+}
+
+function calculateMaterials() {
+    var recipeId = document.getElementById('recipeSelect').value;
+    var quantity = parseFloat(document.getElementById('quantityInput').value) || 0;
+    
+    if (recipeId && recipes[recipeId]) {
+        var recipe = recipes[recipeId];
+        
+        // Chiqish miqdori
+        document.getElementById('outputQuantity').textContent = 
+            (quantity * recipe.output).toFixed(1) + ' kg';
+        
+        // Xom ashyolar (editable)
+        var html = '';
+        recipe.items.forEach(function(item, idx) {
+            var needed = (item.quantity * quantity).toFixed(2);
+            html += `<li class="list-group-item d-flex align-items-center gap-2">
+                <input type="hidden" name="material_product_id[]" value="${item.product_id || ''}">
+                <span class="flex-grow-1">${item.name}</span>
+                <input type="number" step="0.01" min="0" name="material_quantity[]" value="${needed}" class="form-control form-control-sm" style="width:90px; text-align:right;">
+                <span class="ms-1">kg</span>
+            </li>`;
+        });
+        document.getElementById('materialsList').innerHTML = html || 
+            '<li class="list-group-item text-muted">Tarkib bo\'sh</li>';
+    }
+}
+</script>
+{% endblock %}

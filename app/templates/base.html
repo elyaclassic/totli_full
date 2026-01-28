@@ -1,0 +1,505 @@
+﻿<!DOCTYPE html>
+<html lang="uz">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page_title }} - TOTLI HOLVA</title>
+
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Google Fonts -->
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Righteous&display=swap"
+        rel="stylesheet">
+
+    <style>
+        :root {
+            --primary-color: #017449;
+            /* Brand Green */
+            --secondary-color: #017449;
+            /* Solid Green for sidebar (was gradient) */
+            --accent-color: #FFB50D;
+            /* Brand Yellow */
+            --bg-color: #f8f9fa;
+            /* Light Background */
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8f9fa;
+        }
+
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            width: 260px;
+            background-color: var(--primary-color);
+            padding-top: 0;
+            z-index: 1000;
+            overflow-y: auto;
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        /* Hide scrollbar for Chrome, Safari and Opera */
+        .sidebar::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* Hide scrollbar for IE, Edge and Firefox */
+        .sidebar {
+            -ms-overflow-style: none;
+            /* IE and Edge */
+            scrollbar-width: none;
+            /* Firefox */
+        }
+
+        .sidebar .logo {
+            padding: 10px;
+            text-align: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background-color: var(--primary-color);
+        }
+
+        .sidebar .logo h4 {
+            color: white;
+            margin: 0;
+            font-weight: 400;
+            font-family: 'Righteous', cursive;
+            letter-spacing: 1px;
+            font-size: 1.5rem;
+        }
+
+        .sidebar .logo span {
+            color: var(--accent-color);
+            font-size: 12px;
+            font-family: 'Inter', sans-serif;
+            letter-spacing: 0.5px;
+        }
+
+        .sidebar .nav-link {
+            color: rgba(255, 255, 255, 0.8);
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            transition: all 0.3s;
+            border-left: 3px solid transparent;
+            font-family: 'Righteous', cursive;
+            /* Apply Brand Font */
+            letter-spacing: 0.5px;
+        }
+
+        .sidebar .nav-link:hover,
+        .sidebar .nav-link.active {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border-left-color: var(--accent-color);
+        }
+
+        .sidebar .nav-link i {
+            margin-right: 10px;
+            font-size: 1.1rem;
+        }
+
+        .sidebar .nav-link .ms-auto {
+            margin-left: auto;
+            font-size: 0.8rem;
+            transition: transform 0.3s;
+        }
+
+        .sidebar .nav-link[aria-expanded="true"] .ms-auto {
+            transform: rotate(180deg);
+        }
+
+        .sidebar .collapse .nav-link {
+            padding: 8px 15px;
+            font-size: 0.9rem;
+            border-left: none;
+        }
+
+        .sidebar .collapse .nav-link:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .main-content {
+            margin-left: 260px;
+            padding: 20px;
+        }
+
+        .top-bar {
+            background: white;
+            padding: 15px 25px;
+            margin: -20px -20px 20px -20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .top-bar h5 {
+            margin: 0;
+            font-weight: 400;
+            font-family: 'Righteous', cursive;
+            color: var(--primary-color);
+            font-size: 1.5rem;
+        }
+
+        .card {
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+        }
+
+        .card-header {
+            background: white;
+            border-bottom: 1px solid #eee;
+            font-weight: 600;
+            padding: 15px 20px;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+            transition: transform 0.3s;
+            min-height: 120px;
+            height: 100%;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-card .icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+
+        .stat-card .icon.blue {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .stat-card .icon.green {
+            background: #e8f5e9;
+            color: #388e3c;
+        }
+
+        .stat-card .icon.orange {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+
+        .stat-card .icon.purple {
+            background: #f3e5f5;
+            color: #7b1fa2;
+        }
+
+        .stat-card .icon.red {
+            background: #ffebee;
+            color: #d32f2f;
+        }
+
+        .stat-card h3 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin: 10px 0 5px 0;
+        }
+
+        .stat-card p {
+            color: #666;
+            margin: 0;
+            font-size: 0.9rem;
+        }
+
+        .btn-primary {
+            background: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+
+        .btn-primary:hover {
+            background: var(--secondary-color);
+            border-color: var(--secondary-color);
+        }
+
+        .table {
+            margin: 0;
+        }
+
+        .table th {
+            font-weight: 600;
+            color: #555;
+            border-top: none;
+        }
+
+        .badge-status {
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+        }
+
+        .badge-success {
+            background: #e8f5e9;
+            color: #388e3c;
+        }
+
+        .badge-warning {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+
+        .badge-danger {
+            background: #ffebee;
+            color: #d32f2f;
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 100%;
+                height: auto;
+                position: relative;
+            }
+
+            .main-content {
+                margin-left: 0;
+            }
+        }
+    </style>
+
+    {% block extra_css %}{% endblock %}
+</head>
+
+<body>
+    <!-- Sidebar -->
+    <nav class="sidebar">
+        <div class="logo">
+            <img src="/static/images/logo_circle.png" alt="TOTLI HOLVA"
+                style="width: 240px; height: 240px; object-fit: contain; display: block;">
+            <span
+                style="color: #FFB50D; font-size: 14px; text-transform: uppercase; letter-spacing: 2px; display: block; margin-top: 5px; font-weight: 700;">SWEETS</span>
+        </div>
+
+        <ul class="nav flex-column mt-3">
+            <li class="nav-item">
+                <a class="nav-link {% if page_title == 'Bosh sahifa' %}active{% endif %}" href="/">
+                    <i class="bi bi-house-door"></i> Bosh sahifa
+                </a>
+            </li>
+
+            <!-- MA'LUMOTLAR (Reference Data) -->
+            <li class="nav-item mt-2">
+                <small class="text-light opacity-50 px-3">MA'LUMOTLAR</small>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-bs-toggle="collapse" href="#malumotlarMenu" role="button"
+                    aria-expanded="false">
+                    <i class="bi bi-database"></i> Ma'lumotnomalar
+                    <i class="bi bi-chevron-down ms-auto"></i>
+                </a>
+                <div class="collapse" id="malumotlarMenu">
+                    <ul class="nav flex-column ms-3">
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'O\'lchov birliklari' in page_title %}active{% endif %}"
+                                href="/info/units">
+                                <i class="bi bi-rulers"></i> O'lchov birliklari
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'Kategoriyalar' in page_title %}active{% endif %}"
+                                href="/info/categories">
+                                <i class="bi bi-tags"></i> Kategoriyalar
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'Ombor' in page_title %}active{% endif %}" href="/info/warehouses">
+                                <i class="bi bi-building"></i> Omborlar
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'Kassalar' in page_title %}active{% endif %}" href="/info/cash">
+                                <i class="bi bi-cash-stack"></i> Kassalar
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'Bo\'limlar' in page_title %}active{% endif %}"
+                                href="/info/departments">
+                                <i class="bi bi-diagram-3"></i> Bo'limlar
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'Yo\'nalishlar' in page_title %}active{% endif %}"
+                                href="/info/directions">
+                                <i class="bi bi-signpost-split"></i> Yo'nalishlar
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'Foydalanuvchi' in page_title %}active{% endif %}"
+                                href="/info/users">
+                                <i class="bi bi-person-circle"></i> Foydalanuvchilar
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'Tovarlar' in page_title %}active{% endif %}" href="/products">
+                                <i class="bi bi-box-seam"></i> Tovarlar
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'Kontragent' in page_title %}active{% endif %}" href="/partners">
+                                <i class="bi bi-people"></i> Kontragentlar
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'Xodimlar' in page_title %}active{% endif %}" href="/employees">
+                                <i class="bi bi-person-badge"></i> Xodimlar
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'Retsept' in page_title %}active{% endif %}"
+                                href="/production/recipes">
+                                <i class="bi bi-journal-text"></i> Retseptlar
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </li>
+
+            <!-- ASOSIY MODULLAR (Main Modules) -->
+            <li class="nav-item mt-3">
+                <small class="text-light opacity-50 px-3">ASOSIY MODULLAR</small>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'Ishlab chiqarish' in page_title %}active{% endif %}" href="/production">
+                    <i class="bi bi-gear-fill"></i> Ishlab chiqarish
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'Tovar kirim' in page_title %}active{% endif %}" href="/purchases">
+                    <i class="bi bi-box-arrow-in-down"></i> Tovar kirimi
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'Sotuv' in page_title %}active{% endif %}" href="/sales">
+                    <i class="bi bi-cart3"></i> Sotuvlar
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'Ombor' in page_title and 'Omborlar' not in page_title %}active{% endif %}"
+                    href="/warehouse">
+                    <i class="bi bi-box"></i> Ombor qoldiqlari
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'Moliya' in page_title %}active{% endif %}" href="/finance">
+                    <i class="bi bi-wallet2"></i> Moliya
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'Hisobot' in page_title %}active{% endif %}" href="/reports">
+                    <i class="bi bi-bar-chart-line"></i> Hisobotlar
+                </a>
+            </li>
+
+            <!-- SalesDoc funksiyalari -->
+            <li class="nav-item mt-3">
+                <small class="text-light opacity-50 px-3">MONITORING</small>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'Agent' in page_title %}active{% endif %}" href="/agents">
+                    <i class="bi bi-person-walking"></i> Agentlar
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'Yetkazish' in page_title %}active{% endif %}" href="/delivery">
+                    <i class="bi bi-truck"></i> Yetkazish
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'Xarita' in page_title %}active{% endif %}" href="/map">
+                    <i class="bi bi-geo-alt"></i> Xarita
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'Supervayzer' in page_title %}active{% endif %}" href="/supervisor">
+                    <i class="bi bi-binoculars"></i> Supervayzer
+                </a>
+            </li>
+        </ul>
+
+        <!-- User Profile Section -->
+        <div class="mt-auto px-3 pb-3">
+            <hr style="border-color: rgba(255,255,255,0.1);">
+            {% if current_user %}
+            <div class="d-flex align-items-center mb-2">
+                <div class="flex-grow-1">
+                    <small class="text-light d-block"><i class="bi bi-person-circle"></i> {{ current_user.full_name
+                        }}</small>
+                    <small class="text-light opacity-50">{{ current_user.role }}</small>
+                </div>
+            </div>
+            <a href="/logout" class="btn btn-sm btn-outline-light w-100">
+                <i class="bi bi-box-arrow-right"></i> Chiqish
+            </a>
+            {% endif %}
+            <small class="text-light opacity-50 d-block mt-2">
+                <i class="bi bi-clock"></i> {{ now.strftime('%d.%m.%Y %H:%M') if now is defined else '' }}
+            </small>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="top-bar">
+            <h5>{{ page_title }}</h5>
+            <div class="d-flex align-items-center">
+                {% if current_user %}
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" id="userDropdown"
+                        data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-person-circle"></i> {{ current_user.full_name }}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+                        <li><a class="dropdown-item" href="#"><i class="bi bi-person"></i> Profil</a></li>
+                        <li><a class="dropdown-item" href="#"><i class="bi bi-gear"></i> Sozlamalar</a></li>
+                        <li>
+                            <hr class="dropdown-divider">
+                        </li>
+                        <li><a class="dropdown-item text-danger" href="/logout"><i class="bi bi-box-arrow-right"></i>
+                                Chiqish</a></li>
+                    </ul>
+                </div>
+                {% else %}
+                <span class="me-3 text-muted">
+                    <i class="bi bi-person-circle"></i> Mehmon
+                </span>
+                {% endif %}
+            </div>
+        </div>
+
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    {% block extra_js %}{% endblock %}
+</body>
+
+</html>

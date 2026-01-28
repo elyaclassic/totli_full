@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <!-- Haydovchi info -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body text-center">
+                <div class="mb-3">
+                    <i class="bi bi-truck" style="font-size: 4rem; color: var(--primary-color);"></i>
+                </div>
+                <h4>{{ driver.full_name }}</h4>
+                <p class="text-muted">{{ driver.vehicle_type or 'Transport' }} - {{ driver.vehicle_number or '' }}</p>
+                
+                <div class="d-flex justify-content-around mb-3">
+                    <div>
+                        <strong>{{ driver.phone or '-' }}</strong><br>
+                        <small class="text-muted">Telefon</small>
+                    </div>
+                </div>
+                
+                {% if driver.telegram_id %}
+                <a href="https://t.me/{{ driver.telegram_id }}" class="btn btn-info btn-sm" target="_blank">
+                    <i class="bi bi-telegram"></i> Telegram
+                </a>
+                {% endif %}
+                
+                <a href="/map?driver={{ driver.id }}" class="btn btn-primary btn-sm">
+                    <i class="bi bi-geo-alt"></i> Xaritada ko'rish
+                </a>
+            </div>
+        </div>
+        
+        <!-- Mini xarita -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <i class="bi bi-geo-alt"></i> Hozirgi joylashuv
+            </div>
+            <div class="card-body p-0">
+                {% if locations %}
+                <div id="miniMap" style="height: 200px;"></div>
+                {% else %}
+                <div class="text-center text-muted py-4">
+                    <i class="bi bi-geo-alt fs-1"></i><br>
+                    Lokatsiya ma'lumoti yo'q
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Statistika -->
+    <div class="col-md-8">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <p>Kutilmoqda</p>
+                    <h3 class="text-warning">{{ deliveries|selectattr('status', 'eq', 'pending')|list|length }}</h3>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <p>Yo'lda</p>
+                    <h3 class="text-primary">{{ deliveries|selectattr('status', 'eq', 'in_transit')|list|length }}</h3>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <p>Yetkazildi</p>
+                    <h3 class="text-success">{{ deliveries|selectattr('status', 'eq', 'delivered')|list|length }}</h3>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <p>Jami</p>
+                    <h3>{{ deliveries|length }}</h3>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Yetkazishlar -->
+        <div class="card mt-3">
+            <div class="card-header d-flex justify-content-between">
+                <span><i class="bi bi-box-seam"></i> Yetkazishlar</span>
+                <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addDeliveryModal">
+                    <i class="bi bi-plus"></i> Yangi
+                </button>
+            </div>
+            <div class="card-body p-0" style="max-height: 400px; overflow-y: auto;">
+                <table class="table table-sm">
+                    <thead class="table-light sticky-top">
+                        <tr>
+                            <th>#</th>
+                            <th>Manzil</th>
+                            <th>Holat</th>
+                            <th>Vaqt</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for d in deliveries %}
+                        <tr>
+                            <td>{{ d.id }}</td>
+                            <td>{{ d.delivery_address }}</td>
+                            <td>
+                                {% if d.status == 'pending' %}
+                                <span class="badge bg-warning">Kutilmoqda</span>
+                                {% elif d.status == 'picked_up' %}
+                                <span class="badge bg-info">Olindi</span>
+                                {% elif d.status == 'in_transit' %}
+                                <span class="badge bg-primary">Yo'lda</span>
+                                {% elif d.status == 'delivered' %}
+                                <span class="badge bg-success">Yetkazildi</span>
+                                {% else %}
+                                <span class="badge bg-danger">Bekor</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ d.created_at.strftime('%d.%m %H:%M') }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="4" class="text-center text-muted py-3">Yetkazishlar yo'q</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Lokatsiya tarixi -->
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-clock-history"></i> Harakat tarixi
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-sm">
+            <thead class="table-light">
+                <tr>
+                    <th>Vaqt</th>
+                    <th>Koordinatalar</th>
+                    <th>Tezlik</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for loc in locations[:20] %}
+                <tr>
+                    <td>{{ loc.recorded_at.strftime('%d.%m %H:%M') }}</td>
+                    <td>
+                        <small>{{ "%.5f"|format(loc.latitude) }}, {{ "%.5f"|format(loc.longitude) }}</small>
+                    </td>
+                    <td>
+                        {% if loc.speed %}
+                        {{ "%.0f"|format(loc.speed) }} km/h
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="3" class="text-center text-muted py-3">Harakat ma'lumoti yo'q</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Yangi yetkazish modali -->
+<div class="modal fade" id="addDeliveryModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="/delivery/add-order">
+                <input type="hidden" name="driver_id" value="{{ driver.id }}">
+                <div class="modal-header">
+                    <h5 class="modal-title">Yangi yetkazish</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Buyurtma raqami</label>
+                        <input type="text" class="form-control" name="order_number" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Yetkazish manzili</label>
+                        <textarea class="form-control" name="delivery_address" rows="2" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Izoh</label>
+                        <textarea class="form-control" name="notes" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor qilish</button>
+                    <button type="submit" class="btn btn-primary">Yaratish</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+{% if locations %}
+<script>
+    var map = L.map('miniMap').setView([{{ locations[0].latitude }}, {{ locations[0].longitude }}], 14);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap'
+    }).addTo(map);
+    
+    // Oxirgi joylashuv markeri
+    var truckIcon = L.divIcon({
+        html: '<i class="bi bi-truck-front-fill" style="font-size: 24px; color: #0d6efd;"></i>',
+        iconSize: [30, 30],
+        className: 'truck-marker'
+    });
+    
+    L.marker([{{ locations[0].latitude }}, {{ locations[0].longitude }}], {icon: truckIcon})
+        .addTo(map)
+        .bindPopup('<b>{{ driver.full_name }}</b><br>{{ locations[0].recorded_at.strftime("%H:%M") }}');
+</script>
+{% endif %}
+{% endblock %}

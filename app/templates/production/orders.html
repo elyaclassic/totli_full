@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <h4><i class="bi bi-clipboard-check"></i> Ishlab chiqarish buyurtmalari</h4>
+    <a href="/production/new" class="btn btn-primary">
+        <i class="bi bi-plus"></i> Yangi buyurtma
+    </a>
+</div>
+
+<!-- Filtrlar -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-secondary active" onclick="filterStatus('all')">
+                Barchasi ({{ productions|length }})
+            </button>
+            <button class="btn btn-sm btn-outline-warning" onclick="filterStatus('draft')">
+                Kutilmoqda ({{ productions|selectattr('status', 'eq', 'draft')|list|length }})
+            </button>
+            <button class="btn btn-sm btn-outline-success" onclick="filterStatus('completed')">
+                Yakunlangan ({{ productions|selectattr('status', 'eq', 'completed')|list|length }})
+            </button>
+            <button class="btn btn-sm btn-outline-danger" onclick="filterStatus('cancelled')">
+                Bekor qilingan ({{ productions|selectattr('status', 'eq', 'cancelled')|list|length }})
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Jadval -->
+<div class="card">
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Raqam</th>
+                    <th>Sana</th>
+                    <th>Retsept</th>
+                    <th>Miqdor</th>
+                    <th>Ombor</th>
+                    <th>Holat</th>
+                    <th>Amallar</th>
+                </tr>
+            </thead>
+            <tbody id="productionTable">
+                {% for prod in productions %}
+                <tr data-status="{{ prod.status }}">
+                    <td><strong>{{ prod.number }}</strong></td>
+                    <td>{{ prod.date.strftime('%d.%m.%Y %H:%M') }}</td>
+                    <td>
+                        {% if prod.recipe_id %}
+                        <a href="/production/recipes/{{ prod.recipe_id }}">Retsept #{{ prod.recipe_id }}</a>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td>
+                        <strong>{{ "%.1f"|format(prod.quantity) }} kg</strong>
+                    </td>
+                    <td>
+                        {% if prod.warehouse_id %}
+                        Ombor #{{ prod.warehouse_id }}
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if prod.status == 'completed' %}
+                        <span class="badge bg-success">Yakunlandi</span>
+                        {% elif prod.status == 'draft' %}
+                        <span class="badge bg-warning">Kutilmoqda</span>
+                        {% else %}
+                        <span class="badge bg-danger">Bekor</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if prod.status == 'draft' %}
+                        <form method="POST" action="/production/{{ prod.id }}/complete" style="display: inline;">
+                            <button type="submit" class="btn btn-sm btn-success" title="Yakunlash">
+                                <i class="bi bi-check-lg"></i>
+                            </button>
+                        </form>
+                        <form method="POST" action="/production/{{ prod.id }}/cancel" style="display: inline;">
+                            <button type="submit" class="btn btn-sm btn-danger" title="Bekor qilish">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </form>
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="7" class="text-center text-muted py-4">
+                        <i class="bi bi-inbox fs-1"></i><br>
+                        Ishlab chiqarish buyurtmalari yo'q
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+function filterStatus(status) {
+    var rows = document.querySelectorAll('#productionTable tr[data-status]');
+    rows.forEach(function(row) {
+        if (status === 'all' || row.dataset.status === status) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+    
+    // Active button
+    document.querySelectorAll('.card-body .btn').forEach(function(btn) {
+        btn.classList.remove('active');
+    });
+    event.target.classList.add('active');
+}
+</script>
+{% endblock %}

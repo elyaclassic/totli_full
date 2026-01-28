@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-person-badge"></i> Xodimlar ro'yxati</span>
+                <div class="d-flex gap-2">
+                    <form action="/employees/export" method="get" style="display:inline;">
+                        <button type="submit" class="btn btn-outline-success btn-sm"><i
+                                class="bi bi-file-earmark-excel"></i> Export</button>
+                    </form>
+                    <a href="/employees/template" class="btn btn-outline-secondary btn-sm"
+                        title="Import uchun andoza yuklab olish">
+                        <i class="bi bi-download"></i> Andoza
+                    </a>
+                    <form action="/employees/import" method="post" enctype="multipart/form-data"
+                        style="display:inline;">
+                        <label class="btn btn-outline-primary btn-sm mb-0">
+                            <i class="bi bi-upload"></i> Import
+                            <input type="file" name="excel_file" accept=".xlsx" style="display:none;"
+                                onchange="this.form.submit()">
+                        </label>
+                    </form>
+                    <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addEmployeeModal">
+                        <i class="bi bi-plus-circle"></i> Yangi xodim
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th width="50">#</th>
+                            <th>Kodi</th>
+                            <th>F.I.O</th>
+                            <th>Lavozimi</th>
+                            <th>Bo'lim</th>
+                            <th>Telefon</th>
+                            <th>Oylik</th>
+                            <th width="100">Amallar</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if employees %}
+                        {% for emp in employees %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td><code>{{ emp.code }}</code></td>
+                            <td>
+                                <strong>{{ emp.full_name }}</strong>
+                                {% if emp.hire_date %}
+                                <br><small class="text-muted">{{ emp.hire_date.strftime('%d.%m.%Y') }} dan</small>
+                                {% endif %}
+                            </td>
+                            <td>{{ emp.position or '-' }}</td>
+                            <td>{{ emp.department or '-' }}</td>
+                            <td>{{ emp.phone or '-' }}</td>
+                            <td class="text-success">{{ "{:,.0f}".format(emp.salary) }}</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary" title="Tahrirlash">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" title="O'chirish">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% else %}
+                        <tr>
+                            <td colspan="8" class="text-center text-muted py-5">
+                                <i class="bi bi-people fs-1 d-block mb-2"></i>
+                                Hozircha xodimlar yo'q<br>
+                                <small>Yuqoridagi "Yangi xodim" tugmasini bosing</small>
+                            </td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Xodim qo'shish modal -->
+<div class="modal fade" id="addEmployeeModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form action="/employees/add" method="POST">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle"></i> Yangi xodim</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">F.I.O *</label>
+                            <input type="text" class="form-control" name="full_name" required>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Kodi *</label>
+                            <input type="text" class="form-control" name="code" required>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Oylik</label>
+                            <input type="number" class="form-control" name="salary" value="0" step="100000">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Lavozimi</label>
+                            <input type="text" class="form-control" name="position">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Bo'lim</label>
+                            <input type="text" class="form-control" name="department">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Telefon</label>
+                            <input type="text" class="form-control" name="phone" placeholder="+998 XX XXX XX XX">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor qilish</button>
+                    <button type="submit" class="btn btn-success"><i class="bi bi-check-lg"></i> Saqlash</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
