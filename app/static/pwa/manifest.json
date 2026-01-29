@@ -1,0 +1,22 @@
+{
+    "name": "TOTLI HOLVA Agent Tracker",
+    "short_name": "Agent Tracker",
+    "description": "GPS tracking va buyurtmalarni boshqarish ilovasi",
+    "start_url": "/static/pwa/login.html",
+    "display": "standalone",
+    "background_color": "#017449",
+    "theme_color": "#017449",
+    "orientation": "portrait",
+    "icons": [
+        {
+            "src": "/static/images/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "/static/images/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ]
+}

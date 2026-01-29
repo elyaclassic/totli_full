@@ -95,6 +95,19 @@
                 </div>
                 <div class="modal-body">
                     <div class="row g-3">
+                        <!-- Xodim turi -->
+                        <div class="col-md-12">
+                            <label class="form-label">Xodim turi *</label>
+                            <select class="form-select" name="employee_type" id="employeeType" required
+                                onchange="toggleEmployeeFields()">
+                                <option value="regular">Oddiy xodim</option>
+                                <option value="agent">Agent (PWA)</option>
+                                <option value="driver">Haydovchi (PWA)</option>
+                            </select>
+                            <small class="text-muted">Agent va Haydovchilar PWA orqali tizimga kirishlari mumkin</small>
+                        </div>
+
+                        <!-- Asosiy ma'lumotlar -->
                         <div class="col-md-6">
                             <label class="form-label">F.I.O *</label>
                             <input type="text" class="form-control" name="full_name" required>
@@ -107,20 +120,81 @@
                             <label class="form-label">Oylik</label>
                             <input type="number" class="form-control" name="salary" value="0" step="100000">
                         </div>
-                        <div class="col-md-4">
+
+                        <!-- Oddiy xodim uchun -->
+                        <div class="col-md-4 regular-fields">
                             <label class="form-label">Lavozimi</label>
                             <input type="text" class="form-control" name="position">
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-4 regular-fields">
                             <label class="form-label">Bo'lim</label>
                             <input type="text" class="form-control" name="department">
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-4 regular-fields">
                             <label class="form-label">Telefon</label>
                             <input type="text" class="form-control" name="phone" placeholder="+998 XX XXX XX XX">
                         </div>
+
+                        <!-- Agent/Haydovchi uchun -->
+                        <div class="col-md-6 pwa-fields" style="display:none;">
+                            <label class="form-label">Telefon (Login uchun) *</label>
+                            <input type="text" class="form-control" name="pwa_phone" placeholder="+998901234567">
+                            <small class="text-muted">PWA'ga kirish uchun telefon raqam</small>
+                        </div>
+                        <div class="col-md-6 pwa-fields" style="display:none;">
+                            <label class="form-label">Parol *</label>
+                            <input type="password" class="form-control" name="pwa_password" placeholder="Parol">
+                            <small class="text-muted">PWA'ga kirish uchun parol</small>
+                        </div>
+
+                        <!-- Faqat Haydovchi uchun -->
+                        <div class="col-md-6 driver-fields" style="display:none;">
+                            <label class="form-label">Mashina raqami *</label>
+                            <input type="text" class="form-control" name="vehicle_number" placeholder="01 A 123 BC">
+                        </div>
+                        <div class="col-md-6 driver-fields" style="display:none;">
+                            <label class="form-label">Mashina turi</label>
+                            <select class="form-select" name="vehicle_type">
+                                <option value="car">Yengil mashina</option>
+                                <option value="van">Furgon</option>
+                                <option value="truck">Yuk mashinasi</option>
+                            </select>
+                        </div>
+
+                        <!-- Holat -->
+                        <div class="col-md-12 pwa-fields" style="display:none;">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" name="is_active" id="isActive" checked>
+                                <label class="form-check-label" for="isActive">
+                                    Faol (PWA'ga kirish ruxsati)
+                                </label>
+                            </div>
+                        </div>
                     </div>
                 </div>
+                <script>
+                    function toggleEmployeeFields() {
+                        const type = document.getElementById('employeeType').value;
+                        const regularFields = document.querySelectorAll('.regular-fields');
+                        const pwaFields = document.querySelectorAll('.pwa-fields');
+                        const driverFields = document.querySelectorAll('.driver-fields');
+
+                        // Hide all
+                        regularFields.forEach(el => el.style.display = 'none');
+                        pwaFields.forEach(el => el.style.display = 'none');
+                        driverFields.forEach(el => el.style.display = 'none');
+
+                        // Show based on type
+                        if (type === 'regular') {
+                            regularFields.forEach(el => el.style.display = 'block');
+                        } else if (type === 'agent' || type === 'driver') {
+                            pwaFields.forEach(el => el.style.display = 'block');
+                            if (type === 'driver') {
+                                driverFields.forEach(el => el.style.display = 'block');
+                            }
+                        }
+                    }
+                </script>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor qilish</button>
                     <button type="submit" class="btn btn-success"><i class="bi bi-check-lg"></i> Saqlash</button>

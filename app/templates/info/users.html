@@ -98,18 +98,75 @@
                         <input type="text" class="form-control" name="full_name" required>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Rol</label>
-                        <select class="form-select" name="role">
-                            <option value="user">Foydalanuvchi</option>
-                            <option value="manager">Menejer</option>
-                            <option value="admin">Administrator</option>
-                        </select>
+                        <label class="form-label">Telefon</label>
+                        <input type="text" class="form-control" name="phone" placeholder="+998901234567">
+                        <small class="text-muted">ERP foydalanuvchilar uchun</small>
                     </div>
+                    <div class="mb-3">
+                        <label class="form-label">Rol *</label>
+                        <select class="form-select" name="role" id="userRole" onchange="toggleUserFields()" required>
+                            <optgroup label="ERP Foydalanuvchilar">
+                                <option value="user">Foydalanuvchi</option>
+                                <option value="manager">Menejer</option>
+                                <option value="admin">Administrator</option>
+                            </optgroup>
+                            <optgroup label="PWA Foydalanuvchilar">
+                                <option value="agent">Agent (PWA)</option>
+                                <option value="driver">Haydovchi (PWA)</option>
+                            </optgroup>
+                        </select>
+                        <small class="text-muted">Agent va Haydovchilar mobil ilovadan foydalanadi</small>
+                    </div>
+
+                    <!-- PWA uchun qo'shimcha maydonlar -->
+                    <div id="pwaFields" style="display:none;">
+                        <div class="mb-3">
+                            <label class="form-label">Telefon (PWA login) *</label>
+                            <input type="text" class="form-control" name="pwa_phone" placeholder="+998901234567">
+                            <small class="text-muted">Mobil ilovaga kirish uchun</small>
+                        </div>
+
+                        <!-- Faqat haydovchi uchun -->
+                        <div id="driverFields" style="display:none;">
+                            <div class="mb-3">
+                                <label class="form-label">Mashina raqami *</label>
+                                <input type="text" class="form-control" name="vehicle_number" placeholder="01 A 123 BC">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Mashina turi</label>
+                                <select class="form-select" name="vehicle_type">
+                                    <option value="car">Yengil mashina</option>
+                                    <option value="van">Furgon</option>
+                                    <option value="truck">Yuk mashinasi</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="mb-3 form-check">
                         <input type="checkbox" class="form-check-input" name="is_active" checked>
                         <label class="form-check-label">Faol</label>
                     </div>
                 </div>
+                <script>
+                    function toggleUserFields() {
+                        const role = document.getElementById('userRole').value;
+                        const pwaFields = document.getElementById('pwaFields');
+                        const driverFields = document.getElementById('driverFields');
+
+                        if (role === 'agent' || role === 'driver') {
+                            pwaFields.style.display = 'block';
+                            if (role === 'driver') {
+                                driverFields.style.display = 'block';
+                            } else {
+                                driverFields.style.display = 'none';
+                            }
+                        } else {
+                            pwaFields.style.display = 'none';
+                            driverFields.style.display = 'none';
+                        }
+                    }
+                </script>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor qilish</button>
                     <button type="submit" class="btn btn-primary">Saqlash</button>
@@ -192,6 +249,24 @@
         document.getElementById('edit_role').value = role;
         document.getElementById('edit_is_active').checked = isActive;
         new bootstrap.Modal(document.getElementById('editUserModal')).show();
+    }
+
+    function toggleUserFields() {
+        const role = document.getElementById('userRole').value;
+        const pwaFields = document.getElementById('pwaFields');
+        const driverFields = document.getElementById('driverFields');
+
+        if (role === 'agent' || role === 'driver') {
+            pwaFields.style.display = 'block';
+            if (role === 'driver') {
+                driverFields.style.display = 'block';
+            } else {
+                driverFields.style.display = 'none';
+            }
+        } else {
+            pwaFields.style.display = 'none';
+            driverFields.style.display = 'none';
+        }
     }
 
     function changePassword(id, username) {

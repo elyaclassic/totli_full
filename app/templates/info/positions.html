@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <h4><i class="bi bi-briefcase"></i> Lavozimlar</h4>
+                <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addPositionModal">
+                    <i class="bi bi-plus-circle"></i> Yangi lavozim
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <table class="table table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th width="50">#</th>
+                        <th>Kod</th>
+                        <th>Nomi</th>
+                        <th width="100">Amallar</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if positions %}
+                    {% for position in positions %}
+                    <tr>
+                        <td>{{ position.id }}</td>
+                        <td><code>{{ position.code }}</code></td>
+                        <td><strong>{{ position.name }}</strong></td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" title="Tahrirlash"
+                                data-id="{{ position.id }}" data-code="{{ position.code }}"
+                                data-name="{{ position.name }}" onclick="editPosition(this)">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" title="O'chirish" data-id="{{ position.id }}"
+                                data-name="{{ position.name }}" onclick="deletePosition(this)">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% else %}
+                    <tr>
+                        <td colspan="4" class="text-center text-muted py-5">
+                            <i class="bi bi-briefcase fs-1 d-block mb-2"></i>
+                            Hozircha lavozimlar yo'q<br>
+                            <small>Yuqoridagi "Yangi lavozim" tugmasini bosing</small>
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Yangi lavozim qo'shish modal -->
+<div class="modal fade" id="addPositionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="addPositionForm">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle"></i> Yangi lavozim</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Kod *</label>
+                        <input type="text" class="form-control" name="code" placeholder="MENEJER" required>
+                        <small class="text-muted">Masalan: MENEJER, AGENT, HAYDOVCHI</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Nomi *</label>
+                        <input type="text" class="form-control" name="name" placeholder="Menejer" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor qilish</button>
+                    <button type="submit" class="btn btn-success"><i class="bi bi-check-lg"></i> Saqlash</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Tahrirlash modal -->
+<div class="modal fade" id="editPositionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="editPositionForm" method="POST">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil"></i> Lavozimni tahrirlash</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Kod *</label>
+                        <input type="text" class="form-control" name="code" id="edit_code" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Nomi *</label>
+                        <input type="text" class="form-control" name="name" id="edit_name" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor qilish</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Saqlash</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Yangi lavozim qo'shish
+    document.getElementById('addPositionForm').addEventListener('submit', async function (e) {
+        e.preventDefault();
+        const formData = new FormData(this);
+
+        try {
+            const response = await fetch('/info/positions/add', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                showNotification('Lavozim muvaffaqiyatli saqlandi!', 'success');
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                showNotification('Xatolik yuz berdi!', 'danger');
+            }
+        } catch (error) {
+            showNotification('Tarmoq xatosi yuz berdi!', 'danger');
+        }
+    });
+
+    // Tahrirlash
+    document.getElementById('editPositionForm').addEventListener('submit', async function (e) {
+        e.preventDefault();
+        const formData = new FormData(this);
+
+        try {
+            const response = await fetch(this.action, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                showNotification('Lavozim muvaffaqiyatli yangilandi!', 'success');
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                showNotification('Xatolik yuz berdi!', 'danger');
+            }
+        } catch (error) {
+            showNotification('Tarmoq xatosi yuz berdi!', 'danger');
+        }
+    });
+
+    function editPosition(btn) {
+        const id = btn.dataset.id;
+        const code = btn.dataset.code;
+        const name = btn.dataset.name;
+
+        document.getElementById('editPositionForm').action = '/info/positions/edit/' + id;
+        document.getElementById('edit_code').value = code;
+        document.getElementById('edit_name').value = name;
+        new bootstrap.Modal(document.getElementById('editPositionModal')).show();
+    }
+
+    function deletePosition(btn) {
+        const id = btn.dataset.id;
+        const name = btn.dataset.name;
+        if (confirm('Haqiqatan ham "' + name + '" lavozimni o\'chirmoqchimisiz?')) {
+            var form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/info/positions/delete/' + id;
+            document.body.appendChild(form);
+            form.submit();
+        }
+    }
+
+    function showNotification(message, type = 'info') {
+        let toastContainer = document.getElementById('toastContainer');
+        if (!toastContainer) {
+            toastContainer = document.createElement('div');
+            toastContainer.id = 'toastContainer';
+            toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
+            toastContainer.style.zIndex = '9999';
+            document.body.appendChild(toastContainer);
+        }
+
+        const toastId = 'toast_' + Date.now();
+        const toastHtml = `
+        <div id="${toastId}" class="toast align-items-center text-white bg-${type} border-0" role="alert">
+            <div class="d-flex">
+                <div class="toast-body">
+                    <i class="bi bi-${type === 'success' ? 'check-circle' : 'exclamation-triangle'}"></i>
+                    ${message}
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        </div>
+    `;
+
+        toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+        const toastElement = document.getElementById(toastId);
+        const toast = new bootstrap.Toast(toastElement, { autohide: true, delay: 5000 });
+        toast.show();
+        toastElement.addEventListener('hidden.bs.toast', function () {
+            toastElement.remove();
+        });
+    }
+</script>
+{% endblock %}

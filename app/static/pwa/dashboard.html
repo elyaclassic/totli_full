@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="uz">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#017449">
+    <title>Dashboard - TOTLI HOLVA</title>
+
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/static/pwa/manifest.json">
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/pwa/css/app.css">
+</head>
+
+<body class="dashboard-page">
+    <!-- Navbar -->
+    <nav class="navbar navbar-light sticky-top">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">
+                <i class="bi bi-geo-alt-fill text-success"></i>
+                <span id="userName">Agent</span>
+            </span>
+            <button class="btn btn-outline-danger btn-sm" id="logoutBtn">
+                <i class="bi bi-box-arrow-right"></i> Chiqish
+            </button>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container py-4">
+        <!-- Stats Cards -->
+        <div class="row g-3 mb-4">
+            <div class="col-6">
+                <div class="stat-card">
+                    <div class="stat-icon green">
+                        <i class="bi bi-geo-alt-fill"></i>
+                    </div>
+                    <h6 class="text-muted mb-1">GPS Status</h6>
+                    <h4 class="mb-0" id="gpsStatus">Faol</h4>
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="stat-card">
+                    <div class="stat-icon yellow">
+                        <i class="bi bi-battery-full"></i>
+                    </div>
+                    <h6 class="text-muted mb-1">Batareya</h6>
+                    <h4 class="mb-0" id="batteryLevel">100%</h4>
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="stat-card">
+                    <div class="stat-icon blue">
+                        <i class="bi bi-clock"></i>
+                    </div>
+                    <h6 class="text-muted mb-1">Oxirgi yuborilgan</h6>
+                    <h6 class="mb-0" id="lastSync">Hech qachon</h6>
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="stat-card">
+                    <div class="stat-icon green">
+                        <i class="bi bi-check-circle"></i>
+                    </div>
+                    <h6 class="text-muted mb-1">Yuborilgan</h6>
+                    <h4 class="mb-0" id="sentCount">0</h4>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h6 class="card-title mb-3">
+                    <i class="bi bi-lightning-fill"></i> Tezkor harakatlar
+                </h6>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-primary" id="sendLocationBtn">
+                        <i class="bi bi-geo-alt"></i> Hozirgi lokatsiyani yuborish
+                    </button>
+                    <button class="btn btn-outline-success" id="viewOrdersBtn">
+                        <i class="bi bi-list-check"></i> Buyurtmalar
+                    </button>
+                    <button class="btn btn-outline-info" id="viewPartnersBtn">
+                        <i class="bi bi-people"></i> Mijozlar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Location Info -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h6 class="card-title mb-3">
+                    <i class="bi bi-pin-map"></i> Joriy lokatsiya
+                </h6>
+                <div class="row g-2">
+                    <div class="col-6">
+                        <small class="text-muted">Latitude:</small>
+                        <div id="currentLat">-</div>
+                    </div>
+                    <div class="col-6">
+                        <small class="text-muted">Longitude:</small>
+                        <div id="currentLng">-</div>
+                    </div>
+                    <div class="col-6">
+                        <small class="text-muted">Aniqlik:</small>
+                        <div id="currentAccuracy">-</div>
+                    </div>
+                    <div class="col-6">
+                        <small class="text-muted">Vaqt:</small>
+                        <div id="currentTime">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- GPS Status Bar -->
+    <div class="gps-status">
+        <div class="d-flex align-items-center justify-content-between">
+            <div>
+                <span class="gps-indicator active" id="gpsIndicator"></span>
+                <small><strong>GPS Tracking:</strong> <span id="trackingStatus">Faol</span></small>
+            </div>
+            <button class="btn btn-sm btn-outline-danger" id="stopTrackingBtn">
+                <i class="bi bi-stop-circle"></i> To'xtatish
+            </button>
+        </div>
+        <div class="mt-2">
+            <small class="text-muted">
+                Har 5 daqiqada avtomatik yuboriladi
+            </small>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay d-none">
+        <div class="spinner-border text-light" role="status">
+            <span class="visually-hidden">Yuklanmoqda...</span>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Custom JS -->
+    <script src="/static/pwa/js/api.js"></script>
+    <script src="/static/pwa/js/dashboard.js"></script>
+</body>
+
+</html>

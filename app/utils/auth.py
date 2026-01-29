@@ -23,11 +23,11 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return hash_password(plain_password) == hashed_password
 
 
-def create_session_token(user_id: int, username: str) -> str:
+def create_session_token(user_id: int, user_type: str = "user") -> str:
     """Session token yaratish"""
     data = {
         "user_id": user_id,
-        "username": username,
+        "user_type": user_type,
         "created_at": datetime.now().isoformat()
     }
     return SESSION_SERIALIZER.dumps(data)

@@ -357,6 +357,12 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link {% if 'Lavozim' in page_title %}active{% endif %}"
+                                href="/info/positions">
+                                <i class="bi bi-briefcase"></i> Lavozimlar
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link {% if 'Tovarlar' in page_title %}active{% endif %}" href="/products">
                                 <i class="bi bi-box-seam"></i> Tovarlar
                             </a>
@@ -383,38 +389,47 @@
 
             <!-- ASOSIY MODULLAR (Main Modules) -->
             <li class="nav-item mt-3">
-                <small class="text-light opacity-50 px-3">ASOSIY MODULLAR</small>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {% if 'Ishlab chiqarish' in page_title %}active{% endif %}" href="/production">
-                    <i class="bi bi-gear-fill"></i> Ishlab chiqarish
+                <a class="nav-link" data-bs-toggle="collapse" href="#asosiyModullarMenu" role="button"
+                    aria-expanded="false">
+                    <i class="bi bi-grid-3x3-gap"></i> ASOSIY MODULLAR
+                    <i class="bi bi-chevron-down ms-auto"></i>
                 </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {% if 'Tovar kirim' in page_title %}active{% endif %}" href="/purchases">
-                    <i class="bi bi-box-arrow-in-down"></i> Tovar kirimi
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {% if 'Sotuv' in page_title %}active{% endif %}" href="/sales">
-                    <i class="bi bi-cart3"></i> Sotuvlar
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {% if 'Ombor' in page_title and 'Omborlar' not in page_title %}active{% endif %}"
-                    href="/warehouse">
-                    <i class="bi bi-box"></i> Ombor qoldiqlari
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {% if 'Moliya' in page_title %}active{% endif %}" href="/finance">
-                    <i class="bi bi-wallet2"></i> Moliya
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link {% if 'Hisobot' in page_title %}active{% endif %}" href="/reports">
-                    <i class="bi bi-bar-chart-line"></i> Hisobotlar
-                </a>
+                <div class="collapse" id="asosiyModullarMenu">
+                    <ul class="nav flex-column ms-3">
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'Ishlab chiqarish' in page_title %}active{% endif %}"
+                                href="/production">
+                                <i class="bi bi-gear-fill"></i> Ishlab chiqarish
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'Tovar kirim' in page_title %}active{% endif %}" href="/purchases">
+                                <i class="bi bi-box-arrow-in-down"></i> Tovar kirimi
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'Sotuv' in page_title %}active{% endif %}" href="/sales">
+                                <i class="bi bi-cart3"></i> Sotuvlar
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'Ombor' in page_title and 'Omborlar' not in page_title %}active{% endif %}"
+                                href="/warehouse">
+                                <i class="bi bi-box"></i> Ombor qoldiqlari
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'Moliya' in page_title %}active{% endif %}" href="/finance">
+                                <i class="bi bi-wallet2"></i> Moliya
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if 'Hisobot' in page_title %}active{% endif %}" href="/reports">
+                                <i class="bi bi-bar-chart-line"></i> Hisobotlar
+                            </a>
+                        </li>
+                    </ul>
+                </div>
             </li>
 
             <!-- SalesDoc funksiyalari -->

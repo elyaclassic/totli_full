@@ -26,13 +26,14 @@
                 </div>
                 <div class="progress mt-2" style="height: 5px;">
                     {% set online_count = agents|selectattr('is_active', 'eq', true)|list|length %}
-                    <div class="progress-bar bg-success" style="width: {{ (online_count / agents|length * 100) if agents|length > 0 else 0 }}%"></div>
+                    <div class="progress-bar bg-success"
+                        style="width: {{ (online_count / agents|length * 100) if agents|length > 0 else 0 }}%"></div>
                 </div>
                 <small class="text-success">{{ online_count }} online</small>
             </div>
         </div>
     </div>
-    
+
     <div class="col-md-3">
         <div class="card border-info">
             <div class="card-body">
@@ -47,13 +48,15 @@
                 </div>
                 <div class="progress mt-2" style="height: 5px;">
                     {% set active_drivers = drivers|selectattr('is_active', 'eq', true)|list|length %}
-                    <div class="progress-bar bg-info" style="width: {{ (active_drivers / drivers|length * 100) if drivers|length > 0 else 0 }}%"></div>
+                    <div class="progress-bar bg-info"
+                        style="width: {{ (active_drivers / drivers|length * 100) if drivers|length > 0 else 0 }}%">
+                    </div>
                 </div>
                 <small class="text-info">{{ active_drivers }} faol</small>
             </div>
         </div>
     </div>
-    
+
     <div class="col-md-3">
         <div class="card border-warning">
             <div class="card-body">
@@ -70,7 +73,7 @@
             </div>
         </div>
     </div>
-    
+
     <div class="col-md-3">
         <div class="card border-success">
             <div class="card-body">
@@ -143,7 +146,7 @@
             </div>
         </div>
     </div>
-    
+
     <!-- Haydovchilar holati -->
     <div class="col-md-6">
         <div class="card">
@@ -235,7 +238,7 @@
             </div>
         </div>
     </div>
-    
+
     <div class="col-md-6">
         <div class="card">
             <div class="card-header">
@@ -264,52 +267,59 @@
 {% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://api-maps.yandex.ru/2.1/?lang=uz_UZ" type="text/javascript"></script>
 <script>
-    var map = L.map('supervisorMap').setView([41.311081, 69.240562], 11);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap'
-    }).addTo(map);
-    
-    var markers = [];
-    
-    // Agentlar
-    {% for agent in agents %}
-    {% if agent.locations %}
-    var marker = L.circleMarker([{{ agent.locations[0].latitude }}, {{ agent.locations[0].longitude }}], {
-        radius: 8,
-        fillColor: '#0d6efd',
-        color: '#fff',
-        weight: 2,
-        fillOpacity: 0.8
-    }).bindPopup('<b>{{ agent.full_name }}</b>');
-    marker.addTo(map);
-    markers.push([{{ agent.locations[0].latitude }}, {{ agent.locations[0].longitude }}]);
+    ymaps.ready(function () {
+        var myMap = new ymaps.Map('supervisorMap', {
+            center: [41.311081, 69.240562],
+            zoom: 11,
+            controls: ['zoomControl', 'searchControl']
+        });
+
+        var allCoords = [];
+
+        // Agentlar
+        {% for agent in agents %}
+        {% if agent.locations %}
+        {% set lat = agent.locations[0].latitude %}
+        {% set lng = agent.locations[0].longitude %}
+        myMap.geoObjects.add(new ymaps.Placemark([{{ lat }}, {{ lng }}], {
+        balloonContent: '<b>{{ agent.full_name }}</b>'
+    }, {
+        preset: 'islands#circleIcon',
+        iconColor: '#0d6efd'
+    }));
+    allCoords.push([{{ lat }}, {{ lng }}]);
     {% endif %}
     {% endfor %}
-    
+
     // Haydovchilar
     {% for driver in drivers %}
     {% if driver.locations %}
-    var marker = L.circleMarker([{{ driver.locations[0].latitude }}, {{ driver.locations[0].longitude }}], {
-        radius: 8,
-        fillColor: '#0dcaf0',
-        color: '#fff',
-        weight: 2,
-        fillOpacity: 0.8
-    }).bindPopup('<b>{{ driver.full_name }}</b>');
-    marker.addTo(map);
-    markers.push([{{ driver.locations[0].latitude }}, {{ driver.locations[0].longitude }}]);
+    {% set lat = driver.locations[0].latitude %}
+    {% set lng = driver.locations[0].longitude %}
+    myMap.geoObjects.add(new ymaps.Placemark([{{ lat }}, {{ lng }}], {
+        balloonContent: '<b>{{ driver.full_name }}</b>'
+    }, {
+        preset: 'islands#circleIcon',
+        iconColor: '#0dcaf0'
+    }));
+    allCoords.push([{{ lat }}, {{ lng }}]);
     {% endif %}
     {% endfor %}
-    
+
     // Xaritani markerlar bo'yicha fit qilish
-    if (markers.length > 0) {
-        map.fitBounds(markers);
+    if (allCoords.length > 0) {
+        setTimeout(function () {
+            var bounds = myMap.geoObjects.getBounds();
+            if (bounds) {
+                myMap.setBounds(bounds, { checkZoomRange: true, zoomMargin: 50 });
+            }
+        }, 500);
     }
+    });
 </script>
 {% endblock %}

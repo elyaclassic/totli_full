@@ -1,0 +1,81 @@
+<!-- Yandex Maps Template - Hozirda ishlatilmoqda -->
+<!-- Currently in use -->
+
+{% block extra_js %}
+<script src="https://api-maps.yandex.ru/2.1/?lang=uz_UZ" type="text/javascript"></script>
+<script>
+    console.log('Map script started');
+
+    ymaps.ready(function () {
+        console.log('Yandex Maps loaded');
+
+        var myMap = new ymaps.Map('mainMap', {
+            center: [41.311081, 69.240562],
+            zoom: 12,
+            controls: ['zoomControl', 'searchControl', 'fullscreenControl']
+        });
+
+        console.log('Map created');
+
+        var allCoords = [];
+
+        // Agentlar
+        {% for agent in agents %}
+        {% if agent.locations %}
+        {% set lat = agent.locations[0].latitude %}
+        {% set lng = agent.locations[0].longitude %}
+        {% set battery = agent.locations[0].battery %}
+        myMap.geoObjects.add(new ymaps.Placemark([{{ lat }}, {{ lng }}], {
+        balloonContent: '<b>{{ agent.full_name }}</b><br><small>{{ agent.region or "N/A" }}</small><br>Battery: {{ battery }}%'
+    }, {
+        preset: 'islands#circleIcon',
+        iconColor: '#0d6efd'
+    }));
+    allCoords.push([{{ lat }}, {{ lng }}]);
+    console.log('Added agent: {{ agent.full_name }}');
+    {% endif %}
+    {% endfor %}
+
+    // Haydovchilar
+    {% for driver in drivers %}
+    {% if driver.locations %}
+    {% set lat = driver.locations[0].latitude %}
+    {% set lng = driver.locations[0].longitude %}
+    myMap.geoObjects.add(new ymaps.Placemark([{{ lat }}, {{ lng }}], {
+        balloonContent: '<b>{{ driver.full_name }}</b><br><small>{{ driver.vehicle_number }}</small>'
+    }, {
+        preset: 'islands#circleIcon',
+        iconColor: '#0dcaf0'
+    }));
+    allCoords.push([{{ lat }}, {{ lng }}]);
+    console.log('Added driver: {{ driver.full_name }}');
+    {% endif %}
+    {% endfor %}
+
+    // Mijozlar
+    {% for ploc in partner_locations %}
+    {% set lat = ploc.latitude %}
+    {% set lng = ploc.longitude %}
+    myMap.geoObjects.add(new ymaps.Placemark([{{ lat }}, {{ lng }}], {
+        balloonContent: '<b>Mijoz #{{ ploc.partner_id }}</b><br><small>{{ ploc.address or "N/A" }}</small>'
+    }, {
+        preset: 'islands#circleIcon',
+        iconColor: '#198754'
+    }));
+    allCoords.push([{{ lat }}, {{ lng }}]);
+    {% endfor %}
+
+    console.log('Total markers:', allCoords.length);
+
+    // Xaritani markerlar bo'yicha fit qilish
+    if (allCoords.length > 0) {
+        setTimeout(function () {
+            var bounds = myMap.geoObjects.getBounds();
+            if (bounds) {
+                myMap.setBounds(bounds, { checkZoomRange: true, zoomMargin: 50 });
+            }
+        }, 500);
+    }
+    });
+</script>
+{% endblock %}

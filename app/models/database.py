@@ -474,6 +474,8 @@ class DriverLocation(Base):
     driver_id = Column(Integer, ForeignKey("drivers.id"))
     latitude = Column(Float)
     longitude = Column(Float)
+    accuracy = Column(Float)  # GPS aniqlik (metr)
+    battery = Column(Integer)  # Telefon batareya %
     speed = Column(Float)  # Tezlik km/s
     recorded_at = Column(DateTime, default=datetime.now)
     
@@ -545,6 +547,18 @@ class Direction(Base):
     code = Column(String(50), unique=True, index=True)
     name = Column(String(100), index=True)
     description = Column(Text)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class Position(Base):
+    """Lavozimlar"""
+    __tablename__ = "positions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(50), unique=True, index=True)
+    name = Column(String(100), index=True)
+    description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.now)
 

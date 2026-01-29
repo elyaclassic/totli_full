@@ -1,0 +1,140 @@
+<!-- Google Maps Template - Tayyor, lekin ishlatilmayapti -->
+<!-- Ready to use when switching to Google Maps -->
+
+{% block extra_js %}
+<script src="https://maps.googleapis.com/maps/api/js?key={{ google_api_key }}&callback=initMap&libraries=marker" async
+    defer></script>
+<script>
+    console.log('Google Maps script started');
+
+    let map;
+    let markers = [];
+
+    function initMap() {
+        console.log('Google Maps loaded');
+
+        // Xarita yaratish
+        map = new google.maps.Map(document.getElementById('mainMap'), {
+            center: { lat: 41.311081, lng: 69.240562 },
+            zoom: 12,
+            mapTypeControl: true,
+            streetViewControl: true,
+            fullscreenControl: true
+        });
+
+        console.log('Map created');
+
+        const bounds = new google.maps.LatLngBounds();
+
+        // Agentlar
+        {% for agent in agents %}
+        {% if agent.locations %}
+        {% set lat = agent.locations[0].latitude %}
+        {% set lng = agent.locations[0].longitude %}
+        {% set battery = agent.locations[0].battery %}
+
+        const agentMarker = new google.maps.Marker({
+            position: { lat: {{ lat }}, lng: { { lng } } },
+    map: map,
+        title: '{{ agent.full_name }}',
+            icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+            fillColor: '#0d6efd',
+                fillOpacity: 0.8,
+                    strokeColor: '#fff',
+                        strokeWeight: 2,
+                            scale: 8
+    }
+        });
+
+    const agentInfo = new google.maps.InfoWindow({
+        content: '<div style="padding: 5px;"><b>{{ agent.full_name }}</b><br><small>{{ agent.region or "N/A" }}</small><br>Battery: {{ battery }}%</div>'
+    });
+
+    agentMarker.addListener('click', () => {
+        agentInfo.open(map, agentMarker);
+    });
+
+    bounds.extend({ lat: {{ lat }}, lng: {{ lng }} });
+    markers.push(agentMarker);
+    console.log('Added agent: {{ agent.full_name }}');
+    {% endif %}
+    {% endfor %}
+
+    // Haydovchilar
+    {% for driver in drivers %}
+    {% if driver.locations %}
+    {% set lat = driver.locations[0].latitude %}
+    {% set lng = driver.locations[0].longitude %}
+
+    const driverMarker = new google.maps.Marker({
+        position: { lat: {{ lat }}, lng: { { lng } } },
+    map: map,
+        title: '{{ driver.full_name }}',
+            icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+            fillColor: '#0dcaf0',
+                fillOpacity: 0.8,
+                    strokeColor: '#fff',
+                        strokeWeight: 2,
+                            scale: 8
+    }
+        });
+
+    const driverInfo = new google.maps.InfoWindow({
+        content: '<div style="padding: 5px;"><b>{{ driver.full_name }}</b><br><small>{{ driver.vehicle_number }}</small></div>'
+    });
+
+    driverMarker.addListener('click', () => {
+        driverInfo.open(map, driverMarker);
+    });
+
+    bounds.extend({ lat: {{ lat }}, lng: {{ lng }} });
+    markers.push(driverMarker);
+    console.log('Added driver: {{ driver.full_name }}');
+    {% endif %}
+    {% endfor %}
+
+    // Mijozlar
+    {% for ploc in partner_locations %}
+    {% set lat = ploc.latitude %}
+    {% set lng = ploc.longitude %}
+
+    const partnerMarker = new google.maps.Marker({
+        position: { lat: {{ lat }}, lng: { { lng } } },
+    map: map,
+        title: 'Mijoz #{{ ploc.partner_id }}',
+            icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+            fillColor: '#198754',
+                fillOpacity: 0.8,
+                    strokeColor: '#fff',
+                        strokeWeight: 2,
+                            scale: 8
+    }
+        });
+
+    const partnerInfo = new google.maps.InfoWindow({
+        content: '<div style="padding: 5px;"><b>Mijoz #{{ ploc.partner_id }}</b><br><small>{{ ploc.address or "N/A" }}</small></div>'
+    });
+
+    partnerMarker.addListener('click', () => {
+        partnerInfo.open(map, partnerMarker);
+    });
+
+    bounds.extend({ lat: {{ lat }}, lng: {{ lng }} });
+    markers.push(partnerMarker);
+    {% endfor %}
+
+    console.log('Total markers:', markers.length);
+
+    // Xaritani markerlar bo'yicha fit qilish
+    if (markers.length > 0) {
+        map.fitBounds(bounds);
+    }
+    }
+
+    // Global qilish (callback uchun)
+    window.initMap = initMap;
+</script>
+{% endblock %}
