@@ -1,22 +1,25 @@
 {
-    "name": "TOTLI HOLVA Agent Tracker",
-    "short_name": "Agent Tracker",
-    "description": "GPS tracking va buyurtmalarni boshqarish ilovasi",
-    "start_url": "/static/pwa/login.html",
+    "name": "TOTLI HOLVA Agent",
+    "short_name": "Agent",
+    "description": "TOTLI HOLVA Business System - Agent Dashboard",
+    "start_url": "/static/pwa/simple_dashboard.html",
+    "scope": "/",
     "display": "standalone",
     "background_color": "#017449",
     "theme_color": "#017449",
     "orientation": "portrait",
     "icons": [
         {
-            "src": "/static/images/icon-192.png",
+            "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Ccircle fill='%23017449' cx='96' cy='96' r='96'/%3E%3Ctext x='96' y='130' font-size='100' text-anchor='middle' fill='white' font-family='Arial'%3EA%3C/text%3E%3C/svg%3E",
             "sizes": "192x192",
-            "type": "image/png"
+            "type": "image/svg+xml",
+            "purpose": "any maskable"
         },
         {
-            "src": "/static/images/icon-512.png",
+            "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Ccircle fill='%23017449' cx='256' cy='256' r='256'/%3E%3Ctext x='256' y='350' font-size='280' text-anchor='middle' fill='white' font-family='Arial'%3EA%3C/text%3E%3C/svg%3E",
             "sizes": "512x512",
-            "type": "image/png"
+            "type": "image/svg+xml",
+            "purpose": "any maskable"
         }
     ]
 }

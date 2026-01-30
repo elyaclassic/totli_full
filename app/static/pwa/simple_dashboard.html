@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="uz">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#017449">
+    <link rel="manifest" href="/static/pwa/manifest.json">
+    <title>Agent Dashboard - HTTPS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #017449 0%, #02a86b 100%);
+            min-height: 100vh;
+        }
+
+        .dashboard-card {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .stat-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 10px 0;
+            text-align: center;
+        }
+
+        .btn-action {
+            width: 100%;
+            padding: 15px;
+            margin: 10px 0;
+            font-size: 16px;
+        }
+
+        .log {
+            background: #000;
+            color: #0f0;
+            padding: 15px;
+            border-radius: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="dashboard-card">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h3><i class="bi bi-geo-alt-fill text-success"></i> Agent Dashboard</h3>
+            <button class="btn btn-danger" onclick="logout()">
+                <i class="bi bi-box-arrow-right"></i> Chiqish
+            </button>
+        </div>
+
+        <div class="row">
+            <div class="col-6">
+                <div class="stat-card">
+                    <i class="bi bi-geo-alt fs-1 text-success"></i>
+                    <h6 class="text-muted mt-2">GPS Status</h6>
+                    <h5 id="gpsStatus">-</h5>
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="stat-card">
+                    <i class="bi bi-check-circle fs-1 text-primary"></i>
+                    <h6 class="text-muted mt-2">Yuborilgan</h6>
+                    <h5 id="sentCount">0</h5>
+                </div>
+            </div>
+        </div>
+
+        <div class="stat-card mt-3">
+            <strong>Latitude:</strong> <span id="lat" class="text-primary">-</span><br>
+            <strong>Longitude:</strong> <span id="lng" class="text-primary">-</span><br>
+            <strong>Aniqlik:</strong> <span id="accuracy" class="text-info">-</span>
+        </div>
+
+        <button class="btn btn-success btn-action" onclick="sendLocation()">
+            <i class="bi bi-geo-alt"></i> Hozirgi Lokatsiyani Yuborish
+        </button>
+
+        <button class="btn btn-primary btn-action" onclick="startTracking()">
+            <i class="bi bi-play-fill"></i> Tracking Boshlash
+        </button>
+
+        <button class="btn btn-warning btn-action" onclick="stopTracking()">
+            <i class="bi bi-stop-fill"></i> Tracking To'xtatish
+        </button>
+
+        <div class="log" id="log"></div>
+    </div>
+
+    <script>
+        let sentCount = 0;
+        let trackingInterval = null;
+        let isTracking = false;
+
+        function log(msg) {
+            const logDiv = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${time}] ${msg}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(msg);
+        }
+
+        async function sendLocation() {
+            log('📤 Lokatsiya yuborilmoqda...');
+
+            try {
+                const position = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 0
+                    });
+                });
+
+                document.getElementById('lat').textContent = position.coords.latitude.toFixed(6);
+                document.getElementById('lng').textContent = position.coords.longitude.toFixed(6);
+                document.getElementById('accuracy').textContent = Math.round(position.coords.accuracy) + ' m';
+                document.getElementById('gpsStatus').textContent = 'Faol';
+
+                const formData = new FormData();
+                formData.append('latitude', position.coords.latitude);
+                formData.append('longitude', position.coords.longitude);
+                formData.append('accuracy', position.coords.accuracy);
+                formData.append('battery', 100);
+                formData.append('token', 'test_token');
+
+                const response = await fetch('/api/agent/location', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    sentCount++;
+                    document.getElementById('sentCount').textContent = sentCount;
+                    log(`✅ Muvaffaqiyatli! ID: ${result.location_id}`);
+                    alert('✅ Lokatsiya yuborildi!');
+                } else {
+                    log(`❌ XATO: ${result.error}`);
+                    alert(`Xato: ${result.error}`);
+                }
+            } catch (error) {
+                log(`❌ GPS XATO: ${error.message}`);
+                document.getElementById('gpsStatus').textContent = 'Xato';
+                alert(`GPS xato: ${error.message}`);
+            }
+        }
+
+        function startTracking() {
+            if (isTracking) {
+                alert('Tracking allaqachon boshlangan!');
+                return;
+            }
+
+            isTracking = true;
+            log('🚀 Tracking boshlandi (har 5 daqiqada)');
+
+            // Send immediately
+            sendLocation();
+
+            // Then every 5 minutes
+            trackingInterval = setInterval(sendLocation, 5 * 60 * 1000);
+
+            alert('Tracking boshlandi!');
+        }
+
+        function stopTracking() {
+            if (!isTracking) {
+                alert('Tracking ishlamayapti!');
+                return;
+            }
+
+            isTracking = false;
+            clearInterval(trackingInterval);
+            log('⏹️ Tracking to\'xtatildi');
+            alert('Tracking to\'xtatildi!');
+        }
+
+        function logout() {
+            if (confirm('Chiqishni xohlaysizmi?')) {
+                localStorage.clear();
+                sessionStorage.clear();
+                window.location.href = '/static/pwa/login.html';
+            }
+        }
+
+        log('✅ Dashboard yuklandi');
+        log('📱 HTTPS - haqiqiy GPS ishlaydi!');
+
+        // Register Service Worker
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/static/pwa/sw.js')
+                .then(reg => log('✅ Service Worker registered'))
+                .catch(err => log('❌ SW registration failed: ' + err));
+        }
+    </script>
+</body>
+
+</html>

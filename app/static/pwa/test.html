@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="uz">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Test - TOTLI HOLVA</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #017449, #025a38);
+            min-height: 100vh;
+            padding: 20px;
+            color: white;
+        }
+
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            color: #333;
+        }
+
+        h1 {
+            color: #017449;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+
+        .stat {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+
+        .stat h3 {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .stat p {
+            font-size: 20px;
+            font-weight: bold;
+            color: #017449;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            background: #017449;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+
+        button:active {
+            background: #025a38;
+        }
+
+        #log {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🌍 GPS Test</h1>
+
+        <div class="stat">
+            <h3>Latitude</h3>
+            <p id="lat">-</p>
+        </div>
+
+        <div class="stat">
+            <h3>Longitude</h3>
+            <p id="lng">-</p>
+        </div>
+
+        <div class="stat">
+            <h3>Batareya</h3>
+            <p id="battery">-</p>
+        </div>
+
+        <div class="stat">
+            <h3>Yuborilgan</h3>
+            <p id="sent">0</p>
+        </div>
+
+        <button onclick="testGPS()">📍 GPS Test</button>
+        <button onclick="sendToServer()">📤 Server'ga Yuborish</button>
+
+        <div id="log"></div>
+    </div>
+
+    <script>
+        let sentCount = 0;
+        let currentPosition = null;
+
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            logDiv.innerHTML = `[${time}] ${message}<br>` + logDiv.innerHTML;
+        }
+
+        async function testGPS() {
+            log('GPS test boshlandi...');
+
+            if (!navigator.geolocation) {
+                alert('GPS qo\'llab-quvvatlanmaydi!');
+                log('XATO: GPS qo\'llab-quvvatlanmaydi');
+                return;
+            }
+
+            log('GPS ruxsat so\'ralmoqda...');
+
+            navigator.geolocation.getCurrentPosition(
+                position => {
+                    currentPosition = position;
+                    const lat = position.coords.latitude.toFixed(6);
+                    const lng = position.coords.longitude.toFixed(6);
+
+                    document.getElementById('lat').textContent = lat;
+                    document.getElementById('lng').textContent = lng;
+
+                    log(`GPS SUCCESS: ${lat}, ${lng}`);
+                    alert(`GPS ishlayapti!\nLat: ${lat}\nLng: ${lng}`);
+                },
+                error => {
+                    log(`GPS XATO: ${error.message}`);
+                    alert(`GPS xatosi: ${error.message}`);
+
+                    // Fake coordinates
+                    log('Fake koordinatalar ishlatilmoqda...');
+                    currentPosition = {
+                        coords: {
+                            latitude: 41.311081,
+                            longitude: 69.240562,
+                            accuracy: 10
+                        }
+                    };
+                    document.getElementById('lat').textContent = '41.311081';
+                    document.getElementById('lng').textContent = '69.240562';
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                }
+            );
+
+
+            // Test battery
+            log('Battery API tekshirilmoqda...');
+
+            if ('getBattery' in navigator) {
+                log('Battery API mavjud!');
+                try {
+                    const battery = await navigator.getBattery();
+                    const level = Math.round(battery.level * 100);
+                    document.getElementById('battery').textContent = level + '%';
+                    log(`✅ Batareya: ${level}%`);
+                    log(`Charging: ${battery.charging}`);
+                } catch (e) {
+                    log('❌ Battery API xatosi: ' + e.message);
+                    document.getElementById('battery').textContent = '? (xato)';
+                }
+            } else {
+                log('❌ Battery API qo\'llab-quvvatlanmaydi');
+                document.getElementById('battery').textContent = '? (API yo\'q)';
+            }
+        }
+
+
+        async function sendToServer() {
+            if (!currentPosition) {
+                alert('Avval GPS test qiling!');
+                return;
+            }
+
+            log('Server\'ga yuborilmoqda...');
+
+            const formData = new FormData();
+            formData.append('latitude', currentPosition.coords.latitude);
+            formData.append('longitude', currentPosition.coords.longitude);
+            formData.append('accuracy', currentPosition.coords.accuracy || 10);
+            formData.append('battery', 100);
+            formData.append('token', localStorage.getItem('token') || 'test_token');
+
+            try {
+                log('Fetch boshlanmoqda...');
+                const response = await fetch('http://10.243.49.144:8080/api/agent/location', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                log(`Response status: ${response.status}`);
+                const result = await response.json();
+                log(`Response: ${JSON.stringify(result)}`);
+
+                if (result.success) {
+                    sentCount++;
+                    document.getElementById('sent').textContent = sentCount;
+                    log('✅ Muvaffaqiyatli yuborildi!');
+                    alert('Lokatsiya muvaffaqiyatli yuborildi!');
+                } else {
+                    log('❌ XATO: ' + (result.error || 'Noma\'lum xato'));
+                    alert('Xato: ' + (result.error || 'Noma\'lum xato'));
+                }
+            } catch (error) {
+                log('❌ CATCH XATO: ' + error.message);
+                log('❌ Error stack: ' + error.stack);
+                alert('Xato: ' + error.message);
+            }
+        }
+
+
+        // Auto test on load
+        log('Sahifa yuklandi');
+        log('GPS test tugmasini bosing!');
+    </script>
+</body>
+
+</html>

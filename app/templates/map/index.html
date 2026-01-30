@@ -7,8 +7,21 @@
         <button class="btn btn-sm btn-outline-primary" onclick="location.reload()">
             <i class="bi bi-arrow-clockwise"></i> Yangilash
         </button>
+        <small class="text-muted ms-2">Auto: <span id="countdown">30</span>s</small>
     </div>
 </div>
+
+<script>
+    // Auto-refresh every 30 seconds
+    let countdown = 30;
+    setInterval(() => {
+        countdown--;
+        document.getElementById('countdown').textContent = countdown;
+        if (countdown <= 0) {
+            location.reload();
+        }
+    }, 1000);
+</script>
 
 <!-- Filtrlar -->
 <div class="row mb-3">

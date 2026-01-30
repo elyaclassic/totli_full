@@ -1,0 +1,10 @@
+/* Mobile Responsive Fix */
+@media (max-width: 768px) {
+    .sidebar {
+        display: none !important;
+    }
+
+    .main-content {
+        margin-left: 0 !important;
+    }
+}

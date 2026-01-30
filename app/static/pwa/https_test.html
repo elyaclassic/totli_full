@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="uz">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Test - HTTPS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #017449 0%, #02a86b 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .test-card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        .stat {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 10px 0;
+        }
+
+        .btn-test {
+            width: 100%;
+            padding: 15px;
+            font-size: 18px;
+            margin: 10px 0;
+        }
+
+        .log {
+            background: #000;
+            color: #0f0;
+            padding: 15px;
+            border-radius: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="test-card">
+        <h2 class="text-center mb-4">
+            <i class="bi bi-geo-alt-fill text-success"></i>
+            HTTPS GPS Test
+        </h2>
+
+        <div class="stat">
+            <strong>Latitude:</strong>
+            <div id="lat" class="text-primary fs-5">-</div>
+        </div>
+
+        <div class="stat">
+            <strong>Longitude:</strong>
+            <div id="lng" class="text-primary fs-5">-</div>
+        </div>
+
+        <div class="stat">
+            <strong>Aniqlik:</strong>
+            <div id="accuracy" class="text-info fs-5">-</div>
+        </div>
+
+        <div class="stat">
+            <strong>Yuborilgan:</strong>
+            <div id="sent" class="text-success fs-5">0</div>
+        </div>
+
+        <button class="btn btn-success btn-test" onclick="testGPS()">
+            <i class="bi bi-geo-alt"></i> GPS Test
+        </button>
+
+        <button class="btn btn-primary btn-test" onclick="sendToServer()">
+            <i class="bi bi-send"></i> Server'ga Yuborish
+        </button>
+
+        <div class="log" id="log"></div>
+    </div>
+
+    <script>
+        let currentPosition = null;
+        let sentCount = 0;
+
+        function log(msg) {
+            const logDiv = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${time}] ${msg}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(msg);
+        }
+
+        async function testGPS() {
+            log('🌍 GPS test boshlandi...');
+
+            if (!navigator.geolocation) {
+                log('❌ GPS qo\'llab-quvvatlanmaydi!');
+                alert('GPS qo\'llab-quvvatlanmaydi!');
+                return;
+            }
+
+            try {
+                const position = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 0
+                    });
+                });
+
+                currentPosition = position;
+
+                document.getElementById('lat').textContent = position.coords.latitude.toFixed(6);
+                document.getElementById('lng').textContent = position.coords.longitude.toFixed(6);
+                document.getElementById('accuracy').textContent = Math.round(position.coords.accuracy) + ' m';
+
+                log(`✅ GPS muvaffaqiyatli!`);
+                log(`   Lat: ${position.coords.latitude.toFixed(6)}`);
+                log(`   Lng: ${position.coords.longitude.toFixed(6)}`);
+                log(`   Accuracy: ${Math.round(position.coords.accuracy)}m`);
+
+                alert('GPS muvaffaqiyatli! Endi "Server\'ga Yuborish" bosing.');
+            } catch (error) {
+                log(`❌ GPS XATO: ${error.message}`);
+                alert(`GPS xato: ${error.message}`);
+            }
+        }
+
+        async function sendToServer() {
+            if (!currentPosition) {
+                alert('Avval GPS test qiling!');
+                return;
+            }
+
+            log('📤 Server\'ga yuborilmoqda...');
+
+            const formData = new FormData();
+            formData.append('latitude', currentPosition.coords.latitude);
+            formData.append('longitude', currentPosition.coords.longitude);
+            formData.append('accuracy', currentPosition.coords.accuracy);
+            formData.append('battery', 100);
+            formData.append('token', 'test_token');
+
+            try {
+                const response = await fetch('/api/agent/location', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                log(`📥 Response status: ${response.status}`);
+                log(`📥 Response: ${JSON.stringify(result)}`);
+
+                if (result.success) {
+                    sentCount++;
+                    document.getElementById('sent').textContent = sentCount;
+                    log('✅ Muvaffaqiyatli yuborildi!');
+                    alert('✅ Lokatsiya muvaffaqiyatli yuborildi!');
+                } else {
+                    log(`❌ XATO: ${result.error}`);
+                    alert(`Xato: ${result.error}`);
+                }
+            } catch (error) {
+                log(`❌ XATO: ${error.message}`);
+                alert(`Xato: ${error.message}`);
+            }
+        }
+
+        log('✅ Sahifa yuklandi');
+        log('📱 HTTPS orqali - haqiqiy GPS ishlaydi!');
+        log('👉 "GPS Test" tugmasini bosing!');
+    </script>
+</body>
+
+</html>

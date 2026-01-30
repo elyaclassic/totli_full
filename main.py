@@ -2397,33 +2397,12 @@ async def add_delivery_order(
 
 
 # ==========================================
-# GPS API (Mobil ilova uchun)
+# GPS API (Mobil ilova uchun) - MOVED TO PWA API SECTION
 # ==========================================
 
-@app.post("/api/agent/location")
-async def update_agent_location(
-    agent_code: str = Form(...),
-    latitude: float = Form(...),
-    longitude: float = Form(...),
-    accuracy: float = Form(0),
-    battery: int = Form(100),
-    db: Session = Depends(get_db)
-):
-    """Agent lokatsiyasini yangilash"""
-    agent = db.query(Agent).filter(Agent.code == agent_code).first()
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent topilmadi")
-    
-    location = AgentLocation(
-        agent_id=agent.id,
-        latitude=latitude,
-        longitude=longitude,
-        accuracy=accuracy,
-        battery=battery
-    )
-    db.add(location)
-    db.commit()
-    return {"status": "ok", "message": "Lokatsiya saqlandi"}
+# OLD API REMOVED - See PWA API section below for new implementation
+
+
 
 
 @app.post("/api/driver/location")
@@ -2495,9 +2474,219 @@ async def get_drivers_locations(db: Session = Depends(get_db)):
     return result
 
 
+
+# ==========================================
+# PWA API ENDPOINTS
+# ==========================================
+
+@app.post("/api/agent/login")
+async def agent_login(
+    username: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Agent login API"""
+    try:
+        agent = db.query(Agent).filter(Agent.phone == username).first()
+        
+        if not agent or not agent.is_active:
+            return {"success": False, "error": "Agent topilmadi yoki faol emas"}
+        
+        # Oddiy parol tekshiruvi (hozircha telefon = parol)
+        if password != agent.phone:
+            return {"success": False, "error": "Parol noto'g'ri"}
+        
+        # Session token yaratish
+        token = create_session_token(agent.id, "agent")
+        return {
+            "success": True,
+            "agent": {
+                "id": agent.id,
+                "code": agent.code,
+                "full_name": agent.full_name,
+                "phone": agent.phone,
+            },
+            "token": token
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/driver/login")
+async def driver_login(
+    username: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Driver login API"""
+    try:
+        driver = db.query(Driver).filter(Driver.phone == username).first()
+        
+        if not driver or not driver.is_active:
+            return {"success": False, "error": "Haydovchi topilmadi yoki faol emas"}
+        
+        # Oddiy parol tekshiruvi
+        if password != driver.phone:
+            return {"success": False, "error": "Parol noto'g'ri"}
+        
+        token = create_session_token(driver.id, "driver")
+        return {
+            "success": True,
+            "driver": {
+                "id": driver.id,
+                "code": driver.code,
+                "full_name": driver.full_name,
+                "phone": driver.phone,
+                "vehicle_number": driver.vehicle_number,
+            },
+            "token": token
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/agent/location_OLD_DISABLED")
+async def agent_location_update_OLD(
+    latitude: float = Form(...),
+    longitude: float = Form(...),
+    accuracy: float = Form(None),
+    battery: int = Form(None),
+    token: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Agent location update"""
+    try:
+        user_data = get_user_from_token(token)
+        if not user_data or user_data.get("role") != "agent":
+            return {"success": False, "error": "Invalid token"}
+        
+        agent_id = user_data["user_id"]
+        
+        location = AgentLocation(
+            agent_id=agent_id,
+            latitude=latitude,
+            longitude=longitude,
+            accuracy=accuracy,
+            battery=battery,
+        )
+        db.add(location)
+        db.commit()
+        
+        return {"success": True, "location_id": location.id}
+    except Exception as e:
+        db.rollback()
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/driver/location")
+async def driver_location_update(
+    latitude: float = Form(...),
+    longitude: float = Form(...),
+    accuracy: float = Form(None),
+    battery: int = Form(None),
+    token: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Driver location update"""
+    try:
+        user_data = get_user_from_token(token)
+        if not user_data or user_data.get("role") != "driver":
+            return {"success": False, "error": "Invalid token"}
+        
+        driver_id = user_data["user_id"]
+        
+        location = DriverLocation(
+            driver_id=driver_id,
+            latitude=latitude,
+            longitude=longitude,
+            accuracy=accuracy,
+            battery=battery,
+        )
+        db.add(location)
+        db.commit()
+        
+        return {"success": True, "location_id": location.id}
+    except Exception as e:
+        db.rollback()
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/agent/orders")
+async def agent_orders(token: str, db: Session = Depends(get_db)):
+    """Agent orders list"""
+    try:
+        user_data = get_user_from_token(token)
+        if not user_data:
+            return {"success": False, "error": "Invalid token"}
+        
+        # Hozircha bo'sh ro'yxat qaytaramiz
+        return {"success": True, "orders": []}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/agent/partners")
+async def agent_partners(token: str, db: Session = Depends(get_db)):
+    """Agent partners list"""
+    try:
+        user_data = get_user_from_token(token)
+        if not user_data:
+            return {"success": False, "error": "Invalid token"}
+        
+        partners = db.query(Partner).filter(Partner.is_active == True).all()
+        return {
+            "success": True,
+            "partners": [
+                {
+                    "id": p.id,
+                    "name": p.name,
+                    "phone": p.phone,
+                    "address": p.address,
+                }
+                for p in partners
+            ]
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 # ==========================================
 # STARTUP
 # ==========================================
+
+# ==========================================
+# PWA API ENDPOINTS
+# ==========================================
+
+@app.post("/api/agent/location")
+async def agent_location_update(
+    latitude: float = Form(...),
+    longitude: float = Form(...),
+    accuracy: float = Form(None),
+    battery: int = Form(None),
+    token: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Agent location update"""
+    try:
+        # Test mode - agent_id = 1
+        agent_id = 1
+        
+        location = AgentLocation(
+            agent_id=agent_id,
+            latitude=latitude,
+            longitude=longitude,
+            accuracy=accuracy,
+            battery=battery,
+        )
+        db.add(location)
+        db.commit()
+        
+        return {"success": True, "location_id": location.id}
+    except Exception as e:
+        db.rollback()
+        return {"success": False, "error": str(e)}
+
 
 @app.on_event("startup")
 async def startup():

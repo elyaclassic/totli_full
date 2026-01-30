@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="uz">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logout Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        .container {
+            max-width: 400px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 0;
+        }
+
+        .logout-btn {
+            background: #dc3545;
+            color: white;
+        }
+
+        .dashboard-btn {
+            background: #017449;
+            color: white;
+        }
+
+        .info {
+            padding: 15px;
+            background: #e7f3ff;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h2>🔐 Logout Test</h2>
+
+        <div class="info">
+            <p><strong>LocalStorage:</strong></p>
+            <pre id="storageInfo"></pre>
+        </div>
+
+        <button class="logout-btn" onclick="logout()">
+            🚪 Chiqish
+        </button>
+
+        <button class="dashboard-btn" onclick="goToDashboard()">
+            📊 Dashboard'ga O'tish
+        </button>
+    </div>
+
+    <script>
+        // Show storage info
+        function updateStorageInfo() {
+            const info = {
+                user: localStorage.getItem('user'),
+                token: localStorage.getItem('token')
+            };
+            document.getElementById('storageInfo').textContent = JSON.stringify(info, null, 2);
+        }
+
+        // Logout
+        function logout() {
+            if (confirm('Chiqishni xohlaysizmi?')) {
+                localStorage.clear();
+                sessionStorage.clear();
+                alert('Chiqildi! Login sahifaga o\'tilmoqda...');
+                window.location.href = '/static/pwa/login.html';
+            }
+        }
+
+        // Go to dashboard
+        function goToDashboard() {
+            window.location.href = '/static/pwa/dashboard.html';
+        }
+
+        // Update on load
+        updateStorageInfo();
+    </script>
+</body>
+
+</html>

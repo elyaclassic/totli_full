@@ -731,3 +731,306 @@ User: <app.models.database.User object at 0x000001711638C620>
 Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
 Stats 2: today_sales calculated
 ✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:21:54.288361
+User: None
+⚠️ User not authenticated, redirecting to login
+
+============================================================
+Time: 2026-01-30 00:24:49.655322
+User: <app.models.database.User object at 0x0000023186943EF0>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:25:25.079943
+User: <app.models.database.User object at 0x00000231869C8530>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:32:14.669872
+User: None
+⚠️ User not authenticated, redirecting to login
+
+============================================================
+Time: 2026-01-30 00:32:34.318593
+User: <app.models.database.User object at 0x00000231869C8800>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:34:57.925225
+User: <app.models.database.User object at 0x00000231869C84D0>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:35:00.788321
+User: <app.models.database.User object at 0x000001677EC95AF0>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:36:24.264756
+User: <app.models.database.User object at 0x000001677F43C0B0>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:36:25.517013
+User: <app.models.database.User object at 0x000001677F43C380>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:36:27.057844
+User: <app.models.database.User object at 0x000001677F43C1D0>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:36:37.930527
+User: <app.models.database.User object at 0x000001677F43C380>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:36:39.540140
+User: <app.models.database.User object at 0x000001677F43C0B0>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:37:15.745698
+User: <app.models.database.User object at 0x000001677F43C800>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:40:39.758524
+User: <app.models.database.User object at 0x000002A04C6C25A0>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:40:42.017663
+User: <app.models.database.User object at 0x000002AA6E786210>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:40:45.068991
+User: <app.models.database.User object at 0x000002AA6E7F6390>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:40:53.730308
+User: <app.models.database.User object at 0x000002AA6E82C350>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:40:55.509457
+User: <app.models.database.User object at 0x000002AA6E82C290>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:41:01.744231
+User: <app.models.database.User object at 0x000002AA6E82E180>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:43:22.991902
+User: <app.models.database.User object at 0x000002AA6E82DFD0>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:43:24.654492
+User: <app.models.database.User object at 0x000002AA6E82C4A0>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:43:39.658541
+User: <app.models.database.User object at 0x000002AA6E82E780>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:43:41.359185
+User: <app.models.database.User object at 0x000002AA6E82D820>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:43:43.160478
+User: <app.models.database.User object at 0x000002AA6E82DF10>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:43:43.996607
+User: <app.models.database.User object at 0x000002AA6E82D6A0>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:43:45.190108
+User: <app.models.database.User object at 0x000002AA6E82E900>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:52:18.279710
+User: <app.models.database.User object at 0x000001AC73F95FD0>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:52:30.186021
+User: <app.models.database.User object at 0x000001AC7479C170>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:52:31.836375
+User: <app.models.database.User object at 0x000001AC7479C380>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:52:32.651355
+User: <app.models.database.User object at 0x000001AC7479C080>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:52:39.152643
+User: <app.models.database.User object at 0x000001AC7479C680>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 00:52:39.937128
+User: <app.models.database.User object at 0x000001AC7479C8C0>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 12:04:49.510341
+User: <app.models.database.User object at 0x000001FE15EFDF40>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 12:04:51.056761
+User: <app.models.database.User object at 0x000001FE15F9C4A0>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 17:59:52.507844
+User: <app.models.database.User object at 0x0000025D0EDB1FD0>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 19:38:24.325786
+User: None
+⚠️ User not authenticated, redirecting to login
+
+============================================================
+Time: 2026-01-30 19:38:36.094055
+User: <app.models.database.User object at 0x000002512C26C3E0>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 19:51:05.872833
+User: <app.models.database.User object at 0x000002512C3BF560>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-01-30 22:29:52.536201
+User: <app.models.database.User object at 0x000002512C3E5BB0>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 3, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 2, 'partners_count': 2, 'employees_count': 1}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
