@@ -1,0 +1,201 @@
+<!-- This is the full-screen customer form content that will be loaded into the modal -->
+<div style="background: var(--primary); color: white; padding: 15px; position: sticky; top: 0; z-index: 10;">
+    <div class="d-flex align-items-center">
+        <button onclick="closeAddCustomer()"
+            style="background: none; border: none; color: white; font-size: 24px; margin-right: 15px;">
+            <i class="bi bi-arrow-left"></i>
+        </button>
+        <h5 class="mb-0">Savdo nuqtasi qo'shish</h5>
+    </div>
+</div>
+
+<div style="padding: 20px;">
+    <!-- Photo Upload -->
+    <div class="mb-4 text-center">
+        <div id="customerPhotoPreview"
+            style="width: 100px; height: 100px; background: #f0f0f0; border-radius: 10px; margin: 0 auto; display: flex; align-items: center; justify-content: center; cursor: pointer;"
+            onclick="document.getElementById('customerPhoto').click()">
+            <i class="bi bi-camera" style="font-size: 40px; color: #999;"></i>
+        </div>
+        <input type="file" id="customerPhoto" accept="image/*" capture="environment" style="display: none;"
+            onchange="previewCustomerPhoto(event)">
+    </div>
+
+    <!-- Basic Info -->
+    <div class="mb-3">
+        <label class="form-label">*Savdo nuqtasi nomi</label>
+        <input type="text" id="customerName" class="form-control" placeholder="Nomini kiriting">
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Yuridik nomi</label>
+        <input type="text" id="customerLegalName" class="form-control" placeholder="Yuridik nomini kiriting">
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Manzil</label>
+        <input type="text" id="customerAddress" class="form-control" placeholder="Manzilni kiriting">
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Mo'ljal</label>
+        <input type="text" id="customerLandmark" class="form-control" placeholder="Mo'ljalini kiriting">
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Aloqa shaxsi</label>
+        <input type="text" id="customerContact" class="form-control" placeholder="Aloqa shaxsini kiriting">
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Telefon raqami</label>
+        <input type="tel" id="customerPhone" class="form-control" placeholder="998">
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Izoh</label>
+        <textarea id="customerNote" class="form-control" rows="3" placeholder="Izoh kiriting"></textarea>
+    </div>
+
+    <!-- Dropdowns -->
+    <div class="mb-3">
+        <label class="form-label">*Tashrif kunlari</label>
+        <select id="customerVisitDay" class="form-select">
+            <option value="">Tanlang</option>
+            <option value="0">Yakshanba</option>
+            <option value="1">Dushanba</option>
+            <option value="2">Seshanba</option>
+            <option value="3">Chorshanba</option>
+            <option value="4">Payshanba</option>
+            <option value="5">Juma</option>
+            <option value="6">Shanba</option>
+        </select>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">*Kategoriya</label>
+        <select id="customerCategory" class="form-select">
+            <option value="">Tanlang</option>
+            <option value="A">A - Katta</option>
+            <option value="B">B - O'rta</option>
+            <option value="C">C - Kichik</option>
+        </select>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">*Hudud</label>
+        <select id="customerTerritory" class="form-select">
+            <option value="">Tanlang</option>
+            <option value="center">Markaz</option>
+            <option value="north">Shimol</option>
+            <option value="south">Janub</option>
+            <option value="east">Sharq</option>
+            <option value="west">G'arb</option>
+        </select>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Lokatsiya</label>
+        <div class="input-group">
+            <input type="text" id="customerLocation" class="form-control" placeholder="GPS koordinatalar" readonly>
+            <button class="btn btn-outline-secondary" type="button" onclick="getCustomerLocation()">
+                <i class="bi bi-geo-alt"></i>
+            </button>
+        </div>
+        <input type="hidden" id="customerLatitude">
+        <input type="hidden" id="customerLongitude">
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Mijoz turi</label>
+        <select id="customerType" class="form-select">
+            <option value="">Tanlang</option>
+            <option value="shop">Do'kon</option>
+            <option value="market">Supermarket</option>
+            <option value="restaurant">Restoran</option>
+            <option value="cafe">Kafe</option>
+            <option value="other">Boshqa</option>
+        </select>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Sotish kanali</label>
+        <select id="customerChannel" class="form-select">
+            <option value="">Tanlang</option>
+            <option value="direct">To'g'ridan-to'g'ri</option>
+            <option value="distributor">Distribyutor</option>
+            <option value="online">Onlayn</option>
+        </select>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Sotiladigan kategoriyalar</label>
+        <select id="customerProductCategories" class="form-select">
+            <option value="">Tanlang</option>
+            <option value="food">Oziq-ovqat</option>
+            <option value="drinks">Ichimliklar</option>
+            <option value="household">Maishiy</option>
+            <option value="cosmetics">Kosmetika</option>
+        </select>
+    </div>
+
+    <!-- Requisites Accordion -->
+    <div class="mb-3">
+        <button class="btn w-100 text-start d-flex justify-content-between align-items-center" type="button"
+            onclick="toggleRequisites()"
+            style="background: #e8f5e9; border: 1px solid #4caf50; color: #2e7d32; padding: 12px;">
+            <span><strong>Mijoz rekvizitlari</strong></span>
+            <i class="bi bi-chevron-down" id="requisitesIcon"></i>
+        </button>
+        <div id="requisitesSection"
+            style="display: none; margin-top: 15px; padding: 15px; background: #f9f9f9; border-radius: 10px;">
+            <div class="mb-3">
+                <label class="form-label">INN</label>
+                <input type="text" id="customerINN" class="form-control" placeholder="INN kiriting">
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Hisob raqami (Р/С)</label>
+                <input type="text" id="customerAccount" class="form-control" placeholder="Hisob raqamini kiriting">
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Bank</label>
+                <input type="text" id="customerBank" class="form-control" placeholder="Bank nomini kiriting">
+            </div>
+
+            <div class="row">
+                <div class="col-6 mb-3">
+                    <label class="form-label">MFO</label>
+                    <input type="text" id="customerMFO" class="form-control" placeholder="MFO">
+                </div>
+                <div class="col-6 mb-3">
+                    <label class="form-label">OKED</label>
+                    <input type="text" id="customerOKED" class="form-control" placeholder="OKED">
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">PINFL</label>
+                <input type="text" id="customerPINFL" class="form-control" placeholder="PINFL kiriting">
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Shartnoma raqami</label>
+                <input type="text" id="customerContractNumber" class="form-control"
+                    placeholder="Shartnoma raqamini kiriting">
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Shartnoma sanasi</label>
+                <input type="date" id="customerContractDate" class="form-control">
+            </div>
+        </div>
+    </div>
+
+    <!-- Save Button -->
+    <button class="btn btn-success w-100 mb-3" onclick="saveCustomer()"
+        style="padding: 15px; font-size: 16px; font-weight: bold;">
+        Saqlash
+    </button>
+</div>

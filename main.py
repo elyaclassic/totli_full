@@ -508,6 +508,152 @@ async def agent_dashboard_test(request: Request, db: Session = Depends(get_db)):
     })
 
 
+
+# Production Dashboard
+@app.get("/test/dashboard/production", response_class=HTMLResponse)
+async def production_dashboard_test(request: Request, db: Session = Depends(get_db)):
+    """Ishlab chiqarish Dashboard - Test (fake data)"""
+    fake_user = {"username": "prod_manager", "role": "production"}
+    
+    metrics = {
+        'today_production': 2500,
+        'plan': 3000,
+        'active_machines': 8,
+        'total_machines': 10,
+        'efficiency': 85,
+        'workers': 45,
+        'shifts': 3,
+        'raw_materials': 72
+    }
+    
+    production_orders = [
+        {'product': 'Shokolad tort', 'quantity': 500, 'deadline': '16:00', 'progress': 75},
+        {'product': 'Medovik', 'quantity': 300, 'deadline': '14:00', 'progress': 100},
+        {'product': 'Napoleon', 'quantity': 400, 'deadline': '18:00', 'progress': 45},
+        {'product': 'Tiramisu', 'quantity': 200, 'deadline': '15:00', 'progress': 90}
+    ]
+    
+    machines = [
+        {'name': 'Mixer #1', 'status': 'active', 'operator': 'Alisher', 'badge_color': 'success', 'status_text': 'Ishlayapti'},
+        {'name': 'Mixer #2', 'status': 'active', 'operator': 'Dilshod', 'badge_color': 'success', 'status_text': 'Ishlayapti'},
+        {'name': 'Oven #1', 'status': 'active', 'operator': 'Sardor', 'badge_color': 'success', 'status_text': 'Ishlayapti'},
+        {'name': 'Oven #2', 'status': 'idle', 'operator': '-', 'badge_color': 'warning', 'status_text': 'Dam olishda'},
+        {'name': 'Packaging #1', 'status': 'maintenance', 'operator': 'Texnik', 'badge_color': 'danger', 'status_text': 'Ta\'mirda'}
+    ]
+    
+    chart = {
+        'labels': ['Dush', 'Sesh', 'Chor', 'Pay', 'Juma', 'Shan', 'Yak'],
+        'data': [2200, 2400, 2600, 2300, 2800, 2500, 2100],
+        'plan': [3000, 3000, 3000, 3000, 3000, 2500, 2000]
+    }
+    
+    return templates.TemplateResponse("dashboards/production.html", {
+        "request": request,
+        "page_title": "Ishlab chiqarish Dashboard",
+        "user": fake_user,
+        "metrics": metrics,
+        "production_orders": production_orders,
+        "machines": machines,
+        "chart": chart
+    })
+
+
+# Warehouse Dashboard
+@app.get("/test/dashboard/warehouse", response_class=HTMLResponse)
+async def warehouse_dashboard_test(request: Request, db: Session = Depends(get_db)):
+    """Ombor Dashboard - Test (fake data)"""
+    fake_user = {"username": "warehouse_manager", "role": "warehouse"}
+    
+    metrics = {
+        'total_value': 25000000,
+        'total_products': 156,
+        'categories': 12,
+        'today_in': 45,
+        'today_out': 38
+    }
+    
+    low_stock = [
+        {'name': 'Shokolad', 'quantity': 5, 'min_quantity': 20, 'level': 'critical', 'badge': 'danger'},
+        {'name': 'Un', 'quantity': 15, 'min_quantity': 50, 'level': 'low', 'badge': 'warning'},
+        {'name': 'Shakar', 'quantity': 25, 'min_quantity': 40, 'level': 'low', 'badge': 'warning'},
+        {'name': 'Yog\'', 'quantity': 8, 'min_quantity': 30, 'level': 'critical', 'badge': 'danger'},
+        {'name': 'Tuxum', 'quantity': 35, 'min_quantity': 50, 'level': 'low', 'badge': 'warning'}
+    ]
+    
+    recent_moves = [
+        {'product': 'Shokolad tort', 'quantity': 50, 'type_text': 'Chiqim', 'type_color': 'danger', 'time': '14:30'},
+        {'product': 'Un', 'quantity': 100, 'type_text': 'Kirim', 'type_color': 'success', 'time': '13:15'},
+        {'product': 'Medovik', 'quantity': 30, 'type_text': 'Chiqim', 'type_color': 'danger', 'time': '12:45'},
+        {'product': 'Shakar', 'quantity': 50, 'type_text': 'Kirim', 'type_color': 'success', 'time': '11:20'},
+        {'product': 'Napoleon', 'quantity': 25, 'type_text': 'Chiqim', 'type_color': 'danger', 'time': '10:30'}
+    ]
+    
+    chart = {
+        'labels': ['Dush', 'Sesh', 'Chor', 'Pay', 'Juma', 'Shan', 'Yak'],
+        'incoming': [120, 150, 180, 140, 200, 160, 130],
+        'outgoing': [100, 130, 150, 120, 170, 140, 110]
+    }
+    
+    return templates.TemplateResponse("dashboards/warehouse.html", {
+        "request": request,
+        "page_title": "Ombor Dashboard",
+        "user": fake_user,
+        "metrics": metrics,
+        "low_stock": low_stock,
+        "recent_moves": recent_moves,
+        "chart": chart
+    })
+
+
+# Delivery Dashboard
+@app.get("/test/dashboard/delivery", response_class=HTMLResponse)
+async def delivery_dashboard_test(request: Request, db: Session = Depends(get_db)):
+    """Yetkazib berish Dashboard - Test (fake data)"""
+    fake_user = {"username": "delivery_manager", "role": "delivery"}
+    
+    metrics = {
+        'completed': 28,
+        'total': 35,
+        'percent': 80,
+        'active_drivers': 8,
+        'total_drivers': 10,
+        'avg_time': 45,
+        'delays': 3
+    }
+    
+    deliveries = [
+        {'customer': 'Anvar Toshmatov', 'address': 'Chilonzor 12-kv', 'driver': 'Alisher', 'status': 'completed', 'badge_color': 'success', 'status_text': 'Yetkazilgan', 'time': '09:30'},
+        {'customer': 'Dilshod Karimov', 'address': 'Yunusobod 5-kv', 'driver': 'Sardor', 'status': 'in-progress', 'badge_color': 'warning', 'status_text': 'Yo\'lda', 'time': '10:15'},
+        {'customer': 'Jasur Rahimov', 'address': 'Yakkasaroy 3-kv', 'driver': 'Bobur', 'status': 'in-progress', 'badge_color': 'warning', 'status_text': 'Yo\'lda', 'time': '11:00'},
+        {'customer': 'Otabek Normatov', 'address': 'Uchtepa 4-kv', 'driver': 'Jasur', 'status': 'pending', 'badge_color': 'secondary', 'status_text': 'Kutilmoqda', 'time': '13:00'},
+        {'customer': 'Sardor Usmonov', 'address': 'Mirzo Ulug\'bek 8-kv', 'driver': 'Dilshod', 'status': 'completed', 'badge_color': 'success', 'status_text': 'Yetkazilgan', 'time': '08:45'}
+    ]
+    
+    drivers = [
+        {'name': 'Alisher Karimov', 'deliveries': 5, 'location': 'Chilonzor', 'status_color': 'success', 'status_text': 'Faol'},
+        {'name': 'Sardor Usmonov', 'deliveries': 4, 'location': 'Yunusobod', 'status_color': 'success', 'status_text': 'Faol'},
+        {'name': 'Bobur Sharipov', 'deliveries': 3, 'location': 'Yakkasaroy', 'status_color': 'success', 'status_text': 'Faol'},
+        {'name': 'Jasur Rahimov', 'deliveries': 2, 'location': 'Uchtepa', 'status_color': 'warning', 'status_text': 'Dam olishda'},
+        {'name': 'Dilshod Karimov', 'deliveries': 4, 'location': 'Sergeli', 'status_color': 'success', 'status_text': 'Faol'}
+    ]
+    
+    chart = {
+        'labels': ['Dush', 'Sesh', 'Chor', 'Pay', 'Juma', 'Shan', 'Yak'],
+        'completed': [32, 35, 38, 34, 40, 36, 28],
+        'delayed': [3, 2, 4, 3, 5, 2, 3]
+    }
+    
+    return templates.TemplateResponse("dashboards/delivery.html", {
+        "request": request,
+        "page_title": "Yetkazib berish Dashboard",
+        "user": fake_user,
+        "metrics": metrics,
+        "deliveries": deliveries,
+        "drivers": drivers,
+        "chart": chart
+    })
+
+
 # ==========================================
 # ASOSIY SAHIFALAR
 # ==========================================

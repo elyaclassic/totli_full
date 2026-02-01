@@ -1,0 +1,63 @@
+<!-- Simple Add Customer Modal -->
+<div id="addCustomerModalSimple"
+    style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 2000; display: flex; align-items: center; justify-content: center;">
+    <div
+        style="background: white; border-radius: 10px; padding: 20px; width: 90%; max-width: 500px; max-height: 80vh; overflow-y: auto;">
+        <!-- Header -->
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Kontragentni tahrirlash</h5>
+            <button onclick="closeAddCustomerSimple()"
+                style="background: none; border: none; font-size: 24px; cursor: pointer;">
+                <i class="bi bi-x"></i>
+            </button>
+        </div>
+
+        <!-- Form -->
+        <div class="mb-3">
+            <label class="form-label">Nomi *</label>
+            <input type="text" id="customerNameSimple" class="form-control" placeholder="Nomini kiriting">
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Turi *</label>
+            <select id="customerTypeSimple" class="form-select">
+                <option value="">Tanlang</option>
+                <option value="customer">Mijoz</option>
+                <option value="supplier">Ta'minotchi</option>
+                <option value="both">Ikkala</option>
+            </select>
+        </div>
+
+        <div class="row">
+            <div class="col-6 mb-3">
+                <label class="form-label">Telefon</label>
+                <input type="tel" id="customerPhoneSimple" class="form-control" placeholder="998901234567">
+            </div>
+            <div class="col-6 mb-3">
+                <label class="form-label">Manzil</label>
+                <input type="text" id="customerAddressSimple" class="form-control" placeholder="Manzil">
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-6 mb-3">
+                <label class="form-label">Kredit limiti</label>
+                <input type="number" id="customerCreditLimitSimple" class="form-control" placeholder="0" value="0">
+            </div>
+            <div class="col-6 mb-3">
+                <label class="form-label">Chegirma %</label>
+                <input type="number" id="customerDiscountSimple" class="form-control" placeholder="0" value="0">
+            </div>
+        </div>
+
+        <!-- Buttons -->
+        <div class="d-flex gap-2">
+            <button class="btn btn-secondary flex-fill" onclick="closeAddCustomerSimple()">
+                Bekor qilish
+            </button>
+            <button class="btn btn-success flex-fill" onclick="saveCustomerSimple()">
+                <i class="bi bi-check-lg"></i> Saqlash
+            </button>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+
+{% block title %}Yetkazib berish Dashboard - TOTLI HOLVA{% endblock %}
+
+{% block extra_css %}
+<style>
+    .delivery-card {
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+
+    .delivery-item {
+        padding: 15px;
+        border-left: 4px solid #667eea;
+        margin-bottom: 10px;
+        background: #f8f9fa;
+        border-radius: 5px;
+    }
+
+    .delivery-completed {
+        border-left-color: #28a745;
+        opacity: 0.7;
+    }
+
+    .delivery-in-progress {
+        border-left-color: #ffc107;
+    }
+
+    .delivery-pending {
+        border-left-color: #6c757d;
+    }
+
+    .driver-card {
+        padding: 15px;
+        border: 1px solid #dee2e6;
+        border-radius: 5px;
+        margin-bottom: 10px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2><i class="bi bi-truck"></i> Yetkazib berish Dashboard</h2>
+            <p class="text-muted">Haydovchilar va yetkazilishlar</p>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-3 mb-3">
+            <div
+                style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 10px; padding: 25px; text-align: center;">
+                <div style="font-size: 0.9rem; opacity: 0.9;">Bugungi Yetkazish</div>
+                <div style="font-size: 2.5rem; font-weight: bold;">{{ metrics.completed }}/{{ metrics.total }}</div>
+                <small>{{ metrics.percent }}% bajarilgan</small>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div
+                style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; border-radius: 10px; padding: 25px; text-align: center;">
+                <div style="font-size: 0.9rem; opacity: 0.9;">Faol Haydovchilar</div>
+                <div style="font-size: 2.5rem; font-weight: bold;">{{ metrics.active_drivers }}</div>
+                <small>{{ metrics.total_drivers }} jami</small>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div
+                style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; border-radius: 10px; padding: 25px; text-align: center;">
+                <div style="font-size: 0.9rem; opacity: 0.9;">O'rtacha Vaqt</div>
+                <div style="font-size: 2.5rem; font-weight: bold;">{{ metrics.avg_time }}</div>
+                <small>daqiqa</small>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div
+                style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); color: white; border-radius: 10px; padding: 25px; text-align: center;">
+                <div style="font-size: 0.9rem; opacity: 0.9;">Kechikishlar</div>
+                <div style="font-size: 2.5rem; font-weight: bold;">{{ metrics.delays }}</div>
+                <small>bugun</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-8 mb-3">
+            <div class="card delivery-card">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="bi bi-list-check"></i> Bugungi Yetkazilishlar</h5>
+                </div>
+                <div class="card-body" style="max-height: 500px; overflow-y: auto;">
+                    {% for delivery in deliveries %}
+                    <div class="delivery-item delivery-{{ delivery.status }}">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <strong>{{ delivery.customer }}</strong>
+                                <br><small class="text-muted"><i class="bi bi-geo-alt"></i> {{ delivery.address
+                                    }}</small>
+                                <br><small class="text-muted"><i class="bi bi-person"></i> {{ delivery.driver }}</small>
+                            </div>
+                            <div class="text-end">
+                                <span class="badge bg-{{ delivery.badge_color }}">{{ delivery.status_text }}</span>
+                                <br><small class="text-muted">{{ delivery.time }}</small>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-3">
+            <div class="card delivery-card">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="bi bi-people"></i> Haydovchilar</h5>
+                </div>
+                <div class="card-body" style="max-height: 500px; overflow-y: auto;">
+                    {% for driver in drivers %}
+                    <div class="driver-card">
+                        <strong>{{ driver.name }}</strong>
+                        <span class="float-end badge bg-{{ driver.status_color }}">{{ driver.status_text }}</span>
+                        <br><small class="text-muted">Bugun: {{ driver.deliveries }} ta</small>
+                        <br><small class="text-muted"><i class="bi bi-geo-alt"></i> {{ driver.location }}</small>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <div class="card delivery-card">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="bi bi-graph-up"></i> Haftalik Yetkazilishlar</h5>
+                </div>
+                <div class="card-body">
+                    <div style="height: 300px; position: relative;">
+                        <canvas id="deliveryChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+    const ctx = document.getElementById('deliveryChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: {{ chart.labels | tojson }},
+        datasets: [{
+            label: 'Yetkazilgan',
+            data: {{ chart.completed | tojson }},
+        backgroundColor: 'rgba(40, 167, 69, 0.8)'
+            }, {
+            label: 'Kechikkan',
+            data: {{ chart.delayed | tojson }},
+        backgroundColor: 'rgba(255, 193, 7, 0.8)'
+            }]
+        },
+        options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+            x: { stacked: true },
+            y: { stacked: true }
+        }
+    }
+    });
+</script>
+{% endblock %}

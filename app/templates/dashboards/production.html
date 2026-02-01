@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+
+{% block title %}Ishlab chiqarish Dashboard - TOTLI HOLVA{% endblock %}
+
+{% block extra_css %}
+<style>
+    .prod-card {
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+
+    .metric-box {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 10px;
+        padding: 25px;
+        text-align: center;
+    }
+
+    .metric-number {
+        font-size: 2.5rem;
+        font-weight: bold;
+    }
+
+    .production-item {
+        padding: 15px;
+        border-left: 4px solid #28a745;
+        margin-bottom: 10px;
+        background: #f8f9fa;
+        border-radius: 5px;
+    }
+
+    .machine-status {
+        padding: 10px;
+        border-radius: 5px;
+        margin-bottom: 10px;
+    }
+
+    .machine-active {
+        background: #d4edda;
+        border-left: 4px solid #28a745;
+    }
+
+    .machine-idle {
+        background: #fff3cd;
+        border-left: 4px solid #ffc107;
+    }
+
+    .machine-maintenance {
+        background: #f8d7da;
+        border-left: 4px solid #dc3545;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2><i class="bi bi-gear-fill"></i> Ishlab chiqarish Dashboard</h2>
+            <p class="text-muted">Bugungi ishlab chiqarish va uskunalar holati</p>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-3 mb-3">
+            <div class="metric-box" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                <div style="font-size: 0.9rem; opacity: 0.9;">Bugungi Ishlab chiqarish</div>
+                <div class="metric-number">{{ metrics.today_production }} kg</div>
+                <small>Plan: {{ metrics.plan }} kg</small>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="metric-box" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                <div style="font-size: 0.9rem; opacity: 0.9;">Faol Uskunalar</div>
+                <div class="metric-number">{{ metrics.active_machines }}/{{ metrics.total_machines }}</div>
+                <small>{{ metrics.efficiency }}% samaradorlik</small>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="metric-box" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                <div style="font-size: 0.9rem; opacity: 0.9;">Ishchilar</div>
+                <div class="metric-number">{{ metrics.workers }}</div>
+                <small>{{ metrics.shifts }} smena</small>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="metric-box" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
+                <div style="font-size: 0.9rem; opacity: 0.9;">Xom ashyo</div>
+                <div class="metric-number">{{ metrics.raw_materials }}%</div>
+                <small>Qoldiq darajasi</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-6 mb-3">
+            <div class="card prod-card">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="bi bi-list-check"></i> Bugungi Buyurtmalar</h5>
+                </div>
+                <div class="card-body">
+                    {% for order in production_orders %}
+                    <div class="production-item">
+                        <strong>{{ order.product }}</strong> - {{ order.quantity }} kg
+                        <br><small class="text-muted">Deadline: {{ order.deadline }}</small>
+                        <div class="progress mt-2" style="height: 8px;">
+                            <div class="progress-bar bg-success" style="width: {{ order.progress }}%"></div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 mb-3">
+            <div class="card prod-card">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="bi bi-cpu"></i> Uskunalar Holati</h5>
+                </div>
+                <div class="card-body">
+                    {% for machine in machines %}
+                    <div class="machine-status machine-{{ machine.status }}">
+                        <strong>{{ machine.name }}</strong>
+                        <span class="float-end badge bg-{{ machine.badge_color }}">{{ machine.status_text }}</span>
+                        <br><small class="text-muted">Operator: {{ machine.operator }}</small>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <div class="card prod-card">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="bi bi-graph-up"></i> Haftalik Ishlab chiqarish</h5>
+                </div>
+                <div class="card-body">
+                    <div style="height: 300px; position: relative;">
+                        <canvas id="productionChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+    const ctx = document.getElementById('productionChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: {{ chart.labels | tojson }},
+        datasets: [{
+            label: 'Ishlab chiqarish (kg)',
+            data: {{ chart.data | tojson }},
+        backgroundColor: 'rgba(102, 126, 234, 0.8)'
+            }, {
+            label: 'Plan (kg)',
+            data: {{ chart.plan | tojson }},
+        type: 'line',
+        borderColor: 'rgb(255, 99, 132)',
+        borderDash: [5, 5]
+            }]
+        },
+        options: {
+        responsive: true,
+        maintainAspectRatio: false
+    }
+    });
+</script>
+{% endblock %}

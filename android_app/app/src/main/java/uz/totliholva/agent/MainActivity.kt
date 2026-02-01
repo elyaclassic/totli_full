@@ -26,8 +26,8 @@ class MainActivity : AppCompatActivity() {
         setupWebView()
         checkLocationPermission()
         
-        // Load URL
-        webView.loadUrl("https://lineal-whelpless-margrett.ngrok-free.dev/static/pwa/dashboard.html")
+        // Load URL - ngrok (HTTPS, no password required) - Start with login page
+        webView.loadUrl("https://lineal-whelpless-margrett.ngrok-free.dev/static/pwa/login.html")
     }
     
     private fun setupWebView() {
@@ -37,8 +37,27 @@ class MainActivity : AppCompatActivity() {
         settings.databaseEnabled = true
         settings.setGeolocationEnabled(true)
         settings.cacheMode = WebSettings.LOAD_DEFAULT
+        settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
         
-        webView.webViewClient = WebViewClient()
+        // Custom User-Agent to bypass localtunnel password
+        settings.userAgentString = "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36 TOTLI-HOLVA-APP"
+        
+        webView.webViewClient = object : WebViewClient() {
+            override fun onReceivedSslError(
+                view: WebView?,
+                handler: android.webkit.SslErrorHandler?,
+                error: android.net.http.SslError?
+            ) {
+                // Accept self-signed certificates for development
+                handler?.proceed()
+            }
+            
+            override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+                // Load all URLs in the same WebView
+                return false
+            }
+        }
+        
         webView.webChromeClient = object : WebChromeClient() {
             override fun onGeolocationPermissionsShowPrompt(
                 origin: String,

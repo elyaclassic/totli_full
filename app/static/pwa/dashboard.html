@@ -5,8 +5,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#017449">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <link rel="manifest" href="/static/pwa/manifest.json">
-    <title>TOTLI HOLVA - Agent</title>
+    <title>TOTLI HOLVA - Agent v2.0</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     <style>
@@ -97,22 +100,302 @@
             background: var(--warning);
         }
 
+
         .badge-danger {
             background: var(--danger);
+        }
+
+        /* Sidebar Styles */
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: -300px;
+            width: 300px;
+            height: 100vh;
+            background: white;
+            box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+            transition: left 0.3s ease;
+            z-index: 1050;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar.active {
+            left: 0;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            background: var(--primary);
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .avatar-circle {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: white;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+        }
+
+        .btn-close-sidebar {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        .sidebar-menu {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px 0;
+        }
+
+        .sidebar-item {
+            display: flex;
+            align-items: center;
+            padding: 15px 20px;
+            color: #333;
+            text-decoration: none;
+            transition: background 0.2s;
+        }
+
+        .sidebar-item:hover {
+            background: #f0f0f0;
+            color: var(--primary);
+        }
+
+        .sidebar-item i {
+            font-size: 20px;
+            width: 30px;
+            margin-right: 15px;
+            color: #666;
+        }
+
+        .sidebar-item:hover i {
+            color: var(--primary);
+        }
+
+        .sidebar-footer {
+            padding: 15px 20px;
+            border-top: 1px solid #e0e0e0;
+            text-align: center;
+        }
+
+        .sidebar-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1040;
+            display: none;
+        }
+
+        .sidebar-overlay.active {
+            display: block;
+        }
+
+        /* Animations */
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .spin {
+            animation: spin 1s linear infinite;
+        }
+
+        /* Week Tabs */
+        .week-tabs {
+            display: flex;
+            gap: 5px;
+            overflow-x: auto;
+            padding: 5px 0;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .week-tab {
+            flex-shrink: 0;
+            padding: 8px 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .week-tab.active {
+            background: white;
+            color: var(--primary);
+            font-weight: bold;
+        }
+
+        .week-tab:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Customer Card */
+        .customer-card {
+            background: white;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .customer-card:hover {
+            transform: translateX(5px);
+        }
+
+        .customer-icon {
+            width: 50px;
+            height: 50px;
+            background: #f0f0f0;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 15px;
+            font-size: 24px;
+            color: #999;
+        }
+
+        .customer-info {
+            flex: 1;
+        }
+
+        .customer-name {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .customer-balance {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .customer-balance.negative {
+            color: #dc3545;
+        }
+
+        .customer-day {
+            font-size: 12px;
+            color: #999;
         }
     </style>
 </head>
 
 <body>
+    <!-- Sidebar Menu -->
+    <div id="sidebar" class="sidebar">
+        <div class="sidebar-header">
+            <div class="d-flex align-items-center">
+                <div class="avatar-circle">
+                    <i class="bi bi-person-fill"></i>
+                </div>
+                <div class="ms-3">
+                    <h6 class="mb-0" id="sidebarAgentName">Agent</h6>
+                    <small class="text-muted">Server: totliholva</small>
+                </div>
+            </div>
+            <button class="btn-close-sidebar" onclick="closeSidebar()">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+
+        <div class="sidebar-menu">
+            <a href="#" class="sidebar-item" onclick="showAddCustomer(); closeSidebar();">
+                <i class="bi bi-shop"></i>
+                <span>Savdo nuqtasi qo'shish</span>
+            </a>
+            <a href="#" class="sidebar-item" onclick="showPage('customersPage'); closeSidebar();">
+                <i class="bi bi-building"></i>
+                <span>Savdo nuqtalari</span>
+            </a>
+            <a href="#" class="sidebar-item" onclick="showPage('tasksPage'); closeSidebar();">
+                <i class="bi bi-check2-square"></i>
+                <span>Vazifalar</span>
+            </a>
+            <a href="#" class="sidebar-item" onclick="showPage('stockPage'); closeSidebar();">
+                <i class="bi bi-box-seam"></i>
+                <span>Qoldiqlar</span>
+            </a>
+            <a href="#" class="sidebar-item" onclick="showPage('draftsPage'); closeSidebar();">
+                <i class="bi bi-file-earmark"></i>
+                <span>Qoralamalar</span>
+            </a>
+            <a href="#" class="sidebar-item" onclick="showPage('syncOrdersPage'); closeSidebar();">
+                <i class="bi bi-arrow-repeat"></i>
+                <span>Sinxronlashgan buyurtmalar</span>
+            </a>
+            <a href="#" class="sidebar-item" onclick="showPage('reportsPage'); closeSidebar();">
+                <i class="bi bi-bar-chart"></i>
+                <span>Hisobotlar</span>
+            </a>
+            <a href="#" class="sidebar-item" onclick="showPage('kpiPage'); closeSidebar();">
+                <i class="bi bi-graph-up"></i>
+                <span>KPI natijalari</span>
+            </a>
+            <a href="#" class="sidebar-item" onclick="showPage('orderDebtorsPage'); closeSidebar();">
+                <i class="bi bi-people"></i>
+                <span>Buyurtma qarzdorlari</span>
+            </a>
+            <a href="#" class="sidebar-item" onclick="showPage('debtorsPage'); closeSidebar();">
+                <i class="bi bi-people-fill"></i>
+                <span>Qarzdorlar</span>
+            </a>
+            <a href="#" class="sidebar-item" onclick="sendLocation(); closeSidebar();">
+                <i class="bi bi-send"></i>
+                <span>Lokatsiya yuborish</span>
+            </a>
+        </div>
+
+        <div class="sidebar-footer">
+            <small class="text-muted">Joriy versiya: 2.8.217</small>
+        </div>
+    </div>
+
+    <!-- Sidebar Overlay -->
+    <div id="sidebarOverlay" class="sidebar-overlay" onclick="closeSidebar()"></div>
+
     <!-- Navbar -->
     <nav class="navbar navbar-light bg-light">
         <div class="container-fluid">
-            <span class="navbar-brand mb-0 h1">
-                <i class="bi bi-geo-alt-fill text-success"></i> TOTLI HOLVA
-            </span>
-            <button class="btn btn-outline-danger btn-sm" onclick="logout()">
-                <i class="bi bi-box-arrow-right"></i> Chiqish
+            <button class="btn btn-link text-dark" onclick="openSidebar()">
+                <i class="bi bi-list fs-4"></i>
             </button>
+            <span class="navbar-brand mb-0 h5" id="navbarAgentName">
+                Agent
+            </span>
+            <div>
+                <button class="btn btn-link text-dark" onclick="alert('Filter')">
+                    <i class="bi bi-funnel"></i>
+                </button>
+                <button class="btn btn-link text-dark" onclick="alert('Settings')">
+                    <i class="bi bi-three-dots-vertical"></i>
+                </button>
+            </div>
         </div>
     </nav>
 
@@ -120,50 +403,90 @@
     <div class="container mt-3">
         <!-- Dashboard Page -->
         <div id="dashboardPage" class="page active">
-            <h5 class="text-white mb-3">Dashboard</h5>
-
-            <div class="row">
-                <div class="col-6">
-                    <div class="stat-card text-center">
-                        <i class="bi bi-people fs-1 text-primary"></i>
-                        <h6 class="text-muted mt-2">Mijozlar</h6>
-                        <h4 id="customerCount">0</h4>
-                    </div>
+            <!-- Tabs -->
+            <div class="d-flex mb-3" style="border-bottom: 2px solid rgba(255,255,255,0.3);">
+                <div class="flex-fill text-center pb-2" style="border-bottom: 3px solid white; cursor: pointer;"
+                    onclick="showDashboardTab('visits')">
+                    <strong class="text-white">TASHRIFLAR (<span id="todayVisits">0</span>/<span
+                            id="totalVisits">7</span>)</strong>
                 </div>
-                <div class="col-6">
-                    <div class="stat-card text-center">
-                        <i class="bi bi-cart fs-1 text-success"></i>
-                        <h6 class="text-muted mt-2">Buyurtmalar</h6>
-                        <h4 id="orderCount">0</h4>
-                    </div>
+                <div class="flex-fill text-center pb-2" style="cursor: pointer; opacity: 0.7;"
+                    onclick="showDashboardTab('summary')">
+                    <strong class="text-white">NATIJALAR</strong>
                 </div>
             </div>
 
-            <div class="row">
-                <div class="col-6">
-                    <div class="stat-card text-center">
-                        <i class="bi bi-geo-alt fs-1 text-warning"></i>
-                        <h6 class="text-muted mt-2">Tashriflar</h6>
-                        <h4 id="visitCount">0</h4>
+            <!-- Visits Tab Content -->
+            <div id="visitsTabContent">
+                <!-- Customer Cards List -->
+                <div id="dashboardCustomersList"></div>
+            </div>
+
+            <!-- Summary Tab Content -->
+            <div id="summaryTabContent" style="display: none;">
+                <div class="row">
+                    <div class="col-6">
+                        <div class="stat-card text-center">
+                            <i class="bi bi-people fs-1 text-primary"></i>
+                            <h6 class="text-muted mt-2">Mijozlar</h6>
+                            <h4 id="customerCount">0</h4>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="stat-card text-center">
+                            <i class="bi bi-cart fs-1 text-success"></i>
+                            <h6 class="text-muted mt-2">Buyurtmalar</h6>
+                            <h4 id="orderCount">0</h4>
+                        </div>
                     </div>
                 </div>
-                <div class="col-6">
-                    <div class="stat-card text-center">
-                        <i class="bi bi-currency-dollar fs-1 text-info"></i>
-                        <h6 class="text-muted mt-2">To'lovlar</h6>
-                        <h4 id="paymentSum">0</h4>
+
+                <div class="row">
+                    <div class="col-6">
+                        <div class="stat-card text-center">
+                            <i class="bi bi-geo-alt fs-1 text-warning"></i>
+                            <h6 class="text-muted mt-2">Tashriflar</h6>
+                            <h4 id="visitCount">0</h4>
+                        </div>
                     </div>
+                    <div class="col-6">
+                        <div class="stat-card text-center">
+                            <i class="bi bi-currency-dollar fs-1 text-info"></i>
+                            <h6 class="text-muted mt-2">To'lovlar</h6>
+                            <h4 id="paymentSum">0</h4>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <h6><i class="bi bi-geo-alt-fill text-success"></i> GPS Status</h6>
+                    <p class="mb-0">Lat: <span id="gpsLat">-</span></p>
+                    <p class="mb-0">Lng: <span id="gpsLng">-</span></p>
+                    <p class="mb-0">Aniqlik: <span id="gpsAccuracy">-</span></p>
+                    <button class="btn btn-success btn-sm mt-2 w-100" onclick="sendLocation()">
+                        <i class="bi bi-geo-alt"></i> Lokatsiya Yuborish
+                    </button>
                 </div>
             </div>
 
-            <div class="stat-card">
-                <h6><i class="bi bi-geo-alt-fill text-success"></i> GPS Status</h6>
-                <p class="mb-0">Lat: <span id="lat">-</span></p>
-                <p class="mb-0">Lng: <span id="lng">-</span></p>
-                <p class="mb-0">Aniqlik: <span id="accuracy">-</span></p>
-                <button class="btn btn-success btn-sm mt-2 w-100" onclick="sendLocation()">
-                    <i class="bi bi-geo-alt"></i> Lokatsiya Yuborish
+            <!-- Floating Action Buttons -->
+            <div style="position: fixed; bottom: 80px; right: 20px; z-index: 100;">
+                <button class="btn btn-success rounded-circle mb-2"
+                    style="width: 56px; height: 56px; box-shadow: 0 4px 8px rgba(0,0,0,0.3);" onclick="syncData()">
+                    <i class="bi bi-arrow-repeat fs-5"></i>
                 </button>
+                <button class="btn btn-success rounded-circle"
+                    style="width: 56px; height: 56px; box-shadow: 0 4px 8px rgba(0,0,0,0.3);"
+                    onclick="openNavigation()">
+                    <i class="bi bi-compass fs-5"></i>
+                </button>
+            </div>
+
+            <!-- Sync Status Footer -->
+            <div
+                style="position: fixed; bottom: 60px; left: 0; right: 0; background: rgba(200, 230, 201, 0.9); padding: 8px 15px; display: flex; justify-content: space-between; font-size: 12px;">
+                <span>Hammasi sinxronlashgan</span>
+                <span>Oxirgi sinx: <span id="lastSyncTime">--:--</span></span>
             </div>
         </div>
 
@@ -248,6 +571,31 @@
             <div id="visitsList"></div>
         </div>
 
+        <!-- Customers Page (Weekly Schedule) -->
+        <div id="customersPage" class="page">
+            <h5 class="text-white mb-3">Savdo nuqtalari</h5>
+
+            <!-- Week Days Tabs -->
+            <div class="week-tabs mb-3">
+                <button class="week-tab active" onclick="filterByDay('all')">Barchasi</button>
+                <button class="week-tab" onclick="filterByDay(1)">Dush</button>
+                <button class="week-tab" onclick="filterByDay(2)">Sesh</button>
+                <button class="week-tab" onclick="filterByDay(3)">Chor</button>
+                <button class="week-tab" onclick="filterByDay(4)">Pay</button>
+                <button class="week-tab" onclick="filterByDay(5)">Juma</button>
+                <button class="week-tab" onclick="filterByDay(6)">Shan</button>
+                <button class="week-tab" onclick="filterByDay(0)">Yak</button>
+            </div>
+
+            <!-- Customers List -->
+            <div id="customersList"></div>
+
+            <!-- Customer Count -->
+            <div class="text-white text-center mt-3">
+                <small>Mijozlar soni: <span id="customersCount">0</span> / <span id="totalCustomers">0</span></small>
+            </div>
+        </div>
+
         <!-- Profile Page -->
         <div id="profilePage" class="page">
             <h5 class="text-white mb-3">Profil</h5>
@@ -263,284 +611,542 @@
         </div>
     </div>
 
-    <!-- Add Customer Modal -->
+    <!-- Add Customer Modal (Simple) -->
     <div id="addCustomerModal"
-        style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 2000;">
+        style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 2000; align-items: center; justify-content: center;">
         <div
-            style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 15px; width: 90%; max-width: 400px;">
-            <h5 class="mb-3">Yangi Mijoz</h5>
-            <div class="mb-3">
-                <label class="form-label">Ism</label>
-                <input type="text" id="customerName" class="form-control" placeholder="Ism kiriting">
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Telefon</label>
-                <input type="tel" id="customerPhone" class="form-control" placeholder="+998901234567">
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Manzil</label>
-                <input type="text" id="customerAddress" class="form-control" placeholder="Manzil kiriting">
-            </div>
-            <div class="d-flex gap-2">
-                <button class="btn btn-success flex-fill" onclick="saveCustomer()">Saqlash</button>
-                <button class="btn btn-secondary flex-fill" onclick="closeAddCustomer()">Bekor qilish</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Add Order Modal -->
-    <div id="addOrderModal"
-        style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 2000; overflow-y: auto;">
-        <div
-            style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 15px; width: 90%; max-width: 400px; max-height: 90vh; overflow-y: auto;">
-            <h5 class="mb-3">Yangi Buyurtma</h5>
-
-            <div class="mb-3">
-                <label class="form-label">1. Yo'nalish</label>
-                <select id="orderDirection" class="form-select">
-                    <option value="">Tanlang...</option>
-                    <option value="wholesale">Ulgurji</option>
-                    <option value="retail">Chakana</option>
-                </select>
-            </div>
-
-            <div class="mb-3">
-                <label class="form-label">2. Sklad</label>
-                <select id="orderWarehouse" class="form-select">
-                    <option value="">Tanlang...</option>
-                    <option value="main">Asosiy sklad</option>
-                    <option value="secondary">Ikkinchi sklad</option>
-                </select>
-            </div>
-
-            <div class="mb-3">
-                <label class="form-label">3. Narx turi</label>
-                <select id="orderPriceType" class="form-select">
-                    <option value="">Tanlang...</option>
-                    <option value="cash">Naqd</option>
-                    <option value="credit">Nasiya</option>
-                </select>
-            </div>
-
-            <div class="mb-3">
-                <label class="form-label">Mahsulotlar</label>
-                <div id="orderProducts">
-                    <p class="text-muted">Mahsulot qo'shing</p>
-                </div>
-                <button class="btn btn-outline-primary btn-sm w-100 mt-2" onclick="addProductToOrder()">
-                    <i class="bi bi-plus-circle"></i> Mahsulot qo'shish
+            style="background: white; border-radius: 10px; padding: 20px; width: 90%; max-width: 500px; max-height: 80vh; overflow-y: auto;">
+            <!-- Header -->
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">Kontragentni tahrirlash</h5>
+                <button onclick="closeAddCustomer()"
+                    style="background: none; border: none; font-size: 24px; cursor: pointer;">
+                    <i class="bi bi-x"></i>
                 </button>
             </div>
 
-            <div class="d-flex gap-2">
-                <button class="btn btn-success flex-fill" onclick="saveOrder()">Saqlash</button>
-                <button class="btn btn-secondary flex-fill" onclick="closeAddOrder()">Bekor qilish</button>
-            </div>
-        </div>
-    </div>
+            <div style="padding: 20px;">
+                <!-- Photo Upload -->
+                <div class="mb-4 text-center">
+                    <div id="customerPhotoPreview"
+                        style="width: 100px; height: 100px; background: #f0f0f0; border-radius: 10px; margin: 0 auto; display: flex; align-items: center; justify-content: center; cursor: pointer;"
+                        onclick="document.getElementById('customerPhoto').click()">
+                        <i class="bi bi-camera" style="font-size: 40px; color: #999;"></i>
+                    </div>
+                    <input type="file" id="customerPhoto" accept="image/*" capture="environment" style="display: none;"
+                        onchange="previewCustomerPhoto(event)">
+                </div>
 
-    <!-- Bottom Navigation -->
-    <nav class="bottom-nav">
-        <div class="d-flex justify-content-around">
-            <a class="nav-link active" onclick="showPage('dashboard', event)">
-                <i class="bi bi-house-door"></i>
-                <span>Asosiy</span>
-            </a>
-            <a class="nav-link" onclick="showPage('customers', event)">
-                <i class="bi bi-people"></i>
-                <span>Mijozlar</span>
-            </a>
-            <a class="nav-link" onclick="showPage('orders', event)">
-                <i class="bi bi-cart"></i>
-                <span>Buyurtmalar</span>
-            </a>
-            <a class="nav-link" onclick="showPage('visits', event)">
-                <i class="bi bi-geo-alt"></i>
-                <span>Tashriflar</span>
-            </a>
-            <a class="nav-link" onclick="showPage('profile', event)">
-                <i class="bi bi-person"></i>
-                <span>Profil</span>
-            </a>
-        </div>
-    </nav>
+                <!-- Basic Info -->
+                <div class="mb-3">
+                    <label class="form-label">*Savdo nuqtasi nomi</label>
+                    <input type="text" id="customerName" class="form-control" placeholder="Nomini kiriting">
+                </div>
 
-    <script>
-        let currentPage = 'dashboard';
+                <div class="mb-3">
+                    <label class="form-label">Yuridik nomi</label>
+                    <input type="text" id="customerLegalName" class="form-control"
+                        placeholder="Yuridik nomini kiriting">
+                </div>
 
-        function showPage(page, event) {
-            // Hide all pages
-            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-            document.querySelectorAll('.bottom-nav .nav-link').forEach(l => l.classList.remove('active'));
+                <div class="mb-3">
+                    <label class="form-label">Manzil</label>
+                    <input type="text" id="customerAddress" class="form-control" placeholder="Manzilni kiriting">
+                </div>
 
-            // Show selected page
-            document.getElementById(page + 'Page').classList.add('active');
-            if (event) {
-                event.target.closest('.nav-link').classList.add('active');
-            }
-            currentPage = page;
+                <div class="mb-3">
+                    <label class="form-label">Mo'ljal</label>
+                    <input type="text" id="customerLandmark" class="form-control" placeholder="Mo'ljalini kiriting">
+                </div>
 
-            // Load data
-            if (page === 'customers') loadCustomers();
-            if (page === 'orders') loadOrders();
-            if (page === 'visits') loadVisits();
-            if (page === 'profile') loadProfile();
-        }
+                <div class="mb-3">
+                    <label class="form-label">Aloqa shaxsi</label>
+                    <input type="text" id="customerContact" class="form-control" placeholder="Aloqa shaxsini kiriting">
+                </div>
 
-        async function sendLocation() {
-            try {
-                const position = await new Promise((resolve, reject) => {
-                    navigator.geolocation.getCurrentPosition(resolve, reject, {
-                        enableHighAccuracy: true,
-                        timeout: 10000,
-                        maximumAge: 0
-                    });
-                });
+                <div class="mb-3">
+                    <label class="form-label">Telefon raqami</label>
+                    <input type="tel" id="customerPhone" class="form-control" placeholder="998">
+                </div>
 
-                document.getElementById('lat').textContent = position.coords.latitude.toFixed(6);
-                document.getElementById('lng').textContent = position.coords.longitude.toFixed(6);
-                document.getElementById('accuracy').textContent = Math.round(position.coords.accuracy) + ' m';
+                <div class="mb-3">
+                    <label class="form-label">Izoh</label>
+                    <textarea id="customerNote" class="form-control" rows="3" placeholder="Izoh kiriting"></textarea>
+                </div>
 
-                const formData = new FormData();
-                formData.append('latitude', position.coords.latitude);
-                formData.append('longitude', position.coords.longitude);
-                formData.append('accuracy', position.coords.accuracy);
-                formData.append('battery', 100);
-                formData.append('token', 'test_token');
+                <!-- Dropdowns -->
+                <div class="mb-3">
+                    <label class="form-label">*Tashrif kunlari</label>
+                    <select id="customerVisitDay" class="form-select">
+                        <option value="">Tanlang</option>
+                        <option value="0">Yakshanba</option>
+                        <option value="1">Dushanba</option>
+                        <option value="2">Seshanba</option>
+                        <option value="3">Chorshanba</option>
+                        <option value="4">Payshanba</option>
+                        <option value="5">Juma</option>
+                        <option value="6">Shanba</option>
+                    </select>
+                </div>
 
-                const response = await fetch('/api/agent/location', {
-                    method: 'POST',
-                    body: formData
-                });
+                <div class="mb-3">
+                    <label class="form-label">*Kategoriya</label>
+                    <select id="customerCategory" class="form-select">
+                        <option value="">Tanlang</option>
+                        <option value="A">A - Katta</option>
+                        <option value="B">B - O'rta</option>
+                        <option value="C">C - Kichik</option>
+                    </select>
+                </div>
 
-                const result = await response.json();
-                if (result.success) {
-                    console.log('✅ Lokatsiya yuborildi!');
-                }
-            } catch (error) {
-                console.error('❌ GPS xato:', error.message);
-            }
-        }
+                <div class="mb-3">
+                    <label class="form-label">*Hudud</label>
+                    <select id="customerTerritory" class="form-select">
+                        <option value="">Tanlang</option>
+                        <option value="center">Markaz</option>
+                        <option value="north">Shimol</option>
+                        <option value="south">Janub</option>
+                        <option value="east">Sharq</option>
+                        <option value="west">G'arb</option>
+                    </select>
+                </div>
 
-
-        function loadCustomers() {
-            const customers = JSON.parse(localStorage.getItem('customers') || '[]');
-            const html = customers.map(c => `
-                <div class="customer-card" onclick="showCustomerDetail('${c.id}')" style="cursor: pointer;">
-                    <div class="d-flex justify-content-between">
-                        <h6>${c.name}</h6>
-                        <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); deleteCustomer('${c.id}')">
-                            <i class="bi bi-trash"></i>
+                <div class="mb-3">
+                    <label class="form-label">Lokatsiya</label>
+                    <div class="input-group">
+                        <input type="text" id="customerLocation" class="form-control" placeholder="GPS koordinatalar"
+                            readonly>
+                        <button class="btn btn-outline-secondary" type="button" onclick="getCustomerLocation()">
+                            <i class="bi bi-geo-alt"></i>
                         </button>
                     </div>
-                    <p class="mb-1"><i class="bi bi-phone"></i> ${c.phone}</p>
-                    <p class="mb-0"><i class="bi bi-geo-alt"></i> ${c.address}</p>
+                    <input type="hidden" id="customerLatitude">
+                    <input type="hidden" id="customerLongitude">
                 </div>
-            `).join('');
-            document.getElementById('customersList').innerHTML = html || '<p class="text-white text-center">Mijozlar yo\'q</p>';
-            document.getElementById('customerCount').textContent = customers.length;
-        }
 
-        let currentCustomerId = null;
+                <div class="mb-3">
+                    <label class="form-label">Mijoz turi</label>
+                    <select id="customerType" class="form-select">
+                        <option value="">Tanlang</option>
+                        <option value="shop">Do'kon</option>
+                        <option value="market">Supermarket</option>
+                        <option value="restaurant">Restoran</option>
+                        <option value="cafe">Kafe</option>
+                        <option value="other">Boshqa</option>
+                    </select>
+                </div>
 
-        function showCustomerDetail(customerId) {
-            currentCustomerId = customerId;
-            const customers = JSON.parse(localStorage.getItem('customers') || '[]');
-            const customer = customers.find(c => c.id === customerId);
+                <div class="mb-3">
+                    <label class="form-label">Sotish kanali</label>
+                    <select id="customerChannel" class="form-select">
+                        <option value="">Tanlang</option>
+                        <option value="direct">To'g'ridan-to'g'ri</option>
+                        <option value="distributor">Distribyutor</option>
+                        <option value="online">Onlayn</option>
+                    </select>
+                </div>
 
-            if (!customer) return;
+                <div class="mb-3">
+                    <label class="form-label">Sotiladigan kategoriyalar</label>
+                    <select id="customerProductCategories" class="form-select">
+                        <option value="">Tanlang</option>
+                        <option value="food">Oziq-ovqat</option>
+                        <option value="drinks">Ichimliklar</option>
+                        <option value="household">Maishiy</option>
+                        <option value="cosmetics">Kosmetika</option>
+                    </select>
+                </div>
 
-            document.getElementById('customerDetailName').textContent = customer.name;
-            document.getElementById('customerPrepayment').textContent = (customer.prepayment || 0) + ' so\'m';
-            document.getElementById('customerBalance').textContent = (customer.balance || 0) + ' so\'m';
+                <!-- Requisites Accordion -->
+                <div class="mb-3">
+                    <button class="btn w-100 text-start d-flex justify-content-between align-items-center" type="button"
+                        onclick="toggleRequisites()"
+                        style="background: #e8f5e9; border: 1px solid #4caf50; color: #2e7d32; padding: 12px;">
+                        <span><strong>Mijoz rekvizitlari</strong></span>
+                        <i class="bi bi-chevron-down" id="requisitesIcon"></i>
+                    </button>
+                    <div id="requisitesSection"
+                        style="display: none; margin-top: 15px; padding: 15px; background: #f9f9f9; border-radius: 10px;">
+                        <div class="mb-3">
+                            <label class="form-label">INN</label>
+                            <input type="text" id="customerINN" class="form-control" placeholder="INN kiriting">
+                        </div>
 
-            // Hide all pages
-            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-            document.getElementById('customerDetailPage').classList.add('active');
-        }
+                        <div class="mb-3">
+                            <label class="form-label">Hisob raqami (Р/С)</label>
+                            <input type="text" id="customerAccount" class="form-control"
+                                placeholder="Hisob raqamini kiriting">
+                        </div>
 
-        function closeCustomerDetail() {
-            currentCustomerId = null;
-            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-            document.getElementById('customersPage').classList.add('active');
-        }
+                        <div class="mb-3">
+                            <label class="form-label">Bank</label>
+                            <input type="text" id="customerBank" class="form-control"
+                                placeholder="Bank nomini kiriting">
+                        </div>
 
-        function startVisit() {
-            if (!currentCustomerId) return;
+                        <div class="row">
+                            <div class="col-6 mb-3">
+                                <label class="form-label">MFO</label>
+                                <input type="text" id="customerMFO" class="form-control" placeholder="MFO">
+                            </div>
+                            <div class="col-6 mb-3">
+                                <label class="form-label">OKED</label>
+                                <input type="text" id="customerOKED" class="form-control" placeholder="OKED">
+                            </div>
+                        </div>
 
-            const visits = JSON.parse(localStorage.getItem('visits') || '[]');
-            visits.push({
-                id: Date.now().toString(),
-                customerId: currentCustomerId,
-                startTime: new Date().toISOString(),
-                status: 'active'
-            });
-            localStorage.setItem('visits', JSON.stringify(visits));
+                        <div class="mb-3">
+                            <label class="form-label">PINFL</label>
+                            <input type="text" id="customerPINFL" class="form-control" placeholder="PINFL kiriting">
+                        </div>
 
-            document.getElementById('endVisitBtn').style.display = 'block';
-            console.log('Tashrif boshlandi');
-        }
+                        <div class="mb-3">
+                            <label class="form-label">Shartnoma raqami</label>
+                            <input type="text" id="customerContractNumber" class="form-control"
+                                placeholder="Shartnoma raqamini kiriting">
+                        </div>
 
-        function endVisit() {
-            const visits = JSON.parse(localStorage.getItem('visits') || '[]');
-            const activeVisit = visits.find(v => v.customerId === currentCustomerId && v.status === 'active');
+                        <div class="mb-3">
+                            <label class="form-label">Shartnoma sanasi</label>
+                            <input type="date" id="customerContractDate" class="form-control">
+                        </div>
+                    </div>
+                </div>
 
-            if (activeVisit) {
-                activeVisit.endTime = new Date().toISOString();
-                activeVisit.status = 'completed';
-                localStorage.setItem('visits', JSON.stringify(visits));
+                <!-- Save Button -->
+                <button class="btn btn-success w-100 mb-3" onclick="saveCustomer()"
+                    style="padding: 15px; font-size: 16px; font-weight: bold;">
+                    Saqlash
+                </button>
+            </div>
+        </div>
 
-                document.getElementById('endVisitBtn').style.display = 'none';
-                console.log('Tashrif yakunlandi');
+        <!-- Add Order Modal -->
+        <div id="addOrderModal"
+            style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 2000; overflow-y: auto;">
+            <div
+                style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 15px; width: 90%; max-width: 400px; max-height: 90vh; overflow-y: auto;">
+                <h5 class="mb-3">Yangi Buyurtma</h5>
+
+                <div class="mb-3">
+                    <label class="form-label">1. Yo'nalish</label>
+                    <select id="orderDirection" class="form-select">
+                        <option value="">Tanlang...</option>
+                        <option value="wholesale">Ulgurji</option>
+                        <option value="retail">Chakana</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">2. Sklad</label>
+                    <select id="orderWarehouse" class="form-select">
+                        <option value="">Tanlang...</option>
+                        <option value="main">Asosiy sklad</option>
+                        <option value="secondary">Ikkinchi sklad</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">3. Narx turi</label>
+                    <select id="orderPriceType" class="form-select">
+                        <option value="">Tanlang...</option>
+                        <option value="cash">Naqd</option>
+                        <option value="credit">Nasiya</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Mahsulotlar</label>
+                    <div id="orderProducts">
+                        <p class="text-muted">Mahsulot qo'shing</p>
+                    </div>
+                    <button class="btn btn-outline-primary btn-sm w-100 mt-2" onclick="addProductToOrder()">
+                        <i class="bi bi-plus-circle"></i> Mahsulot qo'shish
+                    </button>
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button class="btn btn-success flex-fill" onclick="saveOrder()">Saqlash</button>
+                    <button class="btn btn-secondary flex-fill" onclick="closeAddOrder()">Bekor qilish</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Navigation -->
+        <nav class="bottom-nav">
+            <div class="d-flex justify-content-around">
+                <a class="nav-link active" onclick="showPage('dashboardPage')">
+                    <i class="bi bi-house-door"></i>
+                    <span>Asosiy</span>
+                </a>
+                <a class="nav-link" onclick="showPage('customersPage')">
+                    <i class="bi bi-people"></i>
+                    <span>Mijozlar</span>
+                </a>
+                <a class="nav-link" onclick="showPage('ordersPage')">
+                    <i class="bi bi-cart"></i>
+                    <span>Buyurtmalar</span>
+                </a>
+                <a class="nav-link" onclick="showPage('visitsPage')">
+                    <i class="bi bi-geo-alt"></i>
+                    <span>Tashriflar</span>
+                </a>
+                <a class="nav-link" onclick="showPage('profilePage')">
+                    <i class="bi bi-person"></i>
+                    <span>Profil</span>
+                </a>
+            </div>
+        </nav>
+
+        <!-- API Helper -->
+        <script src="/static/pwa/js/api.js"></script>
+
+        <script>
+            let currentPage = 'dashboard';
+
+            async function sendLocation() {
+                try {
+                    const position = await new Promise((resolve, reject) => {
+                        navigator.geolocation.getCurrentPosition(resolve, reject, {
+                            enableHighAccuracy: true,
+                            timeout: 10000,
+                            maximumAge: 0
+                        });
+                    });
+
+                    document.getElementById('lat').textContent = position.coords.latitude.toFixed(6);
+                    document.getElementById('lng').textContent = position.coords.longitude.toFixed(6);
+                    document.getElementById('accuracy').textContent = Math.round(position.coords.accuracy) + ' m';
+
+                    const formData = new FormData();
+                    formData.append('latitude', position.coords.latitude);
+                    formData.append('longitude', position.coords.longitude);
+                    formData.append('accuracy', position.coords.accuracy);
+                    formData.append('battery', 100);
+                    formData.append('token', 'test_token');
+
+                    const response = await fetch('/api/agent/location', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const result = await response.json();
+                    if (result.success) {
+                        console.log('✅ Lokatsiya yuborildi!');
+                    }
+                } catch (error) {
+                    console.error('❌ GPS xato:', error.message);
+                }
             }
-        }
 
-        let orderProducts = [];
 
-        function addOrder() {
-            if (!currentCustomerId) return;
+            async function loadCustomers() {
+                try {
+                    // Get token from session
+                    const token = Session.getToken() || 'test_token';
 
-            // Reset form
-            document.getElementById('orderDirection').value = '';
-            document.getElementById('orderWarehouse').value = '';
-            document.getElementById('orderPriceType').value = '';
-            orderProducts = [];
-            document.getElementById('orderProducts').innerHTML = '<p class="text-muted">Mahsulot qo\'shing</p>';
+                    // Load from API
+                    const response = await fetch(`/api/agent/partners?token=${encodeURIComponent(token)}`);
+                    const result = await response.json();
 
-            document.getElementById('addOrderModal').style.display = 'block';
-        }
+                    if (result.success && result.partners) {
+                        const customers = result.partners;
 
-        function closeAddOrder() {
-            document.getElementById('addOrderModal').style.display = 'none';
-        }
+                        // Also save to localStorage for offline access
+                        localStorage.setItem('customers', JSON.stringify(customers));
 
-        function addProductToOrder() {
-            const productName = prompt('Mahsulot nomi:');
-            if (!productName) return;
+                        const html = customers.map(c => `
+                        <div class="customer-card" onclick="showCustomerDetail('${c.id}')" style="cursor: pointer;">
+                            <div class="d-flex justify-content-between">
+                                <h6>${c.name}</h6>
+                                <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); deleteCustomer('${c.id}')">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                            <p class="mb-1"><i class="bi bi-phone"></i> ${c.phone}</p>
+                            <p class="mb-0"><i class="bi bi-geo-alt"></i> ${c.address}</p>
+                        </div>
+                    `).join('');
+                        document.getElementById('customersList').innerHTML = html || '<p class="text-white text-center">Mijozlar yo\'q</p>';
+                        document.getElementById('customerCount').textContent = customers.length;
+                    } else {
+                        document.getElementById('customersList').innerHTML = '<p class="text-white text-center">Mijozlar yo\'q</p>';
+                    }
+                } catch (error) {
+                    console.error('Mijozlarni yuklashda xato:', error);
+                    // Fallback to localStorage
+                    const customers = JSON.parse(localStorage.getItem('customers') || '[]');
+                    const html = customers.map(c => `
+                    <div class="customer-card" onclick="showCustomerDetail('${c.id}')" style="cursor: pointer;">
+                        <div class="d-flex justify-content-between">
+                            <h6>${c.name}</h6>
+                            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); deleteCustomer('${c.id}')">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                        <p class="mb-1"><i class="bi bi-phone"></i> ${c.phone}</p>
+                        <p class="mb-0"><i class="bi bi-geo-alt"></i> ${c.address}</p>
+                    </div>
+                `).join('');
+                    document.getElementById('customersList').innerHTML = html || '<p class="text-white text-center">Mijozlar yo\'q</p>';
+                    document.getElementById('customerCount').textContent = customers.length;
+                }
+            }
 
-            const quantity = prompt('Miqdor:');
-            if (!quantity || isNaN(quantity)) return;
+            let currentCustomerId = null;
 
-            const price = prompt('Narx:');
-            if (!price || isNaN(price)) return;
+            function showCustomerDetail(customerId) {
+                currentCustomerId = customerId;
+                const customers = JSON.parse(localStorage.getItem('customers') || '[]');
+                const customer = customers.find(c => c.id === customerId);
 
-            orderProducts.push({
-                id: Date.now().toString(),
-                name: productName,
-                quantity: parseFloat(quantity),
-                price: parseFloat(price)
-            });
+                if (!customer) return;
 
-            renderOrderProducts();
-        }
+                document.getElementById('customerDetailName').textContent = customer.name;
+                document.getElementById('customerPrepayment').textContent = (customer.prepayment || 0) + ' so\'m';
+                document.getElementById('customerBalance').textContent = (customer.balance || 0) + ' so\'m';
 
-        function renderOrderProducts() {
-            if (orderProducts.length === 0) {
+                // Hide all pages
+                document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+                document.getElementById('customerDetailPage').classList.add('active');
+            }
+
+            function closeCustomerDetail() {
+                currentCustomerId = null;
+                document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+                document.getElementById('customersPage').classList.add('active');
+            }
+
+            async function startVisit() {
+                if (!currentCustomerId) return;
+
+                try {
+                    // Get current GPS location
+                    const position = await new Promise((resolve, reject) => {
+                        navigator.geolocation.getCurrentPosition(resolve, reject, {
+                            enableHighAccuracy: true,
+                            timeout: 10000,
+                            maximumAge: 0
+                        });
+                    });
+
+                    // Call API to start visit
+                    const formData = new FormData();
+                    formData.append('partner_id', currentCustomerId);
+                    formData.append('latitude', position.coords.latitude);
+                    formData.append('longitude', position.coords.longitude);
+                    formData.append('token', 'test_token');
+
+                    const response = await fetch('/api/agent/visit/checkin', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        // Save visit ID to localStorage
+                        localStorage.setItem('currentVisitId', result.visit_id);
+
+                        document.getElementById('endVisitBtn').style.display = 'block';
+                        alert('✅ Tashrif boshlandi!');
+                        console.log('Tashrif boshlandi, ID:', result.visit_id);
+
+                        // Refresh dashboard stats
+                        loadDashboardStats();
+                    } else {
+                        alert('❌ Xato: ' + result.error);
+                    }
+                } catch (error) {
+                    console.error('Tashrif boshlashda xato:', error);
+                    alert('❌ GPS xato: ' + error.message);
+                }
+            }
+
+            async function endVisit() {
+                const visitId = localStorage.getItem('currentVisitId');
+
+                if (!visitId) {
+                    alert('Faol tashrif topilmadi!');
+                    return;
+                }
+
+                try {
+                    const formData = new FormData();
+                    formData.append('visit_id', visitId);
+                    formData.append('notes', '');
+                    formData.append('token', 'test_token');
+
+                    const response = await fetch('/api/agent/visit/checkout', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        localStorage.removeItem('currentVisitId');
+                        document.getElementById('endVisitBtn').style.display = 'none';
+                        alert('✅ Tashrif yakunlandi!');
+                        console.log('Tashrif yakunlandi');
+
+                        // Refresh dashboard stats
+                        loadDashboardStats();
+                    } else {
+                        alert('❌ Xato: ' + result.error);
+                    }
+                } catch (error) {
+                    console.error('Tashrif yakunlashda xato:', error);
+                    alert('❌ Xato: ' + error.message);
+                }
+            }
+
+            let orderProducts = [];
+
+            function addOrder() {
+                if (!currentCustomerId) return;
+
+                // Reset form
+                document.getElementById('orderDirection').value = '';
+                document.getElementById('orderWarehouse').value = '';
+                document.getElementById('orderPriceType').value = '';
+                orderProducts = [];
                 document.getElementById('orderProducts').innerHTML = '<p class="text-muted">Mahsulot qo\'shing</p>';
-                return;
+
+                document.getElementById('addOrderModal').style.display = 'block';
             }
 
-            const html = orderProducts.map((p, index) => `
+            function closeAddOrder() {
+                document.getElementById('addOrderModal').style.display = 'none';
+            }
+
+            function addProductToOrder() {
+                const productName = prompt('Mahsulot nomi:');
+                if (!productName) return;
+
+                const quantity = prompt('Miqdor:');
+                if (!quantity || isNaN(quantity)) return;
+
+                const price = prompt('Narx:');
+                if (!price || isNaN(price)) return;
+
+                orderProducts.push({
+                    id: Date.now().toString(),
+                    name: productName,
+                    quantity: parseFloat(quantity),
+                    price: parseFloat(price)
+                });
+
+                renderOrderProducts();
+            }
+
+            function renderOrderProducts() {
+                if (orderProducts.length === 0) {
+                    document.getElementById('orderProducts').innerHTML = '<p class="text-muted">Mahsulot qo\'shing</p>';
+                    return;
+                }
+
+                const html = orderProducts.map((p, index) => `
                 <div class="d-flex justify-content-between align-items-center mb-2 p-2 border rounded">
                     <div>
                         <strong>${p.name}</strong><br>
@@ -552,98 +1158,189 @@
                 </div>
             `).join('');
 
-            document.getElementById('orderProducts').innerHTML = html;
-        }
-
-        function removeProductFromOrder(index) {
-            orderProducts.splice(index, 1);
-            renderOrderProducts();
-        }
-
-        function saveOrder() {
-            const direction = document.getElementById('orderDirection').value;
-            const warehouse = document.getElementById('orderWarehouse').value;
-            const priceType = document.getElementById('orderPriceType').value;
-
-            if (!direction || !warehouse || !priceType) {
-                alert('Barcha maydonlarni to\'ldiring!');
-                return;
+                document.getElementById('orderProducts').innerHTML = html;
             }
 
-            if (orderProducts.length === 0) {
-                alert('Kamida bitta mahsulot qo\'shing!');
-                return;
+            function removeProductFromOrder(index) {
+                orderProducts.splice(index, 1);
+                renderOrderProducts();
             }
 
-            const orders = JSON.parse(localStorage.getItem('orders') || '[]');
-            const total = orderProducts.reduce((sum, p) => sum + (p.quantity * p.price), 0);
+            function saveOrder() {
+                const direction = document.getElementById('orderDirection').value;
+                const warehouse = document.getElementById('orderWarehouse').value;
+                const priceType = document.getElementById('orderPriceType').value;
 
-            orders.push({
-                id: Date.now().toString(),
-                customerId: currentCustomerId,
-                direction,
-                warehouse,
-                priceType,
-                products: orderProducts,
-                total,
-                status: 'pending',
-                createdAt: new Date().toISOString()
-            });
+                if (!direction || !warehouse || !priceType) {
+                    alert('Barcha maydonlarni to\'ldiring!');
+                    return;
+                }
 
-            localStorage.setItem('orders', JSON.stringify(orders));
+                if (orderProducts.length === 0) {
+                    alert('Kamida bitta mahsulot qo\'shing!');
+                    return;
+                }
 
-            closeAddOrder();
-            loadOrders();
-            console.log('Buyurtma saqlandi');
-        }
+                const orders = JSON.parse(localStorage.getItem('orders') || '[]');
+                const total = orderProducts.reduce((sum, p) => sum + (p.quantity * p.price), 0);
 
-        function showAddCustomer() {
-            document.getElementById('addCustomerModal').style.display = 'block';
-            document.getElementById('customerName').value = '';
-            document.getElementById('customerPhone').value = '';
-            document.getElementById('customerAddress').value = '';
-        }
+                orders.push({
+                    id: Date.now().toString(),
+                    customerId: currentCustomerId,
+                    direction,
+                    warehouse,
+                    priceType,
+                    products: orderProducts,
+                    total,
+                    status: 'pending',
+                    createdAt: new Date().toISOString()
+                });
 
-        function closeAddCustomer() {
-            document.getElementById('addCustomerModal').style.display = 'none';
-        }
+                localStorage.setItem('orders', JSON.stringify(orders));
 
-        function saveCustomer() {
-            const name = document.getElementById('customerName').value.trim();
-            const phone = document.getElementById('customerPhone').value.trim();
-            const address = document.getElementById('customerAddress').value.trim();
-
-            if (!name || !phone || !address) {
-                alert('Barcha maydonlarni to\'ldiring!');
-                return;
+                closeAddOrder();
+                loadOrders();
+                console.log('Buyurtma saqlandi');
             }
 
-            const customers = JSON.parse(localStorage.getItem('customers') || '[]');
-            customers.push({
-                id: Date.now().toString(),
-                name,
-                phone,
-                address,
-                createdAt: new Date().toISOString()
-            });
-            localStorage.setItem('customers', JSON.stringify(customers));
+            function showAddCustomer() {
+                document.getElementById('addCustomerModal').style.display = 'block';
+                document.getElementById('customerName').value = '';
+                document.getElementById('customerPhone').value = '';
+                document.getElementById('customerAddress').value = '';
+            }
 
-            closeAddCustomer();
-            loadCustomers();
-        }
+            function closeAddCustomer() {
+                document.getElementById('addCustomerModal').style.display = 'none';
+            }
 
-        function deleteCustomer(id) {
-            if (!confirm('Mijozni o\'chirmoqchimisiz?')) return;
+            async function saveCustomer() {
+                const name = document.getElementById('customerName').value.trim();
+                const phone = document.getElementById('customerPhone').value.trim();
+                const address = document.getElementById('customerAddress').value.trim();
 
-            const customers = JSON.parse(localStorage.getItem('customers') || '[]');
-            const filtered = customers.filter(c => c.id !== id);
-            localStorage.setItem('customers', JSON.stringify(filtered));
-            loadCustomers();
-        }
+                if (!name || !phone || !address) {
+                    alert('Barcha maydonlarni to\'ldiring!');
+                    return;
+                }
 
-        function loadOrders() {
-            // TODO: Load from API
-            document.getElementById('ordersList').innerHTML = `
+                try {
+                    // Get token from session
+                    const token = Session.getToken() || 'test_token';
+
+                    // Save to API
+                    const formData = new FormData();
+                    formData.append('name', name);
+                    formData.append('phone', phone);
+                    formData.append('address', address);
+                    formData.append('token', token);
+
+                    const response = await fetch('/api/agent/partner/add', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        // Also save to localStorage for offline access
+                        const customers = JSON.parse(localStorage.getItem('customers') || '[]');
+                        customers.push({
+                            id: result.partner_id.toString(),
+                            name,
+                            phone,
+                            address,
+                            createdAt: new Date().toISOString()
+                        });
+                        localStorage.setItem('customers', JSON.stringify(customers));
+
+                        closeAddCustomer();
+                        loadCustomers();
+                        alert('✅ Mijoz qo\'shildi!');
+                    } else {
+                        alert('❌ Xato: ' + result.error);
+                    }
+                } catch (error) {
+                    console.error('Mijoz qo\'shishda xato:', error);
+                    alert('❌ Xato: ' + error.message);
+                }
+            }
+
+            function deleteCustomer(id) {
+                if (!confirm('Mijozni o\'chirmoqchimisiz?')) return;
+
+                const customers = JSON.parse(localStorage.getItem('customers') || '[]');
+                const filtered = customers.filter(c => c.id !== id);
+                localStorage.setItem('customers', JSON.stringify(filtered));
+                loadCustomers();
+            }
+
+            function showCustomerDetail(customerId) {
+                // Find customer
+                const customers = JSON.parse(localStorage.getItem('customers') || '[]');
+                const customer = customers.find(c => c.id == customerId);
+
+                if (!customer) {
+                    alert('Mijoz topilmadi!');
+                    return;
+                }
+
+                // Confirm visit start
+                if (confirm(`${customer.name} ga tashrif boshlaysizmi?`)) {
+                    startVisit(customerId, customer.name);
+                }
+            }
+
+            async function startVisit(customerId, customerName) {
+                try {
+                    // Get current GPS location
+                    if (!navigator.geolocation) {
+                        alert('GPS qo\'llab-quvvatlanmaydi!');
+                        return;
+                    }
+
+                    navigator.geolocation.getCurrentPosition(async (position) => {
+                        const lat = position.coords.latitude;
+                        const lng = position.coords.longitude;
+                        const accuracy = position.coords.accuracy;
+
+                        // Get token from session
+                        const token = Session.getToken() || 'test_token';
+
+                        // Save visit to API
+                        const formData = new FormData();
+                        formData.append('partner_id', customerId);
+                        formData.append('latitude', lat);
+                        formData.append('longitude', lng);
+                        formData.append('accuracy', accuracy);
+                        formData.append('token', token);
+
+                        const response = await fetch('/api/agent/visit/start', {
+                            method: 'POST',
+                            body: formData
+                        });
+
+                        const result = await response.json();
+
+                        if (result.success) {
+                            alert(`✅ Tashrif boshlandi!\nMijoz: ${customerName}\nGPS: ${lat.toFixed(6)}, ${lng.toFixed(6)}\nAniqlik: ${accuracy}m`);
+                            loadDashboardStats(); // Refresh stats
+                            showPage('visits'); // Go to visits page
+                        } else {
+                            alert('❌ Xato: ' + result.error);
+                        }
+                    }, (error) => {
+                        alert('❌ GPS xatosi: ' + error.message);
+                    });
+                } catch (error) {
+                    console.error('Tashrif boshlashda xato:', error);
+                    alert('❌ Xato: ' + error.message);
+                }
+            }
+
+            function loadOrders() {
+                // TODO: Load from API
+                document.getElementById('ordersList').innerHTML = `
                 <div class="customer-card">
                     <div class="d-flex justify-content-between">
                         <h6>Buyurtma #1</h6>
@@ -653,45 +1350,471 @@
                     <p class="mb-0">Summa: 500,000 so'm</p>
                 </div>
             `;
-        }
+            }
 
-        function loadVisits() {
-            // TODO: Load from API
-            document.getElementById('visitsList').innerHTML = `
-                <div class="customer-card">
-                    <h6>Tashriflar</h6>
-                    <p class="mb-0">Bugun: 0</p>
+            async function loadVisits() {
+                try {
+                    const response = await fetch('/api/agent/visits?token=test_token');
+                    const result = await response.json();
+
+                    if (result.success && result.visits) {
+                        const html = result.visits.map(v => `
+                        <div class="customer-card">
+                            <div class="d-flex justify-content-between">
+                                <h6>${v.partner_name}</h6>
+                                <span class="badge ${v.status === 'visited' ? 'badge-success' : 'badge-warning'}">${v.status}</span>
+                            </div>
+                            <p class="mb-0"><i class="bi bi-clock"></i> Boshlandi: ${v.check_in_time ? new Date(v.check_in_time).toLocaleString('uz-UZ') : '-'}</p>
+                            <p class="mb-0"><i class="bi bi-check-circle"></i> Tugadi: ${v.check_out_time ? new Date(v.check_out_time).toLocaleString('uz-UZ') : '-'}</p>
+                            ${v.notes ? `<p class="mb-0"><i class="bi bi-chat-left-text"></i> ${v.notes}</p>` : ''}
+                        </div>
+                    `).join('');
+
+                        document.getElementById('visitsList').innerHTML = html || '<p class="text-white text-center">Tashriflar yo\'q</p>';
+                        document.getElementById('visitCount').textContent = result.visits.length;
+                    } else {
+                        document.getElementById('visitsList').innerHTML = '<p class="text-white text-center">Tashriflar yo\'q</p>';
+                    }
+                } catch (error) {
+                    console.error('Tashriflarni yuklashda xato:', error);
+                    document.getElementById('visitsList').innerHTML = '<p class="text-white text-center">Xato yuz berdi</p>';
+                }
+            }
+
+
+            async function loadDashboardStats() {
+                // Get token from session
+                const token = Session.getToken() || 'test_token';
+
+                // Load visit count
+                try {
+                    const response = await fetch(`/api/agent/visits?token=${encodeURIComponent(token)}`);
+                    const result = await response.json();
+
+                    if (result.success && result.visits) {
+                        document.getElementById('visitCount').textContent = result.visits.length;
+                    }
+                } catch (error) {
+                    console.error('Statistikani yuklashda xato:', error);
+                }
+
+                // Load customer count
+                try {
+                    const response = await fetch(`/api/agent/partners?token=${encodeURIComponent(token)}`);
+                    const result = await response.json();
+
+                    if (result.success && result.partners) {
+                        document.getElementById('customerCount').textContent = result.partners.length;
+                    }
+                } catch (error) {
+                    console.error('Mijozlar sonini yuklashda xato:', error);
+                }
+            }
+
+            function loadProfile() {
+                // Load from session
+                const user = Session.getUser();
+                if (user && user.agent) {
+                    document.getElementById('agentName').textContent = user.agent.full_name || 'Agent';
+                    document.getElementById('agentPhone').textContent = user.agent.phone || '-';
+                    document.getElementById('agentRegion').textContent = user.agent.region || "Qo'qon";
+                    document.getElementById('agentCode').textContent = user.agent.code || '-';
+                } else {
+                    // Fallback - hardcoded for testing
+                    document.getElementById('agentName').textContent = 'Test Agent';
+                    document.getElementById('agentPhone').textContent = '+998901111111';
+                    document.getElementById('agentRegion').textContent = "Qo'qon";
+                    document.getElementById('agentCode').textContent = 'AG001';
+                }
+            }
+
+            function logout() {
+                if (confirm('Chiqishni xohlaysizmi?')) {
+                    localStorage.clear();
+                    sessionStorage.clear();
+                    window.location.href = '/static/pwa/login.html';
+                }
+            }
+
+            async function sendLocation() {
+                try {
+                    if (!navigator.geolocation) {
+                        console.log('GPS qo\'llab-quvvatlanmaydi');
+                        return;
+                    }
+
+                    navigator.geolocation.getCurrentPosition(async (position) => {
+                        const lat = position.coords.latitude;
+                        const lng = position.coords.longitude;
+                        const accuracy = position.coords.accuracy;
+                        const battery = 100; // TODO: Get real battery level
+
+                        // Update GPS status display
+                        document.getElementById('gpsLat').textContent = lat.toFixed(6);
+                        document.getElementById('gpsLng').textContent = lng.toFixed(6);
+                        document.getElementById('gpsAccuracy').textContent = accuracy.toFixed(0);
+
+                        // Get token from session
+                        const token = Session.getToken() || 'test_token';
+
+                        // Send to server
+                        const formData = new FormData();
+                        formData.append('latitude', lat);
+                        formData.append('longitude', lng);
+                        formData.append('accuracy', accuracy);
+                        formData.append('battery', battery);
+                        formData.append('token', token);
+
+                        const response = await fetch('/api/agent/location', {
+                            method: 'POST',
+                            body: formData
+                        });
+
+                        const result = await response.json();
+                        console.log('GPS yuborildi:', result);
+                    }, (error) => {
+                        console.error('GPS xatosi:', error.message);
+                    });
+                } catch (error) {
+                    console.error('sendLocation xatosi:', error);
+                }
+            }
+
+            // Auto GPS tracking
+            setInterval(sendLocation, 1 * 60 * 1000); // Every 1 minute
+
+            // Service Worker - temporarily disabled for debugging
+            // if ('serviceWorker' in navigator) {
+            //     navigator.serviceWorker.register('/static/pwa/sw.js');
+            // }
+
+
+            // Sidebar functions
+            function openSidebar() {
+                document.getElementById('sidebar').classList.add('active');
+                document.getElementById('sidebarOverlay').classList.add('active');
+
+                // Load agent name in sidebar
+                const user = Session.getUser();
+                if (user && user.agent) {
+                    document.getElementById('sidebarAgentName').textContent = user.agent.full_name || 'Agent';
+                }
+            }
+
+            function closeSidebar() {
+                document.getElementById('sidebar').classList.remove('active');
+                document.getElementById('sidebarOverlay').classList.remove('active');
+            }
+
+            // Page navigation
+            function showPage(pageId) {
+                // Hide all pages
+                document.querySelectorAll('.page').forEach(page => {
+                    page.classList.remove('active');
+                });
+
+                // Remove active from all bottom nav links
+                document.querySelectorAll('.bottom-nav .nav-link').forEach(link => {
+                    link.classList.remove('active');
+                });
+
+                // Show selected page
+                const targetPage = document.getElementById(pageId);
+                if (targetPage) {
+                    targetPage.classList.add('active');
+                }
+
+                // Set active bottom nav link
+                const navLinks = document.querySelectorAll('.bottom-nav .nav-link');
+                navLinks.forEach(link => {
+                    if (link.getAttribute('onclick').includes(pageId)) {
+                        link.classList.add('active');
+                    }
+                });
+            }
+
+            // Customer functions
+            let allCustomers = [];
+            let currentDayFilter = 'all';
+
+            async function loadCustomers() {
+                try {
+                    const token = Session.getToken();
+                    const response = await fetch('/api/agent/partners', {
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+
+                    if (response.ok) {
+                        allCustomers = await response.json();
+                        document.getElementById('totalCustomers').textContent = allCustomers.length;
+                        document.getElementById('totalVisits').textContent = allCustomers.length;
+                        renderCustomers();
+                        loadDashboardCustomers(); // Update dashboard too
+                    } else {
+                        console.error('Mijozlarni yuklashda xato');
+                        allCustomers = [];
+                        document.getElementById('totalCustomers').textContent = 0;
+                        document.getElementById('totalVisits').textContent = 0;
+                        renderCustomers();
+                        loadDashboardCustomers();
+                    }
+                } catch (error) {
+                    console.error('Mijozlarni yuklashda xato:', error);
+                    allCustomers = [];
+                    document.getElementById('totalCustomers').textContent = 0;
+                    document.getElementById('totalVisits').textContent = 0;
+                    renderCustomers();
+                    loadDashboardCustomers();
+                }
+            }
+
+            function filterByDay(day) {
+                currentDayFilter = day;
+
+                // Update active tab
+                document.querySelectorAll('.week-tab').forEach(tab => tab.classList.remove('active'));
+                event.target.classList.add('active');
+
+                renderCustomers();
+            }
+
+            function renderCustomers() {
+                const customersList = document.getElementById('customersList');
+
+                // Filter customers by day
+                let filteredCustomers = allCustomers;
+                if (currentDayFilter !== 'all') {
+                    filteredCustomers = allCustomers.filter(c => c.visit_day === currentDayFilter);
+                }
+
+                document.getElementById('customersCount').textContent = filteredCustomers.length;
+
+                if (filteredCustomers.length === 0) {
+                    customersList.innerHTML = '<p class="text-white text-center">Mijozlar yo\'q</p>';
+                    return;
+                }
+
+                customersList.innerHTML = filteredCustomers.map(customer => `
+                <div class="customer-card" onclick="selectCustomer(${customer.id})">
+                    <div class="customer-icon">
+                        <i class="bi bi-building"></i>
+                    </div>
+                    <div class="customer-info">
+                        <div class="customer-name">${customer.name}</div>
+                        <div class="customer-balance ${customer.balance < 0 ? 'negative' : ''}">
+                            Balans: ${customer.balance || 0} so'm
+                        </div>
+                        <div class="customer-day">${getDayName(customer.visit_day)}</div>
+                    </div>
+                    <i class="bi bi-chevron-right"></i>
+                </div>
+            `).join('');
+            }
+
+            function getDayName(day) {
+                const days = {
+                    0: 'Yakshanba',
+                    1: 'Dushanba',
+                    2: 'Seshanba',
+                    3: 'Chorshanba',
+                    4: 'Payshanba',
+                    5: 'Juma',
+                    6: 'Shanba'
+                };
+                return days[day] || '-';
+            }
+
+            function selectCustomer(customerId) {
+                currentCustomerId = customerId;
+
+                // Load customer details
+                const customer = allCustomers.find(c => c.id === customerId);
+                if (customer) {
+                    // Show customer details modal
+                    showCustomerDetails(customer);
+                }
+            }
+
+            function showCustomerDetails(customer) {
+                // Create modal content
+                const modalContent = `
+                <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 3000; display: flex; align-items: center; justify-content: center;" onclick="closeCustomerDetails()">
+                    <div style="background: white; border-radius: 15px; padding: 20px; width: 90%; max-width: 400px; max-height: 80vh; overflow-y: auto;" onclick="event.stopPropagation()">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="mb-0">${customer.name}</h5>
+                            <button onclick="closeCustomerDetails()" style="background: none; border: none; font-size: 24px;">&times;</button>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <p class="mb-1"><strong>Kod:</strong> ${customer.code || '-'}</p>
+                            <p class="mb-1"><strong>Telefon:</strong> ${customer.phone || '-'}</p>
+                            <p class="mb-1"><strong>Manzil:</strong> ${customer.address || '-'}</p>
+                            <p class="mb-1"><strong>Balans:</strong> <span style="color: ${customer.balance < 0 ? '#dc3545' : '#28a745'}">${customer.balance || 0} so'm</span></p>
+                            <p class="mb-1"><strong>Tashrif kuni:</strong> ${getDayName(customer.visit_day)}</p>
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-success" onclick="startVisit(); closeCustomerDetails();">
+                                <i class="bi bi-geo-alt"></i> Tashrif boshlash
+                            </button>
+                            <button class="btn btn-primary" onclick="addOrder(); closeCustomerDetails();">
+                                <i class="bi bi-cart-plus"></i> Buyurtma qo'shish
+                            </button>
+                            <button class="btn btn-secondary" onclick="closeCustomerDetails()">
+                                Yopish
+                            </button>
+                        </div>
+                    </div>
                 </div>
             `;
-        }
 
-        function loadProfile() {
-            // TODO: Load from API
-            document.getElementById('agentName').textContent = 'Alisher Karimov';
-            document.getElementById('agentPhone').textContent = '+998901111111';
-            document.getElementById('agentRegion').textContent = "Qo'qon";
-            document.getElementById('agentCode').textContent = 'AG001';
-        }
-
-        function logout() {
-            if (confirm('Chiqishni xohlaysizmi?')) {
-                localStorage.clear();
-                sessionStorage.clear();
-                window.location.href = '/static/pwa/login.html';
+                // Add modal to body
+                const modalDiv = document.createElement('div');
+                modalDiv.id = 'customerDetailsModal';
+                modalDiv.innerHTML = modalContent;
+                document.body.appendChild(modalDiv);
             }
-        }
 
-        // Auto GPS tracking
-        setInterval(sendLocation, 1 * 60 * 1000); // Every 1 minute
+            function closeCustomerDetails() {
+                const modal = document.getElementById('customerDetailsModal');
+                if (modal) {
+                    modal.remove();
+                }
+            }
 
-        // Service Worker
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/static/pwa/sw.js');
-        }
+            // Customer form functions
+            function previewCustomerPhoto(event) {
+                const file = event.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function (e) {
+                        document.getElementById('customerPhotoPreview').innerHTML =
+                            `<img src="${e.target.result}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 10px;">`;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            }
 
-        // Initial load
-        sendLocation();
-    </script>
+            function getCustomerLocation() {
+                if (!navigator.geolocation) {
+                    alert('GPS qo\'llab-quvvatlanmaydi');
+                    return;
+                }
+
+                navigator.geolocation.getCurrentPosition((position) => {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+
+                    document.getElementById('customerLatitude').value = lat;
+                    document.getElementById('customerLongitude').value = lng;
+                    document.getElementById('customerLocation').value = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+                }, (error) => {
+                    alert('GPS xatosi: ' + error.message);
+                }, {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                });
+            }
+
+            function toggleRequisites() {
+                const section = document.getElementById('requisitesSection');
+                const icon = document.getElementById('requisitesIcon');
+
+                if (section.style.display === 'none') {
+                    section.style.display = 'block';
+                    icon.classList.remove('bi-chevron-down');
+                    icon.classList.add('bi-chevron-up');
+                } else {
+                    section.style.display = 'none';
+                    icon.classList.remove('bi-chevron-up');
+                    icon.classList.add('bi-chevron-down');
+                }
+            }
+
+            // Dashboard functions
+            function showDashboardTab(tab) {
+                if (tab === 'visits') {
+                    document.getElementById('visitsTabContent').style.display = 'block';
+                    document.getElementById('summaryTabContent').style.display = 'none';
+                    loadDashboardCustomers();
+                } else {
+                    document.getElementById('visitsTabContent').style.display = 'none';
+                    document.getElementById('summaryTabContent').style.display = 'block';
+                }
+            }
+
+            function loadDashboardCustomers() {
+                const container = document.getElementById('dashboardCustomersList');
+                if (!allCustomers || allCustomers.length === 0) {
+                    container.innerHTML = '<p class="text-white text-center">Mijozlar yo\'q</p>';
+                    return;
+                }
+
+                container.innerHTML = allCustomers.map(customer => `
+                <div class="card mb-2" style="border-radius: 10px;" onclick="selectCustomer(${customer.id})">
+                    <div class="card-body p-3">
+                        <div class="d-flex align-items-start">
+                            <div class="me-3" style="width: 60px; height: 60px; background: #e0e0e0; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+                                <i class="bi bi-building fs-3 text-secondary"></i>
+                            </div>
+                            <div class="flex-fill">
+                                <h6 class="mb-1">${customer.name}</h6>
+                                <p class="mb-0 small ${customer.balance < 0 ? 'text-danger' : 'text-muted'}">
+                                    Balans: ${customer.balance || 0}
+                                </p>
+                                <p class="mb-0 small text-muted">${customer.code || 'C6'}</p>
+                            </div>
+                            <button class="btn btn-sm btn-light" onclick="event.stopPropagation(); openMap(${customer.id})">
+                                <i class="bi bi-geo-alt"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+            }
+
+            function syncData() {
+                // Show loading
+                const btn = event.target.closest('button');
+                btn.disabled = true;
+                btn.innerHTML = '<i class="bi bi-arrow-repeat fs-5 spin"></i>';
+
+                // Reload customers
+                loadCustomers().then(() => {
+                    loadDashboardCustomers();
+                    // Update sync time
+                    const now = new Date();
+                    document.getElementById('lastSyncTime').textContent =
+                        `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="bi bi-arrow-repeat fs-5"></i>';
+                });
+            }
+
+            function openNavigation() {
+                alert('Navigatsiya ochilmoqda...');
+                // TODO: Implement navigation
+            }
+
+            function openMap(customerId) {
+                alert(`Mijoz ${customerId} xaritada ochilmoqda...`);
+                // TODO: Implement map view
+            }
+
+            // Initial load
+            const user = Session.getUser();
+            if (user && user.agent) {
+                document.getElementById('navbarAgentName').textContent = user.agent.full_name || 'Agent';
+            }
+
+            sendLocation();
+            loadDashboardStats(); // Load visit count on startup
+            loadCustomers(); // Load customers from API
+        </script>
 </body>
 
 </html>
