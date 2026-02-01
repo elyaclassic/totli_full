@@ -136,6 +136,171 @@ async def logout():
 
 
 # ==========================================
+# DASHBOARDS
+# ==========================================
+
+@app.get("/dashboard/executive", response_class=HTMLResponse)
+async def executive_dashboard(request: Request, db: Session = Depends(get_db)):
+    """Rahbariyat Dashboard"""
+    user = get_user_from_token(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    from datetime import datetime, timedelta
+    from sqlalchemy import func
+    
+    # Bugungi sana
+    today = datetime.now().date()
+    yesterday = today - timedelta(days=1)
+    week_ago = today - timedelta(days=7)
+    
+    # Bugungi savdo
+    today_sales = db.query(func.sum(Order.total_amount)).filter(
+        func.date(Order.created_at) == today,
+        Order.status == 'completed'
+    ).scalar() or 0
+    
+    # Kechagi savdo
+    yesterday_sales = db.query(func.sum(Order.total_amount)).filter(
+        func.date(Order.created_at) == yesterday,
+        Order.status == 'completed'
+    ).scalar() or 0
+    
+    # O'sish foizi
+    sales_growth = 0
+    if yesterday_sales > 0:
+        sales_growth = ((today_sales - yesterday_sales) / yesterday_sales) * 100
+    
+    # Bugungi buyurtmalar
+    today_orders = db.query(func.count(Order.id)).filter(
+        func.date(Order.created_at) == today
+    ).scalar() or 0
+    
+    # Bajarilgan buyurtmalar
+    completed_orders = db.query(func.count(Order.id)).filter(
+        func.date(Order.created_at) == today,
+        Order.status == 'completed'
+    ).scalar() or 0
+    
+    # Faol agentlar
+    active_agents = db.query(func.count(Agent.id)).filter(
+        Agent.is_active == True
+    ).scalar() or 0
+    
+    # Jami agentlar
+    total_agents = db.query(func.count(Agent.id)).scalar() or 0
+    
+    # Ombor qiymati
+    warehouse_value = db.query(func.sum(Stock.quantity * Product.cost_price)).join(
+        Product, Stock.product_id == Product.id
+    ).scalar() or 0
+    
+    # Past qoldiq mahsulotlar
+    low_stock_count = db.query(func.count(Stock.id)).filter(
+        Stock.quantity < 10
+    ).scalar() or 0
+    
+    # 7 kunlik savdo dinamikasi
+    sales_trend_labels = []
+    sales_trend_data = []
+    for i in range(6, -1, -1):
+        date = today - timedelta(days=i)
+        sales = db.query(func.sum(Order.total_amount)).filter(
+            func.date(Order.created_at) == date,
+            Order.status == 'completed'
+        ).scalar() or 0
+        sales_trend_labels.append(date.strftime('%d.%m'))
+        sales_trend_data.append(float(sales))
+    
+    # Top 5 mahsulotlar
+    top_products_query = db.query(
+        Product.name,
+        func.sum(OrderItem.quantity).label('total_qty')
+    ).join(
+        OrderItem, Product.id == OrderItem.product_id
+    ).join(
+        Order, OrderItem.order_id == Order.id
+    ).filter(
+        func.date(Order.created_at) >= week_ago,
+        Order.status == 'completed'
+    ).group_by(Product.id, Product.name).order_by(
+        func.sum(OrderItem.quantity).desc()
+    ).limit(5).all()
+    
+    top_products_labels = [p.name for p in top_products_query]
+    top_products_data = [float(p.total_qty) for p in top_products_query]
+    
+    # Top 5 agentlar
+    top_agents_query = db.query(
+        Agent.name,
+        func.sum(Order.total_amount).label('total_sales'),
+        func.count(Order.id).label('order_count')
+    ).join(
+        Order, Agent.id == Order.agent_id
+    ).filter(
+        func.date(Order.created_at) >= week_ago,
+        Order.status == 'completed'
+    ).group_by(Agent.id, Agent.name).order_by(
+        func.sum(Order.total_amount).desc()
+    ).limit(5).all()
+    
+    top_agents = [
+        {
+            'name': a.name,
+            'sales': float(a.total_sales or 0),
+            'orders': a.order_count
+        }
+        for a in top_agents_query
+    ]
+    
+    # Ogohlantirishlar
+    alerts = []
+    
+    # Past qoldiq ogohlantirishlari
+    if low_stock_count > 0:
+        alerts.append({
+            'title': 'Past qoldiq',
+            'message': f'{low_stock_count} ta mahsulot qoldig\'i past darajada'
+        })
+    
+    # Bugungi savdo past bo'lsa
+    if yesterday_sales > 0 and sales_growth < -10:
+        alerts.append({
+            'title': 'Savdo pasaygan',
+            'message': f'Bugungi savdo kechaga nisbatan {abs(sales_growth):.1f}% kamaygan'
+        })
+    
+    # Statistika
+    stats = {
+        'today_sales': today_sales,
+        'sales_growth': round(sales_growth, 1),
+        'today_orders': today_orders,
+        'completed_orders': completed_orders,
+        'active_agents': active_agents,
+        'total_agents': total_agents,
+        'warehouse_value': warehouse_value,
+        'low_stock_count': low_stock_count
+    }
+    
+    return templates.TemplateResponse("dashboards/executive.html", {
+        "request": request,
+        "page_title": "Rahbariyat Dashboard",
+        "user": user,
+        "stats": stats,
+        "sales_trend": {
+            "labels": sales_trend_labels,
+            "data": sales_trend_data
+        },
+        "top_products": {
+            "labels": top_products_labels,
+            "data": top_products_data
+        },
+        "top_agents": top_agents,
+        "alerts": alerts
+    })
+
+
+# ==========================================
 # ASOSIY SAHIFALAR
 # ==========================================
 

@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+
+{% block title %}Rahbariyat Dashboard - TOTLI HOLVA{% endblock %}
+
+{% block extra_css %}
+<style>
+    .dashboard-card {
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s;
+    }
+
+    .dashboard-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .stat-card {
+        padding: 20px;
+        border-left: 4px solid;
+    }
+
+    .stat-card.primary {
+        border-color: #0d6efd;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+
+    .stat-card.success {
+        border-color: #198754;
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+    }
+
+    .stat-card.warning {
+        border-color: #ffc107;
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        color: white;
+    }
+
+    .stat-card.danger {
+        border-color: #dc3545;
+        background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+        color: white;
+    }
+
+    .stat-value {
+        font-size: 2.5rem;
+        font-weight: bold;
+        margin: 10px 0;
+    }
+
+    .stat-label {
+        font-size: 0.9rem;
+        opacity: 0.9;
+    }
+
+    .stat-icon {
+        font-size: 3rem;
+        opacity: 0.3;
+        position: absolute;
+        right: 20px;
+        top: 20px;
+    }
+
+    .chart-container {
+        position: relative;
+        height: 300px;
+        padding: 20px;
+    }
+
+    .alert-item {
+        border-left: 4px solid #dc3545;
+        padding: 10px;
+        margin-bottom: 10px;
+        background: #fff3cd;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Page Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2><i class="bi bi-speedometer2"></i> Rahbariyat Dashboard</h2>
+            <p class="text-muted">Umumiy ko'rinish va asosiy ko'rsatkichlar</p>
+        </div>
+    </div>
+
+    <!-- KPI Cards -->
+    <div class="row mb-4">
+        <!-- Bugungi Savdo -->
+        <div class="col-md-3 mb-3">
+            <div class="card dashboard-card stat-card primary position-relative">
+                <i class="bi bi-currency-dollar stat-icon"></i>
+                <div class="stat-label">Bugungi Savdo</div>
+                <div class="stat-value">{{ "{:,.0f}".format(stats.today_sales) }} so'm</div>
+                <div class="stat-label">
+                    <i class="bi bi-arrow-up"></i> +{{ stats.sales_growth }}% kechaga nisbatan
+                </div>
+            </div>
+        </div>
+
+        <!-- Buyurtmalar -->
+        <div class="col-md-3 mb-3">
+            <div class="card dashboard-card stat-card success position-relative">
+                <i class="bi bi-cart-check stat-icon"></i>
+                <div class="stat-label">Bugungi Buyurtmalar</div>
+                <div class="stat-value">{{ stats.today_orders }}</div>
+                <div class="stat-label">
+                    <i class="bi bi-check-circle"></i> {{ stats.completed_orders }} bajarilgan
+                </div>
+            </div>
+        </div>
+
+        <!-- Faol Agentlar -->
+        <div class="col-md-3 mb-3">
+            <div class="card dashboard-card stat-card warning position-relative">
+                <i class="bi bi-people stat-icon"></i>
+                <div class="stat-label">Faol Agentlar</div>
+                <div class="stat-value">{{ stats.active_agents }}</div>
+                <div class="stat-label">
+                    Jami {{ stats.total_agents }} agentdan
+                </div>
+            </div>
+        </div>
+
+        <!-- Ombor Qoldiq -->
+        <div class="col-md-3 mb-3">
+            <div class="card dashboard-card stat-card danger position-relative">
+                <i class="bi bi-box-seam stat-icon"></i>
+                <div class="stat-label">Ombor Qiymati</div>
+                <div class="stat-value">{{ "{:,.0f}".format(stats.warehouse_value) }} so'm</div>
+                <div class="stat-label">
+                    <i class="bi bi-exclamation-triangle"></i> {{ stats.low_stock_count }} mahsulot past
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="row mb-4">
+        <!-- Sales Trend -->
+        <div class="col-md-8 mb-3">
+            <div class="card dashboard-card">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="bi bi-graph-up"></i> Savdo Dinamikasi (7 kun)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="salesTrendChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Top Products -->
+        <div class="col-md-4 mb-3">
+            <div class="card dashboard-card">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="bi bi-trophy"></i> Top 5 Mahsulotlar</h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="topProductsChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Additional Stats Row -->
+    <div class="row mb-4">
+        <!-- Agent Performance -->
+        <div class="col-md-6 mb-3">
+            <div class="card dashboard-card">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="bi bi-person-badge"></i> Top 5 Agentlar</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Agent</th>
+                                <th>Savdo</th>
+                                <th>Buyurtmalar</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for agent in top_agents %}
+                            <tr>
+                                <td>{{ loop.index }}</td>
+                                <td>{{ agent.name }}</td>
+                                <td>{{ "{:,.0f}".format(agent.sales) }} so'm</td>
+                                <td>{{ agent.orders }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alerts & Notifications -->
+        <div class="col-md-6 mb-3">
+            <div class="card dashboard-card">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="bi bi-bell"></i> Ogohlantirishlar</h5>
+                </div>
+                <div class="card-body">
+                    {% for alert in alerts %}
+                    <div class="alert-item">
+                        <strong><i class="bi bi-exclamation-triangle"></i> {{ alert.title }}</strong>
+                        <p class="mb-0 small">{{ alert.message }}</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+    // Sales Trend Chart
+    const salesCtx = document.getElementById('salesTrendChart').getContext('2d');
+    const salesChart = new Chart(salesCtx, {
+        type: 'line',
+        data: {
+            labels: {{ sales_trend.labels | tojson }},
+    datasets: [{
+        label: 'Savdo (so\'m)',
+        data: {{ sales_trend.data | tojson }},
+        borderColor: 'rgb(75, 192, 192)',
+        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+        tension: 0.4,
+        fill: true
+            }]
+        },
+    options: {
+        responsive: true,
+            maintainAspectRatio: false,
+                plugins: {
+            legend: {
+                display: true,
+                    position: 'top'
+            }
+        },
+        scales: {
+            y: {
+                beginAtZero: true
+            }
+        }
+    }
+    });
+
+    // Top Products Chart
+    const productsCtx = document.getElementById('topProductsChart').getContext('2d');
+    const productsChart = new Chart(productsCtx, {
+        type: 'doughnut',
+        data: {
+            labels: {{ top_products.labels | tojson }},
+    datasets: [{
+        data: {{ top_products.data | tojson }},
+        backgroundColor: [
+        'rgba(255, 99, 132, 0.8)',
+        'rgba(54, 162, 235, 0.8)',
+        'rgba(255, 206, 86, 0.8)',
+        'rgba(75, 192, 192, 0.8)',
+        'rgba(153, 102, 255, 0.8)'
+    ]
+            }]
+        },
+    options: {
+        responsive: true,
+            maintainAspectRatio: false,
+                plugins: {
+            legend: {
+                position: 'bottom'
+            }
+        }
+    }
+    });
+</script>
+{% endblock %}
