@@ -28,6 +28,7 @@ from app.utils.auth import (
     hash_password, verify_password, 
     create_session_token, get_user_from_token
 )
+from app.utils.dashboard_export import export_executive_dashboard
 
 app = FastAPI(title="TOTLI HOLVA", description="Biznes boshqaruv tizimi", version="1.0")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -375,6 +376,13 @@ async def executive_dashboard(request: Request, db: Session = Depends(get_db)):
         "top_agents": top_agents,
         "alerts": alerts
     })
+
+
+# Executive Dashboard - Export to Excel
+@app.get("/dashboard/executive/export")
+async def executive_export(request: Request, db: Session = Depends(get_db)):
+    """Export Executive Dashboard to Excel"""
+    return await export_executive_dashboard(request, db)
 
 
 # Sales Dashboard - Real Data
