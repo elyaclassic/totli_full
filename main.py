@@ -206,27 +206,28 @@ async def executive_dashboard_test(request: Request, db: Session = Depends(get_d
 
 @app.get("/dashboard/executive", response_class=HTMLResponse)
 async def executive_dashboard(request: Request, db: Session = Depends(get_db)):
-    """Rahbariyat Dashboard"""
+    """Rahbariyat Dashboard - Real Data"""
+    from datetime import datetime, timedelta
+    from sqlalchemy import func
+    from app.models.database import Order, OrderItem, Agent, Stock, Product
+    
     user = get_user_from_token(request)
     if not user:
         return RedirectResponse(url="/login", status_code=303)
-    
-    from datetime import datetime, timedelta
-    from sqlalchemy import func
     
     # Bugungi sana
     today = datetime.now().date()
     yesterday = today - timedelta(days=1)
     week_ago = today - timedelta(days=7)
     
-    # Bugungi savdo
-    today_sales = db.query(func.sum(Order.total_amount)).filter(
+    # Bugungi savdo (completed orders)
+    today_sales = db.query(func.sum(Order.total)).filter(
         func.date(Order.created_at) == today,
         Order.status == 'completed'
     ).scalar() or 0
     
     # Kechagi savdo
-    yesterday_sales = db.query(func.sum(Order.total_amount)).filter(
+    yesterday_sales = db.query(func.sum(Order.total)).filter(
         func.date(Order.created_at) == yesterday,
         Order.status == 'completed'
     ).scalar() or 0
@@ -256,7 +257,9 @@ async def executive_dashboard(request: Request, db: Session = Depends(get_db)):
     total_agents = db.query(func.count(Agent.id)).scalar() or 0
     
     # Ombor qiymati
-    warehouse_value = db.query(func.sum(Stock.quantity * Product.cost_price)).join(
+    warehouse_value = db.query(
+        func.sum(Stock.quantity * Product.cost_price)
+    ).join(
         Product, Stock.product_id == Product.id
     ).scalar() or 0
     
@@ -270,7 +273,7 @@ async def executive_dashboard(request: Request, db: Session = Depends(get_db)):
     sales_trend_data = []
     for i in range(6, -1, -1):
         date = today - timedelta(days=i)
-        sales = db.query(func.sum(Order.total_amount)).filter(
+        sales = db.query(func.sum(Order.total)).filter(
             func.date(Order.created_at) == date,
             Order.status == 'completed'
         ).scalar() or 0
@@ -292,21 +295,21 @@ async def executive_dashboard(request: Request, db: Session = Depends(get_db)):
         func.sum(OrderItem.quantity).desc()
     ).limit(5).all()
     
-    top_products_labels = [p.name for p in top_products_query]
-    top_products_data = [float(p.total_qty) for p in top_products_query]
+    top_products_labels = [p.name for p in top_products_query] or ['Ma\'lumot yo\'q']
+    top_products_data = [float(p.total_qty) for p in top_products_query] or [0]
     
     # Top 5 agentlar
     top_agents_query = db.query(
         Agent.name,
-        func.sum(Order.total_amount).label('total_sales'),
+        func.sum(Order.total).label('total_sales'),
         func.count(Order.id).label('order_count')
     ).join(
-        Order, Agent.id == Order.agent_id
+        Order, Agent.id == Order.partner_id  # Assuming agent is partner
     ).filter(
         func.date(Order.created_at) >= week_ago,
         Order.status == 'completed'
     ).group_by(Agent.id, Agent.name).order_by(
-        func.sum(Order.total_amount).desc()
+        func.sum(Order.total).desc()
     ).limit(5).all()
     
     top_agents = [
@@ -316,7 +319,7 @@ async def executive_dashboard(request: Request, db: Session = Depends(get_db)):
             'orders': a.order_count
         }
         for a in top_agents_query
-    ]
+    ] or [{'name': 'Ma\'lumot yo\'q', 'sales': 0, 'orders': 0}]
     
     # Ogohlantirishlar
     alerts = []
@@ -337,13 +340,13 @@ async def executive_dashboard(request: Request, db: Session = Depends(get_db)):
     
     # Statistika
     stats = {
-        'today_sales': today_sales,
+        'today_sales': float(today_sales),
         'sales_growth': round(sales_growth, 1),
         'today_orders': today_orders,
         'completed_orders': completed_orders,
         'active_agents': active_agents,
         'total_agents': total_agents,
-        'warehouse_value': warehouse_value,
+        'warehouse_value': float(warehouse_value),
         'low_stock_count': low_stock_count
     }
     
