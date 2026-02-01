@@ -139,6 +139,71 @@ async def logout():
 # DASHBOARDS
 # ==========================================
 
+# Test route without authentication
+@app.get("/test/dashboard/executive", response_class=HTMLResponse)
+async def executive_dashboard_test(request: Request, db: Session = Depends(get_db)):
+    """Rahbariyat Dashboard - Test (fake data)"""
+    
+    # Fake user for testing
+    fake_user = {"username": "test", "role": "admin"}
+    
+    # Fake statistika
+    stats = {
+        'today_sales': 5500000,
+        'sales_growth': 12.5,
+        'today_orders': 45,
+        'completed_orders': 38,
+        'active_agents': 12,
+        'total_agents': 15,
+        'warehouse_value': 25000000,
+        'low_stock_count': 3
+    }
+    
+    # Fake 7 kunlik savdo
+    sales_trend = {
+        "labels": ["26.01", "27.01", "28.01", "29.01", "30.01", "31.01", "01.02"],
+        "data": [4200000, 4500000, 4800000, 5100000, 5300000, 5200000, 5500000]
+    }
+    
+    # Fake top mahsulotlar
+    top_products = {
+        "labels": ["Shokolad tort", "Medovik", "Napoleon", "Tiramisu", "Eclair"],
+        "data": [150, 120, 100, 85, 70]
+    }
+    
+    # Fake top agentlar
+    top_agents = [
+        {'name': 'Alisher Karimov', 'sales': 1200000, 'orders': 25},
+        {'name': 'Dilshod Rahimov', 'sales': 980000, 'orders': 20},
+        {'name': 'Sardor Usmonov', 'sales': 850000, 'orders': 18},
+        {'name': 'Jasur Toshmatov', 'sales': 720000, 'orders': 15},
+        {'name': 'Bobur Sharipov', 'sales': 650000, 'orders': 12}
+    ]
+    
+    # Fake ogohlantirishlar
+    alerts = [
+        {
+            'title': 'Past qoldiq',
+            'message': '3 ta mahsulot qoldig\'i past darajada'
+        },
+        {
+            'title': 'Yangi buyurtma',
+            'message': 'Toshkent filialidan yangi buyurtma keldi'
+        }
+    ]
+    
+    return templates.TemplateResponse("dashboards/executive.html", {
+        "request": request,
+        "page_title": "Rahbariyat Dashboard",
+        "user": fake_user,
+        "stats": stats,
+        "sales_trend": sales_trend,
+        "top_products": top_products,
+        "top_agents": top_agents,
+        "alerts": alerts
+    })
+
+
 @app.get("/dashboard/executive", response_class=HTMLResponse)
 async def executive_dashboard(request: Request, db: Session = Depends(get_db)):
     """Rahbariyat Dashboard"""
