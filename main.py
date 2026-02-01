@@ -368,7 +368,156 @@ async def executive_dashboard(request: Request, db: Session = Depends(get_db)):
     })
 
 
-# Sales Dashboard
+# Sales Dashboard - Real Data
+@app.get("/dashboard/sales", response_class=HTMLResponse)
+async def sales_dashboard(request: Request, db: Session = Depends(get_db)):
+    """Savdo Dashboard - Real Data"""
+    from datetime import datetime, timedelta
+    from sqlalchemy import func
+    from app.models.database import Order, Partner
+    
+    user = get_user_from_token(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    today = datetime.now().date()
+    yesterday = today - timedelta(days=1)
+    week_ago = today - timedelta(days=7)
+    month_ago = today - timedelta(days=30)
+    
+    # Today's sales
+    today_sales = db.query(func.sum(Order.total)).filter(
+        func.date(Order.created_at) == today,
+        Order.status == 'completed'
+    ).scalar() or 0
+    
+    yesterday_sales = db.query(func.sum(Order.total)).filter(
+        func.date(Order.created_at) == yesterday,
+        Order.status == 'completed'
+    ).scalar() or 0
+    
+    sales_growth = 0
+    if yesterday_sales > 0:
+        sales_growth = ((today_sales - yesterday_sales) / yesterday_sales) * 100
+    
+    # Orders
+    total_orders = db.query(func.count(Order.id)).filter(
+        func.date(Order.created_at) == today
+    ).scalar() or 0
+    
+    completed_orders = db.query(func.count(Order.id)).filter(
+        func.date(Order.created_at) == today,
+        Order.status == 'completed'
+    ).scalar() or 0
+    
+    # Customers
+    active_customers = db.query(func.count(func.distinct(Order.partner_id))).filter(
+        func.date(Order.created_at) >= month_ago
+    ).scalar() or 0
+    
+    new_customers = db.query(func.count(func.distinct(Order.partner_id))).filter(
+        func.date(Order.created_at) >= week_ago
+    ).scalar() or 0
+    
+    # Average check
+    avg_check = today_sales / total_orders if total_orders > 0 else 0
+    
+    metrics = {
+        'today_sales': float(today_sales),
+        'sales_growth': round(sales_growth, 1),
+        'total_orders': total_orders,
+        'completed_orders': completed_orders,
+        'active_customers': active_customers,
+        'new_customers': new_customers,
+        'avg_check': float(avg_check)
+    }
+    
+    # Order Status
+    status_counts = db.query(
+        Order.status,
+        func.count(Order.id)
+    ).filter(
+        func.date(Order.created_at) >= week_ago
+    ).group_by(Order.status).all()
+    
+    status_map = {'draft': 'Yangi', 'confirmed': 'Jarayonda', 'completed': 'Bajarilgan', 'cancelled': 'Bekor qilingan'}
+    order_status = {
+        "labels": [status_map.get(s[0], s[0]) for s in status_counts] or ['Ma\'lumot yo\'q'],
+        "data": [s[1] for s in status_counts] or [0]
+    }
+    
+    # Weekly Sales
+    weekly_labels = []
+    weekly_data = []
+    for i in range(6, -1, -1):
+        date = today - timedelta(days=i)
+        sales = db.query(func.sum(Order.total)).filter(
+            func.date(Order.created_at) == date,
+            Order.status == 'completed'
+        ).scalar() or 0
+        weekly_labels.append(['Yak', 'Dush', 'Sesh', 'Chor', 'Pay', 'Juma', 'Shan'][date.weekday()])
+        weekly_data.append(float(sales))
+    
+    weekly_sales = {"labels": weekly_labels, "data": weekly_data}
+    
+    # Recent Orders
+    recent = db.query(Order, Partner.name).join(
+        Partner, Order.partner_id == Partner.id, isouter=True
+    ).filter(
+        func.date(Order.created_at) >= week_ago
+    ).order_by(Order.created_at.desc()).limit(5).all()
+    
+    status_text_map = {'draft': 'Yangi', 'confirmed': 'Jarayonda', 'completed': 'Bajarilgan', 'cancelled': 'Bekor qilingan'}
+    recent_orders = [
+        {
+            'number': o.number,
+            'customer': p_name or 'Noma\'lum',
+            'total': float(o.total),
+            'status': o.status,
+            'status_text': status_text_map.get(o.status, o.status)
+        }
+        for o, p_name in recent
+    ] or [{'number': '-', 'customer': 'Ma\'lumot yo\'q', 'total': 0, 'status': 'draft', 'status_text': '-'}]
+    
+    # Top Customers
+    top = db.query(
+        Partner.name,
+        func.count(Order.id).label('order_count'),
+        func.sum(Order.total).label('total_sales')
+    ).join(
+        Order, Partner.id == Order.partner_id
+    ).filter(
+        func.date(Order.created_at) >= month_ago,
+        Order.status == 'completed'
+    ).group_by(Partner.id, Partner.name).order_by(
+        func.sum(Order.total).desc()
+    ).limit(5).all()
+    
+    top_customers = [
+        {'name': t.name, 'orders': t.order_count, 'total': float(t.total_sales)}
+        for t in top
+    ] or [{'name': 'Ma\'lumot yo\'q', 'orders': 0, 'total': 0}]
+    
+    # Fake funnel (not in database yet)
+    funnel = {
+        "labels": ["Tashrif", "Qiziqish", "Taklif", "Buyurtma", "To'lov"],
+        "data": [250, 180, 120, total_orders, completed_orders]
+    }
+    
+    return templates.TemplateResponse("dashboards/sales.html", {
+        "request": request,
+        "page_title": "Savdo Dashboard",
+        "user": user,
+        "metrics": metrics,
+        "order_status": order_status,
+        "funnel": funnel,
+        "weekly_sales": weekly_sales,
+        "recent_orders": recent_orders,
+        "top_customers": top_customers
+    })
+
+
+# Sales Dashboard - Test (fake data)
 @app.get("/test/dashboard/sales", response_class=HTMLResponse)
 async def sales_dashboard_test(request: Request, db: Session = Depends(get_db)):
     """Savdo Dashboard - Test (fake data)"""
