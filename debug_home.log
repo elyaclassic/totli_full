@@ -1926,3 +1926,83 @@ User: <app.models.database.User object at 0x000001AEA92741D0>
 Stats 1: {'tayyor_count': 0, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 0, 'partners_count': 0, 'employees_count': 0}
 Stats 2: today_sales calculated
 ✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-02-01 23:44:23.356852
+User: <app.models.database.User object at 0x0000025C31DB0E30>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 0, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 0, 'partners_count': 0, 'employees_count': 0}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-02-01 23:44:29.699002
+User: <app.models.database.User object at 0x0000025C31E39C10>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 0, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 0, 'partners_count': 0, 'employees_count': 0}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-02-01 23:44:31.845849
+User: <app.models.database.User object at 0x0000025C31E3B110>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 0, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 0, 'partners_count': 0, 'employees_count': 0}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-02-01 23:44:36.472159
+User: <app.models.database.User object at 0x0000025C31E3A240>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 0, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 0, 'partners_count': 0, 'employees_count': 0}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-02-01 23:44:38.779657
+User: <app.models.database.User object at 0x0000025C315FDBB0>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 0, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 0, 'partners_count': 0, 'employees_count': 0}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-02-01 23:44:44.425590
+User: <app.models.database.User object at 0x0000025C31E38BC0>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 0, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 0, 'partners_count': 0, 'employees_count': 0}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-02-01 23:44:46.794560
+User: <app.models.database.User object at 0x0000025C31E396D0>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 0, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 0, 'partners_count': 0, 'employees_count': 0}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-02-01 23:44:51.557060
+User: <app.models.database.User object at 0x0000025C31E3BE00>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 0, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 0, 'partners_count': 0, 'employees_count': 0}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-02-01 23:44:53.733275
+User: <app.models.database.User object at 0x0000025C31E3BFB0>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 0, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 0, 'partners_count': 0, 'employees_count': 0}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template
+
+============================================================
+Time: 2026-02-01 23:44:54.995760
+User: <app.models.database.User object at 0x0000025C31E3AF60>
+✅ User authenticated: admin
+Stats 1: {'tayyor_count': 0, 'yarim_tayyor_count': 0, 'hom_ashyo_count': 0, 'partners_count': 0, 'employees_count': 0}
+Stats 2: today_sales calculated
+✅ Stats calculated, rendering template

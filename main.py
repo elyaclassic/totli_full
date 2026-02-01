@@ -211,8 +211,17 @@ async def executive_dashboard(request: Request, db: Session = Depends(get_db)):
     from sqlalchemy import func
     from app.models.database import Order, OrderItem, Agent, Stock, Product
     
-    user = get_user_from_token(request)
-    if not user:
+    # Get user from session cookie
+    session_token = request.cookies.get("session_token")
+    if not session_token:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    user_data = get_user_from_token(session_token)
+    if not user_data:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    user = db.query(User).filter(User.id == user_data["user_id"]).first()
+    if not user or not user.is_active:
         return RedirectResponse(url="/login", status_code=303)
     
     # Bugungi sana
@@ -376,8 +385,17 @@ async def sales_dashboard(request: Request, db: Session = Depends(get_db)):
     from sqlalchemy import func
     from app.models.database import Order, Partner
     
-    user = get_user_from_token(request)
-    if not user:
+    # Get user from session cookie
+    session_token = request.cookies.get("session_token")
+    if not session_token:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    user_data = get_user_from_token(session_token)
+    if not user_data:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    user = db.query(User).filter(User.id == user_data["user_id"]).first()
+    if not user or not user.is_active:
         return RedirectResponse(url="/login", status_code=303)
     
     today = datetime.now().date()
@@ -718,8 +736,17 @@ async def warehouse_dashboard(request: Request, db: Session = Depends(get_db)):
     from sqlalchemy import func
     from app.models.database import Stock, Product, Category, Purchase, PurchaseItem
     
-    user = get_user_from_token(request)
-    if not user:
+    # Get user from session cookie
+    session_token = request.cookies.get("session_token")
+    if not session_token:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    user_data = get_user_from_token(session_token)
+    if not user_data:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    user = db.query(User).filter(User.id == user_data["user_id"]).first()
+    if not user or not user.is_active:
         return RedirectResponse(url="/login", status_code=303)
     
     today = datetime.now().date()
@@ -891,8 +918,17 @@ async def delivery_dashboard(request: Request, db: Session = Depends(get_db)):
     from sqlalchemy import func, case
     from app.models.database import Delivery, Driver, DriverLocation, Order, Partner
     
-    user = get_user_from_token(request)
-    if not user:
+    # Get user from session cookie
+    session_token = request.cookies.get("session_token")
+    if not session_token:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    user_data = get_user_from_token(session_token)
+    if not user_data:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    user = db.query(User).filter(User.id == user_data["user_id"]).first()
+    if not user or not user.is_active:
         return RedirectResponse(url="/login", status_code=303)
     
     today = datetime.now().date()
