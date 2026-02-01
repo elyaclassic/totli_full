@@ -29,6 +29,7 @@ from app.utils.auth import (
     create_session_token, get_user_from_token
 )
 from app.utils.dashboard_export import export_executive_dashboard
+from app.utils.live_data import executive_live_data, warehouse_live_data, delivery_live_data
 
 app = FastAPI(title="TOTLI HOLVA", description="Biznes boshqaruv tizimi", version="1.0")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -383,6 +384,23 @@ async def executive_dashboard(request: Request, db: Session = Depends(get_db)):
 async def executive_export(request: Request, db: Session = Depends(get_db)):
     """Export Executive Dashboard to Excel"""
     return await export_executive_dashboard(request, db)
+
+
+# Live Data Endpoints
+@app.get("/dashboard/executive/live")
+async def executive_live(request: Request, db: Session = Depends(get_db)):
+    """Live data for Executive Dashboard"""
+    return await executive_live_data(request, db)
+
+@app.get("/dashboard/warehouse/live")
+async def warehouse_live(request: Request, db: Session = Depends(get_db)):
+    """Live data for Warehouse Dashboard"""
+    return await warehouse_live_data(request, db)
+
+@app.get("/dashboard/delivery/live")
+async def delivery_live(request: Request, db: Session = Depends(get_db)):
+    """Live data for Delivery Dashboard"""
+    return await delivery_live_data(request, db)
 
 
 # Sales Dashboard - Real Data
