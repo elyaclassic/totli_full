@@ -603,7 +603,212 @@ async def sales_dashboard_test(request: Request, db: Session = Depends(get_db)):
     })
 
 
-# Agent Dashboard
+# Agent Dashboard - Real Data
+@app.get("/dashboard/agent", response_class=HTMLResponse)
+async def agent_dashboard(request: Request, db: Session = Depends(get_db)):
+    """Agent Dashboard - Real Data"""
+    from datetime import datetime, timedelta
+    from sqlalchemy import func
+    from app.models.database import Agent, Visit, Route, RoutePoint, Partner, Order, AgentLocation
+    
+    # Get user from session cookie
+    session_token = request.cookies.get("session_token")
+    if not session_token:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    user_data = get_user_from_token(session_token)
+    if not user_data:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    user = db.query(User).filter(User.id == user_data["user_id"]).first()
+    if not user or not user.is_active:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    # Get agent for current user (assuming user has agent_id or we use first agent)
+    agent = db.query(Agent).filter(Agent.is_active == True).first()
+    if not agent:
+        # No agent found - show empty dashboard
+        agent = {'name': 'Agent topilmadi', 'location': '-'}
+        return templates.TemplateResponse("dashboards/agent.html", {
+            "request": request,
+            "page_title": "Agent Dashboard",
+            "user": user,
+            "agent": agent,
+            "kpi": {'visits_completed': 0, 'visits_total': 0, 'visits_percent': 0, 'today_sales': 0, 'orders': 0, 'orders_completed': 0, 'target_achieved': 0, 'target_total': 25000000, 'target_percent': 0},
+            "schedule": [],
+            "recent_orders": [],
+            "customers": [],
+            "performance": {'labels': [], 'sales': [], 'target': []}
+        })
+    
+    today = datetime.now().date()
+    month_ago = today - timedelta(days=30)
+    
+    # Agent info with location
+    latest_location = db.query(AgentLocation).filter(
+        AgentLocation.agent_id == agent.id
+    ).order_by(AgentLocation.recorded_at.desc()).first()
+    
+    agent_info = {
+        'name': agent.full_name,
+        'location': latest_location.address if latest_location and latest_location.address else agent.region or 'Noma\'lum'
+    }
+    
+    # Today's visits
+    today_visits = db.query(func.count(Visit.id)).filter(
+        Visit.agent_id == agent.id,
+        func.date(Visit.visit_date) == today
+    ).scalar() or 0
+    
+    completed_visits = db.query(func.count(Visit.id)).filter(
+        Visit.agent_id == agent.id,
+        func.date(Visit.visit_date) == today,
+        Visit.status == 'visited'
+    ).scalar() or 0
+    
+    visits_percent = int((completed_visits / today_visits * 100)) if today_visits > 0 else 0
+    
+    # Today's sales (orders created by agent)
+    today_sales = db.query(func.sum(Order.total)).filter(
+        func.date(Order.created_at) == today,
+        Order.status == 'completed'
+    ).scalar() or 0
+    
+    today_orders = db.query(func.count(Order.id)).filter(
+        func.date(Order.created_at) == today
+    ).scalar() or 0
+    
+    completed_orders = db.query(func.count(Order.id)).filter(
+        func.date(Order.created_at) == today,
+        Order.status == 'completed'
+    ).scalar() or 0
+    
+    # Monthly target (placeholder)
+    target_total = 25000000
+    month_sales = db.query(func.sum(Order.total)).filter(
+        func.date(Order.created_at) >= month_ago,
+        Order.status == 'completed'
+    ).scalar() or 0
+    
+    target_percent = int((month_sales / target_total * 100)) if target_total > 0 else 0
+    
+    kpi = {
+        'visits_completed': completed_visits,
+        'visits_total': today_visits,
+        'visits_percent': visits_percent,
+        'today_sales': float(today_sales),
+        'orders': today_orders,
+        'orders_completed': completed_orders,
+        'target_achieved': float(month_sales),
+        'target_total': target_total,
+        'target_percent': target_percent
+    }
+    
+    # Today's schedule from visits
+    schedule_visits = db.query(Visit, Partner).join(
+        Partner, Visit.partner_id == Partner.id
+    ).filter(
+        Visit.agent_id == agent.id,
+        func.date(Visit.visit_date) == today
+    ).order_by(Visit.check_in_time).all()
+    
+    schedule = []
+    for visit, partner in schedule_visits:
+        schedule.append({
+            'customer': partner.name,
+            'time': visit.check_in_time.strftime('%H:%M') if visit.check_in_time else '-',
+            'address': partner.address or '-',
+            'completed': visit.status == 'visited'
+        })
+    
+    if not schedule:
+        schedule = [{'customer': 'Bugun tashrif rejalashtirilmagan', 'time': '-', 'address': '-', 'completed': False}]
+    
+    # Recent orders
+    recent = db.query(Order, Partner).join(
+        Partner, Order.partner_id == Partner.id
+    ).filter(
+        func.date(Order.created_at) >= today - timedelta(days=7)
+    ).order_by(Order.created_at.desc()).limit(5).all()
+    
+    status_map = {'draft': ('Yangi', 'primary'), 'confirmed': ('Jarayonda', 'warning'), 'completed': ('Bajarilgan', 'success'), 'cancelled': ('Bekor qilingan', 'danger')}
+    recent_orders = []
+    for order, partner in recent:
+        status_text, status_color = status_map.get(order.status, ('Noma\'lum', 'secondary'))
+        recent_orders.append({
+            'number': order.number,
+            'customer': partner.name,
+            'total': float(order.total),
+            'status_color': status_color,
+            'status_text': status_text
+        })
+    
+    if not recent_orders:
+        recent_orders = [{'number': '-', 'customer': 'Ma\'lumot yo\'q', 'total': 0, 'status_color': 'secondary', 'status_text': '-'}]
+    
+    # My customers (partners with recent orders)
+    customers_query = db.query(
+        Partner,
+        func.max(Order.total).label('last_order')
+    ).join(
+        Order, Partner.id == Order.partner_id
+    ).filter(
+        func.date(Order.created_at) >= month_ago
+    ).group_by(Partner.id).order_by(func.max(Order.created_at).desc()).limit(5).all()
+    
+    customers = []
+    for partner, last_order in customers_query:
+        customers.append({
+            'name': partner.name,
+            'phone': partner.phone or '-',
+            'address': partner.address or '-',
+            'last_order': float(last_order) if last_order else 0
+        })
+    
+    if not customers:
+        customers = [{'name': 'Ma\'lumot yo\'q', 'phone': '-', 'address': '-', 'last_order': 0}]
+    
+    # 30-day performance
+    performance_labels = []
+    performance_sales = []
+    performance_target = []
+    
+    daily_target = target_total / 30
+    cumulative_sales = 0
+    
+    for i in range(0, 30, 5):
+        date = month_ago + timedelta(days=i)
+        sales = db.query(func.sum(Order.total)).filter(
+            func.date(Order.created_at) >= month_ago,
+            func.date(Order.created_at) <= date,
+            Order.status == 'completed'
+        ).scalar() or 0
+        
+        cumulative_sales = float(sales)
+        performance_labels.append(f'{i+1}-kun')
+        performance_sales.append(cumulative_sales)
+        performance_target.append(daily_target * (i + 1))
+    
+    performance = {
+        'labels': performance_labels,
+        'sales': performance_sales,
+        'target': performance_target
+    }
+    
+    return templates.TemplateResponse("dashboards/agent.html", {
+        "request": request,
+        "page_title": "Agent Dashboard",
+        "user": user,
+        "agent": agent_info,
+        "kpi": kpi,
+        "schedule": schedule,
+        "recent_orders": recent_orders,
+        "customers": customers,
+        "performance": performance
+    })
+
+
+# Agent Dashboard - Test (fake data)
 @app.get("/test/dashboard/agent", response_class=HTMLResponse)
 async def agent_dashboard_test(request: Request, db: Session = Depends(get_db)):
     """Agent Dashboard - Test (fake data)"""
