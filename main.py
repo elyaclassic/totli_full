@@ -710,7 +710,133 @@ async def production_dashboard_test(request: Request, db: Session = Depends(get_
     })
 
 
-# Warehouse Dashboard
+# Warehouse Dashboard - Real Data
+@app.get("/dashboard/warehouse", response_class=HTMLResponse)
+async def warehouse_dashboard(request: Request, db: Session = Depends(get_db)):
+    """Ombor Dashboard - Real Data"""
+    from datetime import datetime, timedelta
+    from sqlalchemy import func
+    from app.models.database import Stock, Product, Category, Purchase, PurchaseItem
+    
+    user = get_user_from_token(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    today = datetime.now().date()
+    week_ago = today - timedelta(days=7)
+    
+    # Total warehouse value
+    total_value = db.query(
+        func.sum(Stock.quantity * Product.cost_price)
+    ).join(
+        Product, Stock.product_id == Product.id
+    ).scalar() or 0
+    
+    # Total products
+    total_products = db.query(func.count(Stock.id)).scalar() or 0
+    
+    # Categories
+    categories = db.query(func.count(Category.id)).scalar() or 0
+    
+    # Today's incoming (purchases)
+    today_in = db.query(func.sum(PurchaseItem.quantity)).join(
+        Purchase, PurchaseItem.purchase_id == Purchase.id
+    ).filter(
+        func.date(Purchase.date) == today
+    ).scalar() or 0
+    
+    # Today's outgoing (from orders - we'll use a simple count for now)
+    today_out = db.query(func.count(Stock.id)).filter(
+        Stock.quantity > 0
+    ).scalar() or 0  # Placeholder
+    
+    metrics = {
+        'total_value': float(total_value),
+        'total_products': total_products,
+        'categories': categories,
+        'today_in': int(today_in),
+        'today_out': 0  # Placeholder - need stock movement tracking
+    }
+    
+    # Low stock items
+    low_stock_items = db.query(Stock, Product).join(
+        Product, Stock.product_id == Product.id
+    ).filter(
+        Stock.quantity < 20
+    ).order_by(Stock.quantity).limit(10).all()
+    
+    low_stock = []
+    for stock, product in low_stock_items:
+        level = 'critical' if stock.quantity < 10 else 'low'
+        badge = 'danger' if stock.quantity < 10 else 'warning'
+        low_stock.append({
+            'name': product.name,
+            'quantity': int(stock.quantity),
+            'min_quantity': 20,
+            'level': level,
+            'badge': badge
+        })
+    
+    if not low_stock:
+        low_stock = [{'name': 'Barcha mahsulotlar yetarli', 'quantity': 0, 'min_quantity': 0, 'level': 'ok', 'badge': 'success'}]
+    
+    # Recent movements (using purchases as proxy)
+    recent_purchases = db.query(Purchase, PurchaseItem, Product).join(
+        PurchaseItem, Purchase.id == PurchaseItem.purchase_id
+    ).join(
+        Product, PurchaseItem.product_id == Product.id
+    ).filter(
+        func.date(Purchase.date) >= week_ago
+    ).order_by(Purchase.date.desc()).limit(5).all()
+    
+    recent_moves = []
+    for purchase, item, product in recent_purchases:
+        recent_moves.append({
+            'product': product.name,
+            'quantity': int(item.quantity),
+            'type_text': 'Kirim',
+            'type_color': 'success',
+            'time': purchase.date.strftime('%H:%M')
+        })
+    
+    if not recent_moves:
+        recent_moves = [{'product': 'Ma\'lumot yo\'q', 'quantity': 0, 'type_text': '-', 'type_color': 'secondary', 'time': '-'}]
+    
+    # Weekly movement chart (placeholder with real structure)
+    chart_labels = []
+    chart_incoming = []
+    chart_outgoing = []
+    
+    for i in range(6, -1, -1):
+        date = today - timedelta(days=i)
+        incoming = db.query(func.sum(PurchaseItem.quantity)).join(
+            Purchase, PurchaseItem.purchase_id == Purchase.id
+        ).filter(
+            func.date(Purchase.date) == date
+        ).scalar() or 0
+        
+        chart_labels.append(['Yak', 'Dush', 'Sesh', 'Chor', 'Pay', 'Juma', 'Shan'][date.weekday()])
+        chart_incoming.append(int(incoming))
+        chart_outgoing.append(0)  # Placeholder
+    
+    chart = {
+        'labels': chart_labels,
+        'incoming': chart_incoming,
+        'outgoing': chart_outgoing
+    }
+    
+    return templates.TemplateResponse("dashboards/warehouse.html", {
+        "request": request,
+        "page_title": "Ombor Dashboard",
+        "user": user,
+        "metrics": metrics,
+        "low_stock": low_stock,
+        "recent_moves": recent_moves,
+        "chart": chart
+    })
+
+
+# Warehouse Dashboard - Test (fake data)
 @app.get("/test/dashboard/warehouse", response_class=HTMLResponse)
 async def warehouse_dashboard_test(request: Request, db: Session = Depends(get_db)):
     """Ombor Dashboard - Test (fake data)"""
