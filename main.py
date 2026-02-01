@@ -883,7 +883,167 @@ async def warehouse_dashboard_test(request: Request, db: Session = Depends(get_d
     })
 
 
-# Delivery Dashboard
+# Delivery Dashboard - Real Data
+@app.get("/dashboard/delivery", response_class=HTMLResponse)
+async def delivery_dashboard(request: Request, db: Session = Depends(get_db)):
+    """Yetkazib berish Dashboard - Real Data"""
+    from datetime import datetime, timedelta
+    from sqlalchemy import func, case
+    from app.models.database import Delivery, Driver, DriverLocation, Order, Partner
+    
+    user = get_user_from_token(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    today = datetime.now().date()
+    week_ago = today - timedelta(days=7)
+    
+    # Today's deliveries
+    total_deliveries = db.query(func.count(Delivery.id)).filter(
+        func.date(Delivery.planned_date) == today
+    ).scalar() or 0
+    
+    completed_deliveries = db.query(func.count(Delivery.id)).filter(
+        func.date(Delivery.planned_date) == today,
+        Delivery.status == 'delivered'
+    ).scalar() or 0
+    
+    percent = int((completed_deliveries / total_deliveries * 100)) if total_deliveries > 0 else 0
+    
+    # Active drivers
+    active_drivers = db.query(func.count(Driver.id)).filter(
+        Driver.is_active == True
+    ).scalar() or 0
+    
+    total_drivers = db.query(func.count(Driver.id)).scalar() or 0
+    
+    # Average delivery time (placeholder - need delivery duration tracking)
+    avg_time = 45  # Placeholder
+    
+    # Delays (deliveries not completed on time)
+    delays = db.query(func.count(Delivery.id)).filter(
+        func.date(Delivery.planned_date) < today,
+        Delivery.status.in_(['pending', 'in_progress'])
+    ).scalar() or 0
+    
+    metrics = {
+        'completed': completed_deliveries,
+        'total': total_deliveries,
+        'percent': percent,
+        'active_drivers': active_drivers,
+        'total_drivers': total_drivers,
+        'avg_time': avg_time,
+        'delays': delays
+    }
+    
+    # Today's deliveries with details
+    deliveries_query = db.query(Delivery, Driver, Partner).join(
+        Driver, Delivery.driver_id == Driver.id
+    ).outerjoin(
+        Order, Delivery.order_id == Order.id
+    ).outerjoin(
+        Partner, Order.partner_id == Partner.id
+    ).filter(
+        func.date(Delivery.planned_date) >= week_ago
+    ).order_by(Delivery.planned_date.desc()).limit(20).all()
+    
+    status_map = {
+        'pending': ('Kutilmoqda', 'secondary'),
+        'in_progress': ('Yo\'lda', 'warning'),
+        'delivered': ('Yetkazilgan', 'success'),
+        'failed': ('Bekor qilingan', 'danger')
+    }
+    
+    deliveries = []
+    for delivery, driver, partner in deliveries_query:
+        status_text, badge_color = status_map.get(delivery.status, ('Noma\'lum', 'secondary'))
+        deliveries.append({
+            'customer': partner.name if partner else 'Noma\'lum',
+            'address': delivery.delivery_address or '-',
+            'driver': driver.full_name,
+            'status': delivery.status,
+            'badge_color': badge_color,
+            'status_text': status_text,
+            'time': delivery.planned_date.strftime('%H:%M') if delivery.planned_date else '-'
+        })
+    
+    if not deliveries:
+        deliveries = [{'customer': 'Ma\'lumot yo\'q', 'address': '-', 'driver': '-', 'status': 'pending', 'badge_color': 'secondary', 'status_text': '-', 'time': '-'}]
+    
+    # Drivers with their stats
+    drivers_query = db.query(
+        Driver,
+        func.count(Delivery.id).label('delivery_count')
+    ).outerjoin(
+        Delivery, 
+        (Driver.id == Delivery.driver_id) & (func.date(Delivery.planned_date) == today)
+    ).group_by(Driver.id).order_by(func.count(Delivery.id).desc()).limit(10).all()
+    
+    drivers = []
+    for driver, delivery_count in drivers_query:
+        # Get latest location
+        latest_location = db.query(DriverLocation).filter(
+            DriverLocation.driver_id == driver.id
+        ).order_by(DriverLocation.timestamp.desc()).first()
+        
+        location_text = 'Noma\'lum'
+        if latest_location and latest_location.address:
+            location_text = latest_location.address[:30] + '...' if len(latest_location.address) > 30 else latest_location.address
+        
+        status_color = 'success' if driver.is_active else 'secondary'
+        status_text = 'Faol' if driver.is_active else 'Faol emas'
+        
+        drivers.append({
+            'name': driver.full_name,
+            'deliveries': delivery_count,
+            'location': location_text,
+            'status_color': status_color,
+            'status_text': status_text
+        })
+    
+    if not drivers:
+        drivers = [{'name': 'Ma\'lumot yo\'q', 'deliveries': 0, 'location': '-', 'status_color': 'secondary', 'status_text': '-'}]
+    
+    # Weekly delivery chart
+    chart_labels = []
+    chart_completed = []
+    chart_delayed = []
+    
+    for i in range(6, -1, -1):
+        date = today - timedelta(days=i)
+        
+        completed = db.query(func.count(Delivery.id)).filter(
+            func.date(Delivery.planned_date) == date,
+            Delivery.status == 'delivered'
+        ).scalar() or 0
+        
+        delayed = db.query(func.count(Delivery.id)).filter(
+            func.date(Delivery.planned_date) == date,
+            Delivery.status.in_(['pending', 'in_progress', 'failed'])
+        ).scalar() or 0
+        
+        chart_labels.append(['Yak', 'Dush', 'Sesh', 'Chor', 'Pay', 'Juma', 'Shan'][date.weekday()])
+        chart_completed.append(completed)
+        chart_delayed.append(delayed)
+    
+    chart = {
+        'labels': chart_labels,
+        'completed': chart_completed,
+        'delayed': chart_delayed
+    }
+    
+    return templates.TemplateResponse("dashboards/delivery.html", {
+        "request": request,
+        "page_title": "Yetkazib berish Dashboard",
+        "user": user,
+        "metrics": metrics,
+        "deliveries": deliveries,
+        "drivers": drivers,
+        "chart": chart
+    })
+
+
+# Delivery Dashboard - Test (fake data)
 @app.get("/test/dashboard/delivery", response_class=HTMLResponse)
 async def delivery_dashboard_test(request: Request, db: Session = Depends(get_db)):
     """Yetkazib berish Dashboard - Test (fake data)"""
