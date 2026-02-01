@@ -633,6 +633,29 @@ class Region(Base):
     created_at = Column(DateTime, default=datetime.now)
 
 
+# ==========================================
+# BILDIRISHNOMALAR (NOTIFICATIONS)
+# ==========================================
+
+class Notification(Base):
+    """Tizim bildirish nomalari"""
+    __tablename__ = "notifications"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # null = all users
+    title = Column(String(200))
+    message = Column(Text)
+    notification_type = Column(String(50))  # info, warning, error, success
+    priority = Column(String(20), default="normal")  # low, normal, high, urgent
+    is_read = Column(Boolean, default=False)
+    read_at = Column(DateTime, nullable=True)
+    action_url = Column(String(500), nullable=True)  # Optional link
+    related_entity_type = Column(String(50), nullable=True)  # order, delivery, stock, etc.
+    related_entity_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+    expires_at = Column(DateTime, nullable=True)
+
+
 # Bazani yaratish
 def init_db():
     Base.metadata.create_all(bind=engine)
