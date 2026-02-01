@@ -433,6 +433,81 @@ async def sales_dashboard_test(request: Request, db: Session = Depends(get_db)):
     })
 
 
+# Agent Dashboard
+@app.get("/test/dashboard/agent", response_class=HTMLResponse)
+async def agent_dashboard_test(request: Request, db: Session = Depends(get_db)):
+    """Agent Dashboard - Test (fake data)"""
+    
+    # Fake user
+    fake_user = {"username": "agent1", "role": "agent"}
+    
+    # Agent info
+    agent = {
+        'name': 'Alisher Karimov',
+        'location': 'Chilonzor tumani, Toshkent'
+    }
+    
+    # KPI
+    kpi = {
+        'visits_completed': 8,
+        'visits_total': 12,
+        'visits_percent': 67,
+        'today_sales': 1250000,
+        'orders': 15,
+        'orders_completed': 12,
+        'target_achieved': 18500000,
+        'target_total': 25000000,
+        'target_percent': 74
+    }
+    
+    # Today's Schedule
+    schedule = [
+        {'customer': 'Anvar Toshmatov', 'time': '09:00', 'address': 'Chilonzor 12-kv', 'completed': True},
+        {'customer': 'Dilshod Karimov', 'time': '10:30', 'address': 'Yunusobod 5-kv', 'completed': True},
+        {'customer': 'Sardor Usmonov', 'time': '11:45', 'address': 'Mirzo Ulug\'bek 8-kv', 'completed': True},
+        {'customer': 'Jasur Rahimov', 'time': '13:00', 'address': 'Yakkasaroy 3-kv', 'completed': False},
+        {'customer': 'Bobur Sharipov', 'time': '14:30', 'address': 'Sergeli 7-kv', 'completed': False},
+        {'customer': 'Otabek Normatov', 'time': '16:00', 'address': 'Uchtepa 4-kv', 'completed': False}
+    ]
+    
+    # Recent Orders
+    recent_orders = [
+        {'number': 'ORD-1234', 'customer': 'Anvar Toshmatov', 'total': 450000, 'status_color': 'success', 'status_text': 'Bajarilgan'},
+        {'number': 'ORD-1235', 'customer': 'Dilshod Karimov', 'total': 320000, 'status_color': 'warning', 'status_text': 'Jarayonda'},
+        {'number': 'ORD-1236', 'customer': 'Sardor Usmonov', 'total': 180000, 'status_color': 'primary', 'status_text': 'Yangi'},
+        {'number': 'ORD-1237', 'customer': 'Jasur Rahimov', 'total': 520000, 'status_color': 'success', 'status_text': 'Bajarilgan'},
+        {'number': 'ORD-1238', 'customer': 'Bobur Sharipov', 'total': 280000, 'status_color': 'warning', 'status_text': 'Jarayonda'}
+    ]
+    
+    # My Customers
+    customers = [
+        {'name': 'Anvar Toshmatov', 'phone': '+998 90 123 45 67', 'address': 'Chilonzor 12-kv', 'last_order': 450000},
+        {'name': 'Dilshod Karimov', 'phone': '+998 91 234 56 78', 'address': 'Yunusobod 5-kv', 'last_order': 320000},
+        {'name': 'Sardor Usmonov', 'phone': '+998 93 345 67 89', 'address': 'Mirzo Ulug\'bek 8-kv', 'last_order': 180000},
+        {'name': 'Jasur Rahimov', 'phone': '+998 94 456 78 90', 'address': 'Yakkasaroy 3-kv', 'last_order': 520000},
+        {'name': 'Bobur Sharipov', 'phone': '+998 95 567 89 01', 'address': 'Sergeli 7-kv', 'last_order': 280000}
+    ]
+    
+    # Performance (30 days)
+    performance = {
+        'labels': ['1-kun', '5-kun', '10-kun', '15-kun', '20-kun', '25-kun', '30-kun'],
+        'sales': [500000, 1200000, 2100000, 3500000, 5200000, 7100000, 8500000],
+        'target': [833333, 1666666, 2500000, 3333333, 4166666, 5000000, 5833333]
+    }
+    
+    return templates.TemplateResponse("dashboards/agent.html", {
+        "request": request,
+        "page_title": "Agent Dashboard",
+        "user": fake_user,
+        "agent": agent,
+        "kpi": kpi,
+        "schedule": schedule,
+        "recent_orders": recent_orders,
+        "customers": customers,
+        "performance": performance
+    })
+
+
 # ==========================================
 # ASOSIY SAHIFALAR
 # ==========================================
