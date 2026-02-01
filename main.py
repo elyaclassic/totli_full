@@ -22,7 +22,7 @@ from app.models.database import (
     Recipe, RecipeItem, Production, Employee, Salary,
     Agent, AgentLocation, Route, RoutePoint, Visit,
     Driver, DriverLocation, Delivery, PartnerLocation,
-    Purchase, PurchaseItem, Department, Direction
+    Purchase, PurchaseItem, Department, Direction, Region
 )
 from app.utils.auth import (
     hash_password, verify_password, 
@@ -2692,6 +2692,20 @@ async def agent_location_update(
 # ==========================================
 # HUDUDLAR (REGIONS)
 # ==========================================
+
+@app.get("/test/regions", response_class=HTMLResponse)
+async def regions_test_page(request: Request, db: Session = Depends(get_db)):
+    """Hududlar test sahifasi - authentication'siz"""
+    regions = db.query(Region).all()
+    # Fake user for testing
+    fake_user = {"username": "test", "role": "admin"}
+    return templates.TemplateResponse("info/regions.html", {
+        "request": request,
+        "page_title": "Hududlar",
+        "user": fake_user,
+        "regions": regions
+    })
+
 
 @app.get("/info/regions", response_class=HTMLResponse)
 async def regions_page(request: Request, db: Session = Depends(get_db)):
