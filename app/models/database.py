@@ -202,6 +202,28 @@ class Production(Base):
     created_at = Column(DateTime, default=datetime.now)
 
 
+class Machine(Base):
+    """Ishlab chiqarish uskunalari"""
+    __tablename__ = "machines"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(50), unique=True, index=True)
+    name = Column(String(200), index=True)
+    machine_type = Column(String(100))  # mixer, oven, packaging, etc.
+    status = Column(String(20), default="idle")  # idle, active, maintenance, broken
+    operator_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
+    warehouse_id = Column(Integer, ForeignKey("warehouses.id"), nullable=True)
+    capacity = Column(Float)  # Maximum capacity per hour
+    efficiency = Column(Float, default=100.0)  # Current efficiency percentage
+    last_maintenance = Column(DateTime, nullable=True)
+    next_maintenance = Column(DateTime, nullable=True)
+    notes = Column(Text)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.now)
+    
+    operator = relationship("Employee", foreign_keys=[operator_id])
+
+
 # ==========================================
 # KONTRAGENTLAR (MIJOZLAR, YETKAZUVCHILAR)
 # ==========================================

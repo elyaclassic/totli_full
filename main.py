@@ -19,7 +19,7 @@ from app.models.database import (
     get_db, init_db, 
     User, Product, Category, Unit, Warehouse, Stock,
     Partner, Order, OrderItem, Payment, CashRegister,
-    Recipe, RecipeItem, Production, Employee, Salary,
+    Recipe, RecipeItem, Production, Machine, Employee, Salary,
     Agent, AgentLocation, Route, RoutePoint, Visit,
     Driver, DriverLocation, Delivery, PartnerLocation,
     Purchase, PurchaseItem, Department, Direction, Region
