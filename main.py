@@ -884,7 +884,124 @@ async def agent_dashboard_test(request: Request, db: Session = Depends(get_db)):
 
 
 
-# Production Dashboard
+# Production Dashboard - Real Data
+@app.get("/dashboard/production", response_class=HTMLResponse)
+async def production_dashboard(request: Request, db: Session = Depends(get_db)):
+    """Ishlab chiqarish Dashboard - Real Data"""
+    from datetime import datetime, timedelta
+    from sqlalchemy import func
+    from app.models.database import Production, Recipe, Product, Employee
+    
+    # Get user from session cookie
+    session_token = request.cookies.get("session_token")
+    if not session_token:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    user_data = get_user_from_token(session_token)
+    if not user_data:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    user = db.query(User).filter(User.id == user_data["user_id"]).first()
+    if not user or not user.is_active:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    today = datetime.now().date()
+    week_ago = today - timedelta(days=7)
+    
+    # Today's production
+    today_production = db.query(func.sum(Production.quantity)).filter(
+        func.date(Production.date) == today,
+        Production.status == 'completed'
+    ).scalar() or 0
+    
+    # Daily plan (placeholder - could be from a Plan table)
+    plan = 3000
+    efficiency = int((today_production / plan * 100)) if plan > 0 else 0
+    
+    # Active workers
+    active_workers = db.query(func.count(Employee.id)).filter(
+        Employee.is_active == True
+    ).scalar() or 0
+    
+    # Raw materials stock percentage (placeholder)
+    raw_materials = 72  # Placeholder
+    
+    metrics = {
+        'today_production': int(today_production),
+        'plan': plan,
+        'active_machines': 0,  # Placeholder - no Machine model
+        'total_machines': 0,   # Placeholder
+        'efficiency': efficiency,
+        'workers': active_workers,
+        'shifts': 3,  # Placeholder
+        'raw_materials': raw_materials
+    }
+    
+    # Production orders (from Production table)
+    production_query = db.query(Production, Recipe, Product).join(
+        Recipe, Production.recipe_id == Recipe.id
+    ).join(
+        Product, Recipe.product_id == Product.id
+    ).filter(
+        func.date(Production.date) >= today - timedelta(days=1),
+        Production.status.in_(['draft', 'completed'])
+    ).order_by(Production.date.desc()).limit(10).all()
+    
+    production_orders = []
+    for prod, recipe, product in production_query:
+        # Calculate progress based on status
+        progress = 100 if prod.status == 'completed' else 50
+        deadline = prod.date.strftime('%H:%M') if prod.date else '-'
+        
+        production_orders.append({
+            'product': product.name,
+            'quantity': int(prod.quantity),
+            'deadline': deadline,
+            'progress': progress
+        })
+    
+    if not production_orders:
+        production_orders = [{'product': 'Ma\'lumot yo\'q', 'quantity': 0, 'deadline': '-', 'progress': 0}]
+    
+    # Machines (placeholder - no Machine model)
+    machines = [
+        {'name': 'Uskunalar ma\'lumoti', 'status': 'unknown', 'operator': '-', 'badge_color': 'secondary', 'status_text': 'Ma\'lumot yo\'q'}
+    ]
+    
+    # Weekly production chart
+    chart_labels = []
+    chart_data = []
+    chart_plan = []
+    
+    for i in range(6, -1, -1):
+        date = today - timedelta(days=i)
+        production = db.query(func.sum(Production.quantity)).filter(
+            func.date(Production.date) == date,
+            Production.status == 'completed'
+        ).scalar() or 0
+        
+        chart_labels.append(['Yak', 'Dush', 'Sesh', 'Chor', 'Pay', 'Juma', 'Shan'][date.weekday()])
+        chart_data.append(int(production))
+        chart_plan.append(plan)
+    
+    chart = {
+        'labels': chart_labels,
+        'data': chart_data,
+        'plan': chart_plan
+    }
+    
+    return templates.TemplateResponse("dashboards/production.html", {
+        "request": request,
+        "page_title": "Ishlab chiqarish Dashboard",
+        "user": user,
+        "metrics": metrics,
+        "production_orders": production_orders,
+        "machines": machines,
+        "chart": chart
+    })
+
+
+# Production Dashboard - Test (fake data)
 @app.get("/test/dashboard/production", response_class=HTMLResponse)
 async def production_dashboard_test(request: Request, db: Session = Depends(get_db)):
     """Ishlab chiqarish Dashboard - Test (fake data)"""
