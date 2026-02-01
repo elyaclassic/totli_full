@@ -365,6 +365,74 @@ async def executive_dashboard(request: Request, db: Session = Depends(get_db)):
     })
 
 
+# Sales Dashboard
+@app.get("/test/dashboard/sales", response_class=HTMLResponse)
+async def sales_dashboard_test(request: Request, db: Session = Depends(get_db)):
+    """Savdo Dashboard - Test (fake data)"""
+    
+    # Fake user
+    fake_user = {"username": "test", "role": "sales"}
+    
+    # Metrics
+    metrics = {
+        'today_sales': 5500000,
+        'sales_growth': 15.3,
+        'total_orders': 45,
+        'completed_orders': 38,
+        'active_customers': 128,
+        'new_customers': 12,
+        'avg_check': 122222
+    }
+    
+    # Order Status
+    order_status = {
+        "labels": ["Yangi", "Jarayonda", "Bajarilgan", "Bekor qilingan"],
+        "data": [7, 12, 38, 3]
+    }
+    
+    # Sales Funnel
+    funnel = {
+        "labels": ["Tashrif", "Qiziqish", "Taklif", "Buyurtma", "To'lov"],
+        "data": [250, 180, 120, 60, 45]
+    }
+    
+    # Weekly Sales
+    weekly_sales = {
+        "labels": ["Dush", "Sesh", "Chor", "Pay", "Juma", "Shan", "Yak"],
+        "data": [720000, 850000, 920000, 880000, 1100000, 950000, 780000]
+    }
+    
+    # Recent Orders
+    recent_orders = [
+        {'number': 'ORD-1234', 'customer': 'Anvar Toshmatov', 'total': 450000, 'status': 'completed', 'status_text': 'Bajarilgan'},
+        {'number': 'ORD-1235', 'customer': 'Dilshod Karimov', 'total': 320000, 'status': 'processing', 'status_text': 'Jarayonda'},
+        {'number': 'ORD-1236', 'customer': 'Sardor Usmonov', 'total': 180000, 'status': 'new', 'status_text': 'Yangi'},
+        {'number': 'ORD-1237', 'customer': 'Jasur Rahimov', 'total': 520000, 'status': 'completed', 'status_text': 'Bajarilgan'},
+        {'number': 'ORD-1238', 'customer': 'Bobur Sharipov', 'total': 280000, 'status': 'processing', 'status_text': 'Jarayonda'}
+    ]
+    
+    # Top Customers
+    top_customers = [
+        {'name': 'Anvar Toshmatov', 'orders': 45, 'total': 5200000},
+        {'name': 'Dilshod Karimov', 'orders': 38, 'total': 4100000},
+        {'name': 'Sardor Usmonov', 'orders': 32, 'total': 3500000},
+        {'name': 'Jasur Rahimov', 'orders': 28, 'total': 2900000},
+        {'name': 'Bobur Sharipov', 'orders': 25, 'total': 2400000}
+    ]
+    
+    return templates.TemplateResponse("dashboards/sales.html", {
+        "request": request,
+        "page_title": "Savdo Dashboard",
+        "user": fake_user,
+        "metrics": metrics,
+        "order_status": order_status,
+        "funnel": funnel,
+        "weekly_sales": weekly_sales,
+        "recent_orders": recent_orders,
+        "top_customers": top_customers
+    })
+
+
 # ==========================================
 # ASOSIY SAHIFALAR
 # ==========================================
