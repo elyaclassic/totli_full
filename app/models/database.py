@@ -212,15 +212,50 @@ class Partner(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     code = Column(String(50), unique=True, index=True)
-    name = Column(String(200), index=True)
+    name = Column(String(200), index=True)  # Savdo nuqtasi nomi
+    legal_name = Column(String(200), nullable=True)  # Yuridik nomi
     type = Column(String(20))  # customer, supplier, both
+    
+    # Contact Information
+    contact_person = Column(String(100), nullable=True)  # Aloqa shaxsi
     phone = Column(String(20))
-    phone2 = Column(String(20))
+    phone2 = Column(String(20), nullable=True)  # Qo'shimcha telefon
+    
+    # Address
     address = Column(String(255))
-    inn = Column(String(20))
+    landmark = Column(String(255), nullable=True)  # Mo'ljal
+    
+    # Location
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    
+    # Business Details
+    visit_day = Column(Integer, nullable=True)  # Tashrif kuni (0-6)
+    category = Column(String(10), nullable=True)  # A, B, C, D
+    region = Column(String(50), nullable=True)  # Hudud
+    customer_type = Column(String(50), nullable=True)  # retail, wholesale, horeca, distributor
+    sales_channel = Column(String(50), nullable=True)  # direct, distributor, online
+    product_categories = Column(String(100), nullable=True)  # food, drinks, household, cosmetics
+    
+    # Financial
+    inn = Column(String(20), nullable=True)
     balance = Column(Float, default=0)  # Balans (qarzdorlik)
     credit_limit = Column(Float, default=0)  # Kredit limiti
     discount_percent = Column(Float, default=0)  # Chegirma foizi
+    
+    # Requisites
+    account = Column(String(50), nullable=True)  # Hisob raqami
+    bank = Column(String(100), nullable=True)  # Bank
+    mfo = Column(String(20), nullable=True)  # MFO
+    oked = Column(String(20), nullable=True)  # OKED
+    pinfl = Column(String(20), nullable=True)  # PINFL
+    contract_number = Column(String(50), nullable=True)  # Shartnoma raqami
+    contract_date = Column(Date, nullable=True)  # Shartnoma sanasi
+    
+    # Other
+    notes = Column(Text, nullable=True)  # Izoh
+    photo = Column(String(255), nullable=True)  # Rasm fayli nomi
+    agent_id = Column(Integer, nullable=True)  # Qaysi agent qo'shgan
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.now)
     
@@ -367,7 +402,7 @@ class Agent(Base):
     employee_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     
-    locations = relationship("AgentLocation", back_populates="agent")
+    locations = relationship("AgentLocation", back_populates="agent", order_by="AgentLocation.recorded_at.desc()")
     routes = relationship("Route", back_populates="agent")
     visits = relationship("Visit", back_populates="agent")
 
@@ -433,6 +468,7 @@ class Visit(Base):
     visit_date = Column(DateTime, default=datetime.now)
     latitude = Column(Float)
     longitude = Column(Float)
+    accuracy = Column(Float)  # GPS accuracy in meters
     check_in_time = Column(DateTime)
     check_out_time = Column(DateTime)
     status = Column(String(20))  # planned, visited, skipped
@@ -554,6 +590,18 @@ class Direction(Base):
 class Position(Base):
     """Lavozimlar"""
     __tablename__ = "positions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(50), unique=True, index=True)
+    name = Column(String(100), index=True)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class Region(Base):
+    """Hududlar (Toshkent, Samarqand, Buxoro, ...)"""
+    __tablename__ = "regions"
     
     id = Column(Integer, primary_key=True, index=True)
     code = Column(String(50), unique=True, index=True)

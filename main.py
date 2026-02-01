@@ -2688,6 +2688,84 @@ async def agent_location_update(
         return {"success": False, "error": str(e)}
 
 
+
+# ==========================================
+# HUDUDLAR (REGIONS)
+# ==========================================
+
+@app.get("/info/regions", response_class=HTMLResponse)
+async def regions_page(request: Request, db: Session = Depends(get_db)):
+    """Hududlar sahifasi"""
+    user = get_user_from_token(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+    
+    regions = db.query(Region).all()
+    return templates.TemplateResponse("info/regions.html", {
+        "request": request,
+        "page_title": "Hududlar",
+        "user": user,
+        "regions": regions
+    })
+
+
+@app.post("/info/regions/add")
+async def region_add(
+    code: str = Form(...),
+    name: str = Form(...),
+    description: str = Form(""),
+    db: Session = Depends(get_db)
+):
+    """Hudud qo'shish"""
+    existing = db.query(Region).filter(Region.code == code).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"'{code}' kodli hudud allaqachon mavjud!")
+    
+    region = Region(code=code, name=name, description=description)
+    db.add(region)
+    db.commit()
+    return RedirectResponse(url="/info/regions", status_code=303)
+
+
+@app.post("/info/regions/edit/{region_id}")
+async def region_edit(
+    region_id: int,
+    code: str = Form(...),
+    name: str = Form(...),
+    description: str = Form(""),
+    db: Session = Depends(get_db)
+):
+    """Hududni tahrirlash"""
+    region = db.query(Region).filter(Region.id == region_id).first()
+    if not region:
+        raise HTTPException(status_code=404, detail="Hudud topilmadi")
+    
+    existing = db.query(Region).filter(
+        Region.code == code,
+        Region.id != region_id
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"'{code}' kodli hudud allaqachon mavjud!")
+    
+    region.code = code
+    region.name = name
+    region.description = description
+    db.commit()
+    return RedirectResponse(url="/info/regions", status_code=303)
+
+
+@app.post("/info/regions/delete/{region_id}")
+async def region_delete(region_id: int, db: Session = Depends(get_db)):
+    """Hududni o'chirish"""
+    region = db.query(Region).filter(Region.id == region_id).first()
+    if not region:
+        raise HTTPException(status_code=404, detail="Hudud topilmadi")
+    
+    db.delete(region)
+    db.commit()
+    return RedirectResponse(url="/info/regions", status_code=303)
+
+
 @app.on_event("startup")
 async def startup():
     """Dastur ishga tushganda"""

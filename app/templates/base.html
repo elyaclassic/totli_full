@@ -399,6 +399,12 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link {% if 'Hudud' in page_title %}active{% endif %}" href="/info/regions"
+                                onclick="window.location.href='/info/regions'; return false;">
+                                <i class="bi bi-geo-alt"></i> Hududlar
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link {% if 'Tovarlar' in page_title %}active{% endif %}" href="/products">
                                 <i class="bi bi-box-seam"></i> Tovarlar
                             </a>
@@ -555,7 +561,7 @@
     <script>
         // Force hide sidebar on mobile
         if (window.innerWidth <= 768) {
-            document.addEventListener('DOMContentLoaded', function() {
+            document.addEventListener('DOMContentLoaded', function () {
                 const sidebar = document.querySelector('.sidebar');
                 if (sidebar) {
                     sidebar.style.display = 'none';
