@@ -153,7 +153,7 @@
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">Turi *</label>
-                            <select class="form-select" name="type" required>
+                            <select class="form-select" name="type" id="add_partner_type" required>
                                 <option value="customer">Mijoz</option>
                                 <option value="supplier">Yetkazib beruvchi</option>
                                 <option value="both">Ikkalasi</option>
@@ -195,10 +195,10 @@
                             <textarea class="form-control" name="notes" rows="2" placeholder="Izoh kiriting"></textarea>
                         </div>
 
-                        <!-- Visit Schedule & Categories -->
+                        <!-- Visit Schedule & Categories (majburiy faqat Mijoz/Ikkalasi uchun) -->
                         <div class="col-md-4">
-                            <label class="form-label">*Tashrif kuni</label>
-                            <select class="form-select" name="visit_day" required>
+                            <label class="form-label" id="add_visit_day_label">*Tashrif kuni</label>
+                            <select class="form-select" name="visit_day" id="add_visit_day" required>
                                 <option value="">Tanlang</option>
                                 <option value="1">Dushanba</option>
                                 <option value="2">Seshanba</option>
@@ -210,8 +210,8 @@
                             </select>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label">*Kategoriya</label>
-                            <select class="form-select" name="category" required>
+                            <label class="form-label" id="add_category_label">*Kategoriya</label>
+                            <select class="form-select" name="category" id="add_category" required>
                                 <option value="">Tanlang</option>
                                 <option value="A">A - VIP</option>
                                 <option value="B">B - Katta</option>
@@ -220,8 +220,8 @@
                             </select>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label">*Hudud</label>
-                            <select class="form-select" name="region" required>
+                            <label class="form-label" id="add_region_label">*Hudud</label>
+                            <select class="form-select" name="region" id="add_region" required>
                                 <option value="">Tanlang</option>
                                 <option value="tashkent">Toshkent</option>
                                 <option value="samarkand">Samarqand</option>
@@ -439,9 +439,9 @@
                                 placeholder="Izoh kiriting"></textarea>
                         </div>
 
-                        <!-- Visit Schedule & Categories -->
+                        <!-- Visit Schedule & Categories (majburiy faqat Mijoz/Ikkalasi uchun) -->
                         <div class="col-md-4">
-                            <label class="form-label">*Tashrif kuni</label>
+                            <label class="form-label" id="edit_visit_day_label">*Tashrif kuni</label>
                             <select class="form-select" name="visit_day" id="edit_visit_day" required>
                                 <option value="">Tanlang</option>
                                 <option value="1">Dushanba</option>
@@ -454,7 +454,7 @@
                             </select>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label">*Kategoriya</label>
+                            <label class="form-label" id="edit_category_label">*Kategoriya</label>
                             <select class="form-select" name="category" id="edit_category" required>
                                 <option value="">Tanlang</option>
                                 <option value="A">A - VIP</option>
@@ -464,7 +464,7 @@
                             </select>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label">*Hudud</label>
+                            <label class="form-label" id="edit_region_label">*Hudud</label>
                             <select class="form-select" name="region" id="edit_region" required>
                                 <option value="">Tanlang</option>
                                 <option value="tashkent">Toshkent</option>
@@ -631,9 +631,53 @@
     </div>
 </div>
 
-<script src="https://api-maps.yandex.ru/2.1/?apikey=YOUR_API_KEY&lang=ru_RU" type="text/javascript"></script>
+<script src="https://api-maps.yandex.ru/2.1/?lang=uz_UZ" type="text/javascript"></script>
 
 <script>
+    // Turi "Yetkazib beruvchi" bo'lganda Tashrif kuni, Kategoriya, Hudud ixtiyoriy
+    function updateAddPartnerRequired() {
+        var typeSelect = document.getElementById('add_partner_type');
+        var isSupplier = typeSelect && typeSelect.value === 'supplier';
+        var ids = ['add_visit_day', 'add_category', 'add_region'];
+        var labels = ['add_visit_day_label', 'add_category_label', 'add_region_label'];
+        var titles = ['Tashrif kuni', 'Kategoriya', 'Hudud'];
+        ids.forEach(function (id, i) {
+            var el = document.getElementById(id);
+            var labelEl = document.getElementById(labels[i]);
+            if (el) {
+                el.required = !isSupplier;
+            }
+            if (labelEl) {
+                labelEl.textContent = (isSupplier ? '' : '*') + titles[i] + (isSupplier ? ' (ixtiyoriy)' : '');
+            }
+        });
+    }
+    function updateEditPartnerRequired() {
+        var typeSelect = document.getElementById('edit_type');
+        var isSupplier = typeSelect && typeSelect.value === 'supplier';
+        var ids = ['edit_visit_day', 'edit_category', 'edit_region'];
+        var labels = ['edit_visit_day_label', 'edit_category_label', 'edit_region_label'];
+        var titles = ['Tashrif kuni', 'Kategoriya', 'Hudud'];
+        ids.forEach(function (id, i) {
+            var el = document.getElementById(id);
+            var labelEl = document.getElementById(labels[i]);
+            if (el) {
+                el.required = !isSupplier;
+            }
+            if (labelEl) {
+                labelEl.textContent = (isSupplier ? '' : '*') + titles[i] + (isSupplier ? ' (ixtiyoriy)' : '');
+            }
+        });
+    }
+    document.getElementById('add_partner_type').addEventListener('change', updateAddPartnerRequired);
+    document.getElementById('edit_type').addEventListener('change', updateEditPartnerRequired);
+    document.getElementById('addPartnerModal').addEventListener('shown.bs.modal', function () {
+        updateAddPartnerRequired();
+    });
+    document.getElementById('editPartnerModal').addEventListener('shown.bs.modal', function () {
+        updateEditPartnerRequired();
+    });
+
     // Yangi kontragent qo'shish
     document.querySelector('#addPartnerModal form').addEventListener('submit', async function (e) {
         e.preventDefault();
@@ -736,6 +780,7 @@
         document.getElementById('edit_contract_number').value = '';
         document.getElementById('edit_contract_date').value = '';
 
+        updateEditPartnerRequired();
         var modal = new bootstrap.Modal(document.getElementById('editPartnerModal'));
         modal.show();
     }

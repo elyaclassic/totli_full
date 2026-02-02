@@ -13,6 +13,17 @@ Tahlil qilingan joylar va hujjatlar asosida quyidagi nuqsonlar aniqlandi.
 - **5. Production revert** – Xato paytida `RedirectResponse` bilan `/production/orders?error=revert&detail=...`; sahifada alert ko‘rsatiladi.
 - **6. price-types SyntaxError** – `onclick` ichidagi `tojson` o‘rniga tugmalarda `data-id`, `data-name`, `data-code` va addEventListener orqali xavfsiz o‘qish.
 
+**Tuzatilganlar (2026-02-02, 2-qism – hamma kamchiliklarni bartaraf etish):**
+
+- **Sotuv tafsiloti** – `GET /sales/edit/{order_id}` route, `sales/edit.html` shabloni, `POST /sales/{order_id}/add-item`, `POST /sales/{order_id}/confirm`, `POST /sales/{order_id}/delete-item/{item_id}` qo‘shildi. Sotuvda mahsulotlar, jami, tasdiqlash/bekor qilish ishlaydi. `Order.price_type` relationship qo‘shildi.
+- **Sales auth** – `sales_new` va `sales_create` da `require_auth` qo‘yildi.
+- **Test sahifalari** – Barcha `/test/dashboard/*` va `/test/regions` endi `require_admin` bilan faqat admin uchun ochiq.
+- **POST/API himoya** – Middleware barcha yo‘llarni (login/logout/static va agent/driver API dan tashqari) session orqali himoya qiladi; API va POST allaqachon himoyalangan.
+- **Parol** – `app/utils/auth.py` da bcrypt va eski hash migratsiyasi mavjud.
+- **cost_price / debug_home.log** – Kodda `purchase_price` ishlatiladi, `debug_home.log` yo‘q.
+
+**Kelajakda (ixtiyoriy):** CSRF token barcha formalarga, main.py ni modullarga bo‘lish.
+
 ---
 
 ## 1. ~~Tovarlar sahifasida **O‘chirish** tugmasi ishlamaydi~~ ✅ Tuzatildi
@@ -95,15 +106,28 @@ Batafsil: `KAMCHILIKLAR_TAHLILI_2026.md` va `KAMCHILIKLAR_TAHLILI.md`.
 
 ---
 
-## Birinchi navbatda qilish mumkin bo‘lgan ishlar
+## Qolgan ishlar (endi nimalar qoldi)
 
-1. **OrderItem** ga `product` relationship qo‘shish (qisqa, xavfsiz).
-2. **Tovarlar O‘chirish** – `POST /products/delete/{id}` (soft delete) + shablonda forma.
-3. **Production revert** – xato paytida redirect + sahifada xabar (purchases revert uslubida).
-4. **Sotuvlar O‘chirish** – endpoint + shablon ulash (yoki bekor qilish logikasi).
-5. Kod/shtrix kod – bitta qoida (shtrix kod ustun, yo‘q bo‘lsa kod) va barcha sahifalarga tatbiq qilish.
-6. **price-types** SyntaxError – brauzerda 628/633 qatorni ochib, script va `tojson` chiqishini tuzatish.
+### Funksional
+
+- ~~**Sotuv tafsiloti sahifasi yo‘q**~~ ✅ GET /sales/edit, sales/edit.html, add-item, confirm, delete-item qo‘shildi.
+
+### Xavfsizlik va tuzilma (KAMCHILIKLAR_TAHLILI_2026)
+
+- **POST larda auth** – Middleware himoya qiladi; sales_new, sales_create da require_auth qo‘yildi.
+- **API** – Middleware /api/* ni session orqali himoya qiladi.
+- ~~**Test sahifalari**~~ ✅ Barcha test yo‘llar endi require_admin (faqat admin).
+- **Parol** – auth.py da bcrypt va migratsiya mavjud.
+- **CSRF** – Kelajakda (ixtiyoriy).
+- **RBAC** – require_admin test va revert larda qo‘llanadi.
+- **main.py hajmi** – Kelajakda (ixtiyoriy).
+
+### Boshqa
+
+- **cost_price** – Kodda purchase_price ishlatiladi. ~~**Debug log**~~ – Kodda yo‘q.
+
+Batafsil: `KAMCHILIKLAR_TAHLILI_2026.md`, `KAMCHILIKLAR_TAHLILI.md`.
 
 ---
 
-*Fayl yaratilgan: 2026-02-02. Oxirgi yangilanish: 2026-02-02 – 1–6 bandlar tuzatildi (tovar/sotuv o‘chirish, OrderItem.product, shtrix kod, production revert redirect, price-types script).*
+*Fayl yaratilgan: 2026-02-02. Oxirgi yangilanish: 2026-02-02 – barcha asosiy kamchiliklar bartaraf etildi (sotuv tafsiloti, auth, test admin).*

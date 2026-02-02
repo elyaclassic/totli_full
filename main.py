@@ -14,7 +14,7 @@ from barcode.writer import ImageWriter
 from PIL import Image
 import os
 import traceback
-from typing import Optional
+from typing import Optional, List
 import openpyxl
 import io
 from app.models.database import (
@@ -45,8 +45,8 @@ templates = Jinja2Templates(directory="app/templates")
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
-    # Login, logout, static - himoya kerak emas
-    if path == "/login" or path == "/logout":
+    # Login, logout, static, favicon - himoya kerak emas
+    if path == "/login" or path == "/logout" or path == "/favicon.ico":
         return await call_next(request)
     if path.startswith("/static"):
         return await call_next(request)
@@ -138,6 +138,15 @@ async def debug_500_handler(request: Request, exc: Exception):
     return HTMLResponse(content=body, status_code=500)
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """Brauzer uchun favicon (logo) — 404 oldini olish"""
+    favicon_path = "app/static/images/logo.png"
+    if os.path.isfile(favicon_path):
+        return FileResponse(favicon_path, media_type="image/png")
+    return Response(status_code=204)
+
+
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, current_user: User = Depends(get_current_user)):
     """Login sahifasi"""
@@ -215,8 +224,8 @@ async def logout():
 
 # Test route without authentication
 @app.get("/test/dashboard/executive", response_class=HTMLResponse)
-async def executive_dashboard_test(request: Request, db: Session = Depends(get_db)):
-    """Rahbariyat Dashboard - Test (fake data)"""
+async def executive_dashboard_test(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    """Rahbariyat Dashboard - Test (fake data), faqat admin"""
     
     # Fake user for testing
     fake_user = {"username": "test", "role": "admin"}
@@ -635,8 +644,8 @@ async def sales_dashboard(request: Request, db: Session = Depends(get_db)):
 
 # Sales Dashboard - Test (fake data)
 @app.get("/test/dashboard/sales", response_class=HTMLResponse)
-async def sales_dashboard_test(request: Request, db: Session = Depends(get_db)):
-    """Savdo Dashboard - Test (fake data)"""
+async def sales_dashboard_test(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    """Savdo Dashboard - Test (fake data), faqat admin"""
     
     # Fake user
     fake_user = {"username": "test", "role": "sales"}
@@ -908,8 +917,8 @@ async def agent_dashboard(request: Request, db: Session = Depends(get_db)):
 
 # Agent Dashboard - Test (fake data)
 @app.get("/test/dashboard/agent", response_class=HTMLResponse)
-async def agent_dashboard_test(request: Request, db: Session = Depends(get_db)):
-    """Agent Dashboard - Test (fake data)"""
+async def agent_dashboard_test(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    """Agent Dashboard - Test (fake data), faqat admin"""
     
     # Fake user
     fake_user = {"username": "agent1", "role": "agent"}
@@ -1101,8 +1110,8 @@ async def production_dashboard(request: Request, db: Session = Depends(get_db)):
 
 # Production Dashboard - Test (fake data)
 @app.get("/test/dashboard/production", response_class=HTMLResponse)
-async def production_dashboard_test(request: Request, db: Session = Depends(get_db)):
-    """Ishlab chiqarish Dashboard - Test (fake data)"""
+async def production_dashboard_test(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    """Ishlab chiqarish Dashboard - Test (fake data), faqat admin"""
     fake_user = {"username": "prod_manager", "role": "production"}
     
     metrics = {
@@ -1285,8 +1294,8 @@ async def warehouse_dashboard(request: Request, db: Session = Depends(get_db)):
 
 # Warehouse Dashboard - Test (fake data)
 @app.get("/test/dashboard/warehouse", response_class=HTMLResponse)
-async def warehouse_dashboard_test(request: Request, db: Session = Depends(get_db)):
-    """Ombor Dashboard - Test (fake data)"""
+async def warehouse_dashboard_test(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    """Ombor Dashboard - Test (fake data), faqat admin"""
     fake_user = {"username": "warehouse_manager", "role": "warehouse"}
     
     metrics = {
@@ -1501,8 +1510,8 @@ async def delivery_dashboard(request: Request, db: Session = Depends(get_db)):
 
 # Delivery Dashboard - Test (fake data)
 @app.get("/test/dashboard/delivery", response_class=HTMLResponse)
-async def delivery_dashboard_test(request: Request, db: Session = Depends(get_db)):
-    """Yetkazib berish Dashboard - Test (fake data)"""
+async def delivery_dashboard_test(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    """Yetkazib berish Dashboard - Test (fake data), faqat admin"""
     fake_user = {"username": "delivery_manager", "role": "delivery"}
     
     metrics = {
@@ -3223,7 +3232,8 @@ async def sales_list(request: Request, db: Session = Depends(get_db), current_us
 async def sales_new(
     request: Request,
     price_type_id: Optional[int] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
 ):
     """Yangi sotuv — narx turini tanlang, shu bo'yicha mahsulot narxlari ko'rsatiladi"""
     products = db.query(Product).filter(Product.type.in_(["tayyor", "yarim_tayyor"]), Product.is_active == True).order_by(Product.name).all()
@@ -3255,9 +3265,12 @@ async def sales_create(
     partner_id: int = Form(...),
     warehouse_id: int = Form(...),
     price_type_id: Optional[int] = Form(None),
-    db: Session = Depends(get_db)
+    product_id: Optional[List[int]] = Form(None),
+    quantity: Optional[List[float]] = Form(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
 ):
-    """Sotuv yaratish — narx turi saqlanadi, savdo vaqtida shu narx ishlatiladi"""
+    """Sotuv yaratish — narx turi saqlanadi; savatdagi mahsulotlar bo'lsa ular ham qo'shiladi"""
     last_order = db.query(Order).filter(Order.type == "sale").order_by(Order.id.desc()).first()
     new_number = f"S-{datetime.now().strftime('%Y%m%d')}-{(last_order.id + 1) if last_order else 1:04d}"
     order = Order(
@@ -3270,7 +3283,143 @@ async def sales_create(
     )
     db.add(order)
     db.commit()
+    db.refresh(order)
+    product_ids = product_id if isinstance(product_id, list) else ([product_id] if product_id is not None else [])
+    quantities = quantity if isinstance(quantity, list) else ([quantity] if quantity is not None else [])
+    for i in range(min(len(product_ids), len(quantities))):
+        pid, qty = product_ids[i], float(quantities[i])
+        if pid and qty > 0:
+            price = 0
+            pp = db.query(ProductPrice).filter(ProductPrice.product_id == pid, ProductPrice.price_type_id == order.price_type_id).first()
+            if pp:
+                price = pp.sale_price or 0
+            if not price:
+                prod = db.query(Product).filter(Product.id == pid).first()
+                price = (prod.sale_price or prod.purchase_price or 0) if prod else 0
+            total_row = qty * price
+            item = OrderItem(order_id=order.id, product_id=pid, quantity=qty, price=price, total=total_row)
+            db.add(item)
+            order.subtotal = (order.subtotal or 0) + total_row
+            order.total = (order.total or 0) + total_row
+    db.commit()
     return RedirectResponse(url=f"/sales/edit/{order.id}", status_code=303)
+
+
+@app.get("/sales/edit/{order_id}", response_class=HTMLResponse)
+async def sales_edit(
+    request: Request,
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Sotuv tafsiloti — ko'rish va qoralama holatida tahrirlash"""
+    from urllib.parse import unquote
+    order = db.query(Order).filter(Order.id == order_id, Order.type == "sale").first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Sotuv topilmadi")
+    products = db.query(Product).filter(Product.type.in_(["tayyor", "yarim_tayyor"]), Product.is_active == True).order_by(Product.name).all()
+    product_prices_by_type = {}
+    if order.price_type_id:
+        pps = db.query(ProductPrice).filter(ProductPrice.price_type_id == order.price_type_id).all()
+        product_prices_by_type = {pp.product_id: pp.sale_price for pp in pps}
+    error = request.query_params.get("error")
+    error_detail = unquote(request.query_params.get("detail", "") or "")
+    return templates.TemplateResponse("sales/edit.html", {
+        "request": request,
+        "order": order,
+        "products": products,
+        "product_prices_by_type": product_prices_by_type,
+        "current_user": current_user,
+        "page_title": f"Sotuv: {order.number}",
+        "error": error,
+        "error_detail": error_detail,
+    })
+
+
+@app.post("/sales/{order_id}/add-item")
+async def sales_add_item(
+    order_id: int,
+    product_id: int = Form(...),
+    quantity: float = Form(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Sotuvga mahsulot qo'shish"""
+    order = db.query(Order).filter(Order.id == order_id, Order.type == "sale").first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Sotuv topilmadi")
+    if order.status != "draft":
+        return RedirectResponse(url=f"/sales/edit/{order_id}", status_code=303)
+    price = 0
+    pp = db.query(ProductPrice).filter(ProductPrice.product_id == product_id, ProductPrice.price_type_id == order.price_type_id).first()
+    if pp:
+        price = pp.sale_price or 0
+    if not price:
+        prod = db.query(Product).filter(Product.id == product_id).first()
+        price = (prod.sale_price or prod.purchase_price or 0) if prod else 0
+    total_row = quantity * price
+    item = OrderItem(order_id=order_id, product_id=product_id, quantity=quantity, price=price, total=total_row)
+    db.add(item)
+    order.subtotal = (order.subtotal or 0) + total_row
+    order.total = (order.total or 0) + total_row
+    db.commit()
+    return RedirectResponse(url=f"/sales/edit/{order_id}", status_code=303)
+
+
+@app.post("/sales/{order_id}/confirm")
+async def sales_confirm(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Sotuvni tasdiqlash — ombor qoldig'ini kamaytirish"""
+    order = db.query(Order).filter(Order.id == order_id, Order.type == "sale").first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Sotuv topilmadi")
+    if order.status != "draft":
+        return RedirectResponse(url=f"/sales/edit/{order_id}", status_code=303)
+    for item in order.items:
+        stock = db.query(Stock).filter(
+            Stock.warehouse_id == order.warehouse_id,
+            Stock.product_id == item.product_id
+        ).first()
+        if not stock or stock.quantity < item.quantity:
+            from urllib.parse import quote
+            name = item.product.name if item.product else f"#{item.product_id}"
+            return RedirectResponse(
+                url=f"/sales/edit/{order_id}?error=stock&detail=" + quote(f"Yetarli yo'q: {name}"),
+                status_code=303
+            )
+    for item in order.items:
+        stock = db.query(Stock).filter(
+            Stock.warehouse_id == order.warehouse_id,
+            Stock.product_id == item.product_id
+        ).first()
+        if stock:
+            stock.quantity -= item.quantity
+    order.status = "completed"
+    db.commit()
+    return RedirectResponse(url=f"/sales/edit/{order_id}", status_code=303)
+
+
+@app.post("/sales/{order_id}/delete-item/{item_id}")
+async def sales_delete_item(
+    order_id: int,
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Sotuvdan qatorni o'chirish (faqat qoralama)"""
+    order = db.query(Order).filter(Order.id == order_id, Order.type == "sale").first()
+    if not order or order.status != "draft":
+        return RedirectResponse(url=f"/sales/edit/{order_id}", status_code=303)
+    item = db.query(OrderItem).filter(OrderItem.id == item_id, OrderItem.order_id == order_id).first()
+    if item:
+        order.total = (order.total or 0) - (item.total or 0)
+        order.subtotal = (order.subtotal or 0) - (item.total or 0)
+        db.delete(item)
+        db.commit()
+    return RedirectResponse(url=f"/sales/edit/{order_id}", status_code=303)
 
 
 @app.post("/sales/delete/{order_id}")
@@ -4714,8 +4863,8 @@ async def agent_location_update(
 # ==========================================
 
 @app.get("/test/regions", response_class=HTMLResponse)
-async def regions_test_page(request: Request, db: Session = Depends(get_db)):
-    """Hududlar test sahifasi - authentication'siz"""
+async def regions_test_page(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    """Hududlar test sahifasi, faqat admin"""
     regions = db.query(Region).all()
     # Fake user for testing
     fake_user = {"username": "test", "role": "admin"}

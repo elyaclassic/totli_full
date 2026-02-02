@@ -363,6 +363,7 @@ class Order(Base):
     
     partner = relationship("Partner", back_populates="orders")
     items = relationship("OrderItem", back_populates="order")
+    price_type = relationship("PriceType")
 
 
 class OrderItem(Base):

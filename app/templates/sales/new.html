@@ -8,23 +8,39 @@
                 <i class="bi bi-cart-plus"></i> Yangi sotuv
             </div>
             <div class="card-body">
-                <form action="/sales/create" method="POST">
+                <form id="salesCreateForm" action="/sales/create" method="POST">
+                    <div id="cartHiddenInputs"></div>
                     <div class="row g-3 mb-4">
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <label class="form-label">Mijoz *</label>
-                            <select class="form-select" name="partner_id" required>
+                            <select class="form-select" name="partner_id" required id="sales_partner_select">
                                 <option value="">-- Tanlang --</option>
                                 {% for partner in partners %}
                                 <option value="{{ partner.id }}">
-                                    {{ partner.name }}
-                                    {% if partner.balance != 0 %}
-                                    ({{ "{:,.0f}".format(partner.balance) }})
+                                    {{ partner.name or ('Nomsiz #' ~ partner.id) }}
+                                    {% if partner.balance is not none and partner.balance != 0 %}
+                                    ({{ "{:,.0f}".format(partner.balance) }} so'm)
                                     {% endif %}
                                 </option>
                                 {% endfor %}
                             </select>
+                            {% if not partners %}
+                            <small class="text-muted">Kontragentlar yo'q. <a href="/partners">Kontragentlar</a> bo'limida mijoz qo'shing.</small>
+                            {% endif %}
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-3">
+                            <label class="form-label">Narx turi *</label>
+                            <select class="form-select" name="price_type_id" required id="sales_price_type_select">
+                                <option value="">-- Tanlang --</option>
+                                {% for pt in price_types %}
+                                <option value="{{ pt.id }}" {% if current_price_type_id == pt.id %}selected{% endif %}>{{ pt.name }}</option>
+                                {% endfor %}
+                            </select>
+                            {% if not price_types %}
+                            <small class="text-muted">Narx turlari yo'q. <a href="/info/price-types">Ma'lumotnomalar → Narx turlari</a>da qo'shing.</small>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-3">
                             <label class="form-label">Ombor *</label>
                             <select class="form-select" name="warehouse_id" required>
                                 <option value="">-- Tanlang --</option>
@@ -33,7 +49,7 @@
                                 {% endfor %}
                             </select>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <label class="form-label">&nbsp;</label>
                             <button type="submit" class="btn btn-success d-block w-100">
                                 <i class="bi bi-check-lg"></i> Yaratish
@@ -41,12 +57,12 @@
                         </div>
                     </div>
                 </form>
+                <p class="text-muted small mb-0">Mijoz, narx turi va omborni tanlang. Tovarlarni o&lsquo;ng tomondan tanlab miqdorni yozing va &laquo;Savatga qo&lsquo;shish&raquo; bosing. Keyin &laquo;Yaratish&raquo; bosing.</p>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Tovarlar ro'yxati -->
 <div class="row">
     <div class="col-md-8">
         <div class="card">
@@ -54,15 +70,45 @@
                 <i class="bi bi-box-seam"></i> Tovarlar
             </div>
             <div class="card-body">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Mahsulot</label>
+                        <select class="form-select" id="addProductId">
+                            <option value="">Tanlang...</option>
+                            {% for product in products %}
+                            {% set _pt = product_prices_by_type.get(product.id) if product_prices_by_type is defined else none %}
+                            {% set display_price = (_pt if (_pt is not none and _pt > 0) else (product.sale_price or product.purchase_price or 0)) %}
+                            <option value="{{ product.id }}" data-name="{{ product.name|e }}" data-price="{{ display_price }}">
+                                {{ product.name }} — {{ "{:,.0f}".format(display_price) }} so'm
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Miqdor</label>
+                        <input type="number" class="form-control" id="addQuantity" step="0.01" min="0.001" placeholder="0" value="1">
+                    </div>
+                    <div class="col-md-3 d-flex align-items-end">
+                        <button type="button" class="btn btn-primary w-100" id="btnAddToCart">
+                            <i class="bi bi-plus-circle"></i> Savatga qo'shish
+                        </button>
+                    </div>
+                </div>
                 <div class="row g-3">
                     {% for product in products %}
+                    {% set _pt = product_prices_by_type.get(product.id) if product_prices_by_type is defined else none %}
+                    {% set display_price = (_pt if (_pt is not none and _pt > 0) else (product.sale_price or product.purchase_price or 0)) %}
                     <div class="col-md-4">
-                        <div class="card h-100 product-card" style="cursor: pointer;">
+                        <div class="card h-100 product-card" style="cursor: pointer;" data-product-id="{{ product.id }}" data-name="{{ product.name|e }}" data-price="{{ display_price }}">
                             <div class="card-body">
                                 <h6>{{ product.name }}</h6>
                                 <p class="mb-0">
-                                    <span class="text-success fw-bold">{{ "{:,.0f}".format(product.sale_price) }}</span>
+                                    {% if display_price > 0 %}
+                                    <span class="text-success fw-bold">{{ "{:,.0f}".format(display_price) }}</span>
                                     <small class="text-muted">so'm</small>
+                                    {% else %}
+                                    <span class="text-muted">Narx kiritilmagan</span>
+                                    {% endif %}
                                 </p>
                             </div>
                         </div>
@@ -77,20 +123,99 @@
             </div>
         </div>
     </div>
-    
+
     <div class="col-md-4">
         <div class="card">
-            <div class="card-header">
-                <i class="bi bi-basket"></i> Savat
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-basket"></i> Savat</span>
             </div>
-            <div class="card-body text-center text-muted py-5">
-                <i class="bi bi-basket fs-1 d-block mb-2"></i>
-                Savat bo'sh<br>
-                <small>Avval "Yaratish" tugmasini bosing</small>
+            <div class="card-body">
+                <div class="table-responsive mb-3">
+                    <table class="table table-sm mb-0" id="cartTable">
+                        <thead>
+                            <tr><th>Mahsulot</th><th>Miqdor</th><th>Summa</th><th></th></tr>
+                        </thead>
+                        <tbody id="cartTableBody">
+                        </tbody>
+                    </table>
+                </div>
+                <p class="text-muted small mb-0 text-center" id="cartEmptyMsg">Savat bo'sh. Mahsulot tanlang, miqdorni yozing va &laquo;Savatga qo'shish&raquo; bosing.</p>
             </div>
         </div>
     </div>
 </div>
+
+<script>
+(function() {
+    var form = document.getElementById('salesCreateForm');
+    var cartHidden = document.getElementById('cartHiddenInputs');
+    var addProductId = document.getElementById('addProductId');
+    var addQuantity = document.getElementById('addQuantity');
+    var btnAdd = document.getElementById('btnAddToCart');
+    var cartBody = document.getElementById('cartTableBody');
+    var cartEmptyMsg = document.getElementById('cartEmptyMsg');
+    var cart = [];
+
+    function addToCart(productId, productName, price, quantity) {
+        if (!productId || quantity <= 0) return;
+        price = parseFloat(price) || 0;
+        quantity = parseFloat(quantity) || 0;
+        var sum = price * quantity;
+        cart.push({ productId: productId, productName: productName, price: price, quantity: quantity, sum: sum });
+        renderCart();
+    }
+
+    function removeFromCart(index) {
+        cart.splice(index, 1);
+        renderCart();
+    }
+
+    function renderCart() {
+        cartBody.innerHTML = '';
+        cartHidden.innerHTML = '';
+        cart.forEach(function(item, i) {
+            var tr = document.createElement('tr');
+            tr.innerHTML = '<td>' + (item.productName || '') + '</td><td>' + item.quantity + '</td><td>' + (item.sum || 0).toLocaleString('ru-RU') + ' so\'m</td><td><button type="button" class="btn btn-sm btn-outline-danger" data-index="' + i + '"><i class="bi bi-trash"></i></button></td>';
+            cartBody.appendChild(tr);
+            var h1 = document.createElement('input');
+            h1.type = 'hidden';
+            h1.name = 'product_id';
+            h1.value = item.productId;
+            cartHidden.appendChild(h1);
+            var h2 = document.createElement('input');
+            h2.type = 'hidden';
+            h2.name = 'quantity';
+            h2.value = item.quantity;
+            cartHidden.appendChild(h2);
+        });
+        cartBody.querySelectorAll('button[data-index]').forEach(function(btn) {
+            btn.addEventListener('click', function() { removeFromCart(parseInt(this.getAttribute('data-index'), 10)); });
+        });
+        cartEmptyMsg.style.display = cart.length ? 'none' : 'block';
+    }
+
+    if (btnAdd) {
+        btnAdd.addEventListener('click', function() {
+            var opt = addProductId && addProductId.options[addProductId.selectedIndex];
+            if (!opt || !opt.value) { alert('Mahsulotni tanlang'); return; }
+            var qty = parseFloat(addQuantity && addQuantity.value) || 0;
+            if (qty <= 0) { alert('Miqdorni kiriting'); return; }
+            addToCart(opt.value, opt.getAttribute('data-name'), opt.getAttribute('data-price'), qty);
+            if (addQuantity) addQuantity.value = '1';
+        });
+    }
+
+    document.querySelectorAll('.product-card[data-product-id]').forEach(function(card) {
+        card.addEventListener('click', function() {
+            var id = this.getAttribute('data-product-id');
+            var name = this.getAttribute('data-name');
+            var price = this.getAttribute('data-price');
+            if (addProductId) addProductId.value = id;
+            if (addQuantity) addQuantity.focus();
+        });
+    });
+})();
+</script>
 {% endblock %}
 
 {% block extra_css %}
