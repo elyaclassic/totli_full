@@ -1,4 +1,4 @@
-﻿# ============================================
+# ============================================
 # TOTLI HOLVA - Boshlang'ich ma'lumotlar
 # ============================================
 
@@ -8,6 +8,7 @@ from app.models.database import (
     Agent, AgentLocation, Driver, DriverLocation, PartnerLocation,
     Recipe, RecipeItem
 )
+from app.utils.auth import hash_password
 from datetime import datetime, timedelta
 import random
 
@@ -40,7 +41,7 @@ def init_data():
         if not db.query(User).filter(User.username == "admin").first():
             admin = User(
                 username="admin",
-                password_hash="admin123",  # Haqiqiy tizimda hash qilish kerak!
+                password_hash=hash_password("admin123"),
                 full_name="Administrator",
                 role="admin"
             )
