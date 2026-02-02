@@ -1,28 +1,31 @@
-﻿
+
 # --- Barcha importlar ---
 
 from fastapi import FastAPI, Request, Depends, HTTPException, Form, Cookie, File, UploadFile
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, Response, StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from datetime import datetime, timedelta
 import uvicorn
 import barcode
 from barcode.writer import ImageWriter
 from PIL import Image
 import os
+import traceback
 from typing import Optional
 import openpyxl
 import io
 from app.models.database import (
-    get_db, init_db, 
+    get_db, init_db, SessionLocal,
     User, Product, Category, Unit, Warehouse, Stock,
     Partner, Order, OrderItem, Payment, CashRegister,
-    Recipe, RecipeItem, Production, Machine, Employee, Salary,
+    Recipe, RecipeItem, Production, ProductionItem, Machine, Employee, Salary,
     Agent, AgentLocation, Route, RoutePoint, Visit,
     Driver, DriverLocation, Delivery, PartnerLocation,
-    Purchase, PurchaseItem, Department, Direction, Region
+    Purchase, PurchaseItem, Department, Direction, Region, Position,
+    PriceType, ProductPrice
 )
 from app.utils.auth import (
     hash_password, verify_password, 
@@ -34,6 +37,52 @@ from app.utils.live_data import executive_live_data, warehouse_live_data, delive
 app = FastAPI(title="TOTLI HOLVA", description="Biznes boshqaruv tizimi", version="1.0")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
+
+
+# ==========================================
+# AUTH MIDDLEWARE - barcha sahifa va API ni himoyalash
+# ==========================================
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    path = request.url.path
+    # Login, logout, static - himoya kerak emas
+    if path == "/login" or path == "/logout":
+        return await call_next(request)
+    if path.startswith("/static"):
+        return await call_next(request)
+    # Mobil/PWA agent va haydovchi API (alohida token bilan)
+    if path in ("/api/agent/login", "/api/driver/login"):
+        return await call_next(request)
+    if (path == "/api/agent/location" or path == "/api/driver/location") and request.method == "POST":
+        return await call_next(request)
+    if path in ("/api/agent/orders", "/api/agent/partners"):
+        return await call_next(request)
+    # Session tekshiruvi
+    token = request.cookies.get("session_token")
+    if not token:
+        if path.startswith("/api/"):
+            return JSONResponse(status_code=401, content={"detail": "Login talab qilindi"})
+        return RedirectResponse(url="/login", status_code=303)
+    user_data = get_user_from_token(token)
+    if not user_data:
+        if path.startswith("/api/"):
+            return JSONResponse(status_code=401, content={"detail": "Session muddati tugadi"})
+        resp = RedirectResponse(url="/login", status_code=303)
+        resp.delete_cookie("session_token")
+        return resp
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_data["user_id"]).first()
+        if not user or not user.is_active:
+            if path.startswith("/api/"):
+                return JSONResponse(status_code=401, content={"detail": "Foydalanuvchi faol emas"})
+            resp = RedirectResponse(url="/login", status_code=303)
+            resp.delete_cookie("session_token")
+            return resp
+    finally:
+        db.close()
+    return await call_next(request)
+
 
 # ==========================================
 # AUTENTIFIKATSIYA HELPER FUNKSIYALARI
@@ -60,9 +109,34 @@ def require_auth(current_user: User = Depends(get_current_user)) -> Optional[Use
     return current_user
 
 
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Faqat admin - boshqa rollar 403 qaytaradi"""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Login talab qilindi")
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Faqat administrator uchun ruxsat")
+    return current_user
+
+
 # ==========================================
 # AUTENTIFIKATSIYA ENDPOINTLARI
 # ==========================================
+
+@app.exception_handler(403)
+async def forbidden_handler(request: Request, exc: HTTPException):
+    """403 - brauzer so'rovida bosh sahifaga yo'naltirish"""
+    if "text/html" in request.headers.get("accept", ""):
+        return RedirectResponse(url="/?error=admin_required", status_code=303)
+    return JSONResponse(status_code=403, content={"detail": exc.detail})
+
+
+@app.exception_handler(Exception)
+async def debug_500_handler(request: Request, exc: Exception):
+    """500 xatolikda sababni ko'rsatish (tuzatish uchun)"""
+    tb = traceback.format_exc()
+    body = f"<pre style='white-space:pre-wrap;font-size:12px;'>{tb}</pre>"
+    return HTMLResponse(content=body, status_code=500)
+
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, current_user: User = Depends(get_current_user)):
@@ -102,9 +176,8 @@ async def login(
         
         # Session token yaratish
         token = create_session_token(user.id, user.username)
-        print(f"✅ Token yaratildi: {token[:50]}...")
-        
         # Cookie o'rnatish
+        use_https = os.getenv("HTTPS", "").lower() in ("1", "true", "yes")
         redirect_response = RedirectResponse(url="/", status_code=303)
         redirect_response.set_cookie(
             key="session_token",
@@ -113,9 +186,8 @@ async def login(
             httponly=True,
             max_age=86400,  # 24 soat
             samesite="lax",
-            secure=False  # HTTP uchun False bo'lishi kerak
+            secure=use_https
         )
-        print(f"✅ Cookie o'rnatildi. Redirect: /")
         
         return redirect_response
     
@@ -269,7 +341,7 @@ async def executive_dashboard(request: Request, db: Session = Depends(get_db)):
     
     # Ombor qiymati
     warehouse_value = db.query(
-        func.sum(Stock.quantity * Product.cost_price)
+        func.sum(Stock.quantity * Product.purchase_price)
     ).join(
         Product, Stock.product_id == Product.id
     ).scalar() or 0
@@ -1102,7 +1174,7 @@ async def warehouse_dashboard(request: Request, db: Session = Depends(get_db)):
     
     # Total warehouse value
     total_value = db.query(
-        func.sum(Stock.quantity * Product.cost_price)
+        func.sum(Stock.quantity * Product.purchase_price)
     ).join(
         Product, Stock.product_id == Product.id
     ).scalar() or 0
@@ -1483,81 +1555,59 @@ async def delivery_dashboard_test(request: Request, db: Session = Depends(get_db
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Bosh sahifa - Dashboard"""
-    try:
-        # Debug log
-        with open("debug_home.log", "a", encoding="utf-8") as f:
-            f.write(f"\n{'='*60}\n")
-            f.write(f"Time: {datetime.now()}\n")
-            f.write(f"User: {current_user}\n")
-        
-        # Agar login qilmagan bo'lsa, login sahifasiga yo'naltirish
-        if not current_user:
-            with open("debug_home.log", "a", encoding="utf-8") as f:
-                f.write("⚠️ User not authenticated, redirecting to login\n")
-            return RedirectResponse(url="/login", status_code=303)
-        
-        with open("debug_home.log", "a", encoding="utf-8") as f:
-            f.write(f"✅ User authenticated: {current_user.username}\n")
-        
-        # Statistika
-        stats = {
-            "tayyor_count": db.query(Product).filter(Product.type == "tayyor").count(),
-            "yarim_tayyor_count": db.query(Product).filter(Product.type == "yarim_tayyor").count(),
-            "hom_ashyo_count": db.query(Product).filter(Product.type == "hom_ashyo").count(),
-            "partners_count": db.query(Partner).count(),
-            "employees_count": db.query(Employee).count(),
-        }
-        
-        with open("debug_home.log", "a", encoding="utf-8") as f:
-            f.write(f"Stats 1: {stats}\n")
-        
-        # Bugungi savdo
-        today = datetime.now().date()
-        today_sales = db.query(Order).filter(
-            Order.type == "sale",
-            Order.date >= today
-        ).all()
-        stats["today_sales"] = sum(s.total_amount for s in today_sales)
-        stats["today_orders"] = len(today_sales)
-        
-        with open("debug_home.log", "a", encoding="utf-8") as f:
-            f.write(f"Stats 2: today_sales calculated\n")
-        
-        # Kassa qoldig'i
-        cash = db.query(CashRegister).first()
-        stats["cash_balance"] = cash.balance if cash else 0
-        
-        # Qarzdorlar
-        debtors = db.query(Partner).filter(Partner.balance > 0).all()
-        stats["total_debt"] = sum(p.balance for p in debtors)
-        
-        with open("debug_home.log", "a", encoding="utf-8") as f:
-            f.write(f"✅ Stats calculated, rendering template\n")
-        
-        return templates.TemplateResponse("index.html", {
-            "request": request,
-            "stats": stats,
-            "current_user": current_user,
-            "page_title": "Bosh sahifa"
-        })
-    except Exception as e:
-        with open("debug_home.log", "a", encoding="utf-8") as f:
-            f.write(f"❌ HOME PAGE XATO: {str(e)}\n")
-            import traceback
-            f.write(traceback.format_exc())
-        raise
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    stats = {
+        "tayyor_count": db.query(Product).filter(Product.type == "tayyor").count(),
+        "yarim_tayyor_count": db.query(Product).filter(Product.type == "yarim_tayyor").count(),
+        "hom_ashyo_count": db.query(Product).filter(Product.type == "hom_ashyo").count(),
+        "partners_count": db.query(Partner).count(),
+        "employees_count": db.query(Employee).count(),
+        "products_count": db.query(Product).filter(Product.is_active == True).count(),
+        "materials_count": db.query(Product).filter(Product.type == "hom_ashyo", Product.is_active == True).count(),
+    }
+    today = datetime.now().date()
+    today_sales = db.query(Order).filter(
+        Order.type == "sale",
+        Order.date >= today
+    ).all()
+    stats["today_sales"] = sum(s.total for s in today_sales)
+    stats["today_orders"] = len(today_sales)
+    cash = db.query(CashRegister).first()
+    stats["cash_balance"] = cash.balance if cash else 0
+    debtors = db.query(Partner).filter(Partner.balance > 0).all()
+    stats["total_debt"] = sum(p.balance for p in debtors)
+    # So'nggi sotuvlar (bosh sahifa jadvali uchun)
+    recent_sales = (
+        db.query(Order)
+        .filter(Order.type == "sale")
+        .order_by(Order.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    # Kam qolgan tovarlar (qoldiq < min_stock)
+    low_stock_count = db.query(Stock).join(Product).filter(Stock.quantity < Product.min_stock).count()
+    error = request.query_params.get("error")
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+        "stats": stats,
+        "current_user": current_user,
+        "page_title": "Bosh sahifa",
+        "error": error,
+        "recent_sales": recent_sales,
+        "low_stock_count": low_stock_count,
+    })
 
 
 # ==========================================
 # MA'LUMOTLAR BO'LIMI
 # ==========================================
-@app.get("/info", response_class=HTMLResponse)
-async def info_index(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
-    """Ma'lumotlar bo'limi"""
+@app.get("/info")
+async def info_index(request: Request, current_user: User = Depends(require_auth)):
+    """Ma'lumotlar - overview ko'rsatilmaydi, to'g'ridan-to'g'ri birinchi bo'limga yo'naltirish"""
     if not current_user:
         return RedirectResponse(url="/login", status_code=303)
-    
-    return templates.TemplateResponse("info/index.html", {"request": request, "current_user": current_user, "page_title": "Ma'lumotlar"})
+    return RedirectResponse(url="/info/units", status_code=303)
 
 # Omborlar bo'limi
 @app.get("/info/warehouses", response_class=HTMLResponse)
@@ -1864,8 +1914,144 @@ async def import_categories(file: UploadFile = File(...), db: Session = Depends(
             category.type = type_
         db.commit()
     return RedirectResponse(url="/info/categories", status_code=303)
+
+# Narx turlari (Chakana, Ulgurji, VIP va h.k.) — Ma'lumotnomalar
+@app.get("/info/price-types", response_class=HTMLResponse)
+async def info_price_types(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+    """Narx turlari ro'yxati"""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    price_types = db.query(PriceType).filter(PriceType.is_active == True).order_by(PriceType.name).all()
+    return templates.TemplateResponse("info/price_types.html", {
+        "request": request,
+        "price_types": price_types,
+        "current_user": current_user,
+        "page_title": "Narx turlari"
+    })
+
+
+@app.post("/info/price-types/add")
+async def info_price_types_add(
+    name: str = Form(...),
+    code: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    code = (code or "").strip() or None
+    if code and db.query(PriceType).filter(PriceType.code == code).first():
+        raise HTTPException(status_code=400, detail=f"'{code}' kodli narx turi allaqachon mavjud!")
+    pt = PriceType(name=name, code=code, is_active=True)
+    db.add(pt)
     db.commit()
-    return RedirectResponse(url="/info/categories", status_code=303)
+    return RedirectResponse(url="/info/price-types", status_code=303)
+
+
+@app.post("/info/price-types/edit/{price_type_id}")
+async def info_price_types_edit(
+    price_type_id: int,
+    name: str = Form(...),
+    code: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    pt = db.query(PriceType).filter(PriceType.id == price_type_id).first()
+    if not pt:
+        raise HTTPException(status_code=404, detail="Narx turi topilmadi")
+    code = (code or "").strip() or None
+    if code and db.query(PriceType).filter(PriceType.code == code, PriceType.id != price_type_id).first():
+        raise HTTPException(status_code=400, detail=f"'{code}' kodli narx turi allaqachon mavjud!")
+    pt.name = name
+    pt.code = code
+    db.commit()
+    return RedirectResponse(url="/info/price-types", status_code=303)
+
+
+@app.post("/info/price-types/delete/{price_type_id}")
+async def info_price_types_delete(price_type_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    pt = db.query(PriceType).filter(PriceType.id == price_type_id).first()
+    if not pt:
+        raise HTTPException(status_code=404, detail="Narx turi topilmadi")
+    db.query(ProductPrice).filter(ProductPrice.price_type_id == price_type_id).delete()
+    pt.is_active = False
+    db.commit()
+    return RedirectResponse(url="/info/price-types", status_code=303)
+
+
+# Narxni o'rnatish (mahsulot narxlari narx turi bo'yicha) — Ma'lumotnomalar
+@app.get("/info/prices", response_class=HTMLResponse)
+async def info_prices(
+    request: Request,
+    price_type_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Mahsulot tannarxi va narx turi bo'yicha sotuv narxini o'rnatish"""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    price_types = db.query(PriceType).filter(PriceType.is_active == True).order_by(PriceType.name).all()
+    if not price_types:
+        return templates.TemplateResponse("info/prices.html", {
+            "request": request,
+            "products": [],
+            "price_types": [],
+            "current_price_type_id": None,
+            "product_prices_by_type": {},
+            "current_user": current_user,
+            "page_title": "Narxni o'rnatish"
+        })
+    current_pt_id = price_type_id or (price_types[0].id if price_types else None)
+    products = db.query(Product).filter(Product.is_active == True).order_by(Product.name).all()
+    # Mahsulot × narx turi bo'yicha sotuv narxi
+    product_prices = db.query(ProductPrice).filter(ProductPrice.price_type_id == current_pt_id).all()
+    product_prices_by_type = {pp.product_id: pp.sale_price for pp in product_prices}
+    return templates.TemplateResponse("info/prices.html", {
+        "request": request,
+        "products": products,
+        "price_types": price_types,
+        "current_price_type_id": current_pt_id,
+        "product_prices_by_type": product_prices_by_type,
+        "current_user": current_user,
+        "page_title": "Narxni o'rnatish"
+    })
+
+
+@app.post("/info/prices/edit/{product_id}")
+async def info_prices_edit(
+    product_id: int,
+    purchase_price: float = Form(0),
+    sale_price: float = Form(0),
+    price_type_id: Optional[int] = Form(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Mahsulot tannarxi va narx turi bo'yicha sotuv narxini yangilash"""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Mahsulot topilmadi")
+    product.purchase_price = purchase_price
+    if price_type_id:
+        pp = db.query(ProductPrice).filter(
+            ProductPrice.product_id == product_id,
+            ProductPrice.price_type_id == price_type_id
+        ).first()
+        if pp:
+            pp.sale_price = sale_price
+        else:
+            db.add(ProductPrice(product_id=product_id, price_type_id=price_type_id, sale_price=sale_price))
+    else:
+        product.sale_price = sale_price
+    db.commit()
+    redirect_url = f"/info/prices?price_type_id={price_type_id}" if price_type_id else "/info/prices"
+    return RedirectResponse(url=redirect_url, status_code=303)
+
 
 # Kassalar bo'limi
 @app.get("/info/cash", response_class=HTMLResponse)
@@ -2113,13 +2299,10 @@ async def import_directions(file: UploadFile = File(...), db: Session = Depends(
         db.commit()
     return RedirectResponse(url="/info/directions", status_code=303)
 
-# Foydalanuvchilar bo'limi
+# Foydalanuvchilar bo'limi (faqat admin)
 @app.get("/info/users", response_class=HTMLResponse)
-async def info_users(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+async def info_users(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     """Foydalanuvchilar ro'yxati"""
-    if not current_user:
-        return RedirectResponse(url="/login", status_code=303)
-    
     users = db.query(User).all()
     return templates.TemplateResponse("info/users.html", {
         "request": request,
@@ -2136,9 +2319,10 @@ async def info_users_add(
     full_name: str = Form(...),
     role: str = Form("user"),
     is_active: bool = Form(True),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
 ):
-    """Yangi foydalanuvchi qo'shish"""
+    """Yangi foydalanuvchi qo'shish (faqat admin)"""
     # Username dublikat tekshiruvi
     existing = db.query(User).filter(User.username == username).first()
     if existing:
@@ -2163,9 +2347,10 @@ async def info_users_edit(
     full_name: str = Form(...),
     role: str = Form("user"),
     is_active: bool = Form(True),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
 ):
-    """Foydalanuvchini tahrirlash"""
+    """Foydalanuvchini tahrirlash (faqat admin)"""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Foydalanuvchi topilmadi")
@@ -2189,9 +2374,10 @@ async def info_users_edit(
 async def info_users_change_password(
     user_id: int,
     new_password: str = Form(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
 ):
-    """Foydalanuvchi parolini o'zgartirish"""
+    """Foydalanuvchi parolini o'zgartirish (faqat admin)"""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Foydalanuvchi topilmadi")
@@ -2201,8 +2387,8 @@ async def info_users_change_password(
     return RedirectResponse(url="/info/users", status_code=303)
 
 @app.post("/info/users/delete/{user_id}")
-async def info_users_delete(user_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
-    """Foydalanuvchini o'chirish"""
+async def info_users_delete(user_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    """Foydalanuvchini o'chirish (faqat admin)"""
     # O'zini o'chirishga ruxsat bermaslik
     if user_id == current_user.id:
         raise HTTPException(status_code=400, detail="O'zingizni o'chira olmaysiz!")
@@ -2214,6 +2400,76 @@ async def info_users_delete(user_id: int, db: Session = Depends(get_db), current
     db.delete(user)
     db.commit()
     return RedirectResponse(url="/info/users", status_code=303)
+
+
+# ==========================================
+# LAVOZIMLAR
+# ==========================================
+@app.get("/info/positions", response_class=HTMLResponse)
+async def info_positions(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+    """Lavozimlar ro'yxati"""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    positions = db.query(Position).filter(Position.is_active == True).all()
+    return templates.TemplateResponse("info/positions.html", {
+        "request": request,
+        "current_user": current_user,
+        "positions": positions,
+        "page_title": "Lavozimlar"
+    })
+
+
+@app.post("/info/positions/add")
+async def info_positions_add(
+    code: str = Form(...),
+    name: str = Form(...),
+    description: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Lavozim qo'shish"""
+    existing = db.query(Position).filter(Position.code == code).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"'{code}' kodli lavozim allaqachon mavjud!")
+    position = Position(code=code, name=name, description=description or None)
+    db.add(position)
+    db.commit()
+    return RedirectResponse(url="/info/positions", status_code=303)
+
+
+@app.post("/info/positions/edit/{position_id}")
+async def info_positions_edit(
+    position_id: int,
+    code: str = Form(...),
+    name: str = Form(...),
+    description: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Lavozimni tahrirlash"""
+    position = db.query(Position).filter(Position.id == position_id).first()
+    if not position:
+        raise HTTPException(status_code=404, detail="Lavozim topilmadi")
+    existing = db.query(Position).filter(Position.code == code, Position.id != position_id).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"'{code}' kodli lavozim allaqachon mavjud!")
+    position.code = code
+    position.name = name
+    position.description = description or None
+    db.commit()
+    return RedirectResponse(url="/info/positions", status_code=303)
+
+
+@app.post("/info/positions/delete/{position_id}")
+async def info_positions_delete(position_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+    """Lavozimni o'chirish (soft - is_active=False)"""
+    position = db.query(Position).filter(Position.id == position_id).first()
+    if not position:
+        raise HTTPException(status_code=404, detail="Lavozim topilmadi")
+    position.is_active = False
+    db.commit()
+    return RedirectResponse(url="/info/positions", status_code=303)
+
 
 # --- MAHSULOT DETAIL VA BARCODE ---
 
@@ -2251,11 +2507,10 @@ async def export_products(db: Session = Depends(get_db)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Products"
-    ws.append(["ID", "Kod", "Nomi", "Turi", "Kategoriya", "O'lchov", "Sotish narxi", "Olish narxi"])
+    ws.append(["ID", "Kod", "Nomi", "Turi", "O'lchov", "Sotish narxi", "Olish narxi"])
     for p in products:
         ws.append([
             p.id, p.code, p.name, p.type,
-            p.category.name if p.category else "",
             p.unit.name if p.unit else "",
             p.sale_price, p.purchase_price
         ])
@@ -2271,18 +2526,18 @@ async def product_import_template():
     ws = wb.active
     ws.title = "Import Template"
     
-    # Headers
-    headers = ["ID", "Kod", "Nomi", "Turi", "Kategoriya", "O'lchov", "Sotish narxi", "Olish narxi"]
+    # Headers (kategoriya yo'q)
+    headers = ["ID", "Kod", "Nomi", "Turi", "O'lchov", "Sotish narxi", "Olish narxi"]
     ws.append(headers)
     
     # Example Row
-    example = ["", "P001", "Misol Mahsulot", "tayyor", "Shirinliklar", "dona", 15000, 10000]
+    example = ["", "P001", "Misol Mahsulot", "tayyor", "dona", 15000, 10000]
     ws.append(example)
     
     # Column width adjustment
-    for col in range(1, 9):
+    for col in range(1, 8):
         ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = 15
-    ws.column_dimensions['C'].width = 30  # Name column
+    ws.column_dimensions['C'].width = 30  # Nomi ustuni
     
     stream = io.BytesIO()
     wb.save(stream)
@@ -2297,38 +2552,88 @@ async def product_detail(request: Request, product_id: int, db: Session = Depend
     return templates.TemplateResponse("products/detail.html", {"request": request, "product": product})
 
 # --- IMPORT PRODUCTS FROM EXCEL ---
-@app.post("/products/import")
-async def import_products(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    contents = await file.read()
-    wb = openpyxl.load_workbook(io.BytesIO(contents))
-    ws = wb.active
-    rows = list(ws.iter_rows(min_row=2, values_only=True))
-    for row in rows:
-        code, name, type_, category_name, unit_name, sale_price, purchase_price = row[1:8]
-        # Kategoriya va o'lchov birligini topish yoki yaratish
-        category = db.query(Category).filter(Category.name == category_name).first()
-        if not category and category_name:
-            category = Category(name=category_name, code=category_name.lower(), type="product")
-            db.add(category)
-            db.commit()
-        unit = db.query(Unit).filter(Unit.name == unit_name).first()
-        if not unit and unit_name:
-            unit = Unit(name=unit_name, code=unit_name.lower())
-            db.add(unit)
-            db.commit()
-        # Mahsulotni qo'shish yoki yangilash
-        product = db.query(Product).filter(Product.code == code).first()
-        if not product:
-            product = Product(code=code)
-            db.add(product)
-        product.name = name
-        product.type = type_
-        product.category_id = category.id if category else None
-        product.unit_id = unit.id if unit else None
-        product.sale_price = sale_price or 0
-        product.purchase_price = purchase_price or 0
-        db.commit()
+@app.get("/products/import")
+async def products_import_get():
+    """Import sahifasi faqat form orqali; to'g'ridan-to'g'ri ochilsa tovarlar ro'yxatiga yo'naltirish."""
     return RedirectResponse(url="/products", status_code=303)
+
+
+@app.post("/products/import")
+async def import_products(
+    excel_file: UploadFile = File(..., description="Excel fayl"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Excel dan tovarlarni import. Andoza: ID, Kod, Nomi, Turi, O'lchov, Sotish narxi, Olish narxi (kategoriya yo'q)."""
+    from urllib.parse import quote
+    try:
+        contents = await excel_file.read()
+        if not contents:
+            return RedirectResponse(url="/products?error=import&detail=" + quote("Fayl bo'sh"), status_code=303)
+        wb = openpyxl.load_workbook(io.BytesIO(contents), read_only=False, data_only=True)
+        ws = wb.active
+        rows = list(ws.iter_rows(min_row=2, values_only=True))
+        added = 0
+        for idx, row in enumerate(rows):
+            try:
+                if not row:
+                    continue
+                row = list(row) if hasattr(row, "__iter__") else []
+                if len(row) < 3:
+                    continue
+                code = (row[1] if len(row) > 1 else None) or (row[0] if len(row) > 0 else None)
+                name = row[2] if len(row) > 2 else None
+                code = str(code).strip() if code else ""
+                name = str(name).strip() if name else ""
+                if not code and not name:
+                    continue
+                if not code:
+                    code = f"P{idx+2}"
+                if not name:
+                    name = str(code)
+                type_ = (str(row[3]).strip() if len(row) > 3 and row[3] else "tayyor") or "tayyor"
+                if len(row) >= 8:
+                    unit_name = str(row[5]).strip() if row[5] else None
+                    sale_idx, purchase_idx = 6, 7
+                else:
+                    unit_name = str(row[4]).strip() if len(row) > 4 and row[4] else None
+                    sale_idx, purchase_idx = 5, 6
+                try:
+                    sale_price = float(str(row[sale_idx]).replace(" ", "").replace(",", ".")) if len(row) > sale_idx and row[sale_idx] is not None else 0
+                except (ValueError, TypeError):
+                    sale_price = 0
+                try:
+                    purchase_price = float(str(row[purchase_idx]).replace(" ", "").replace(",", ".")) if len(row) > purchase_idx and row[purchase_idx] is not None else 0
+                except (ValueError, TypeError):
+                    purchase_price = 0
+                unit = db.query(Unit).filter(Unit.name == unit_name).first() if unit_name else None
+                if not unit and unit_name:
+                    unit_code = (unit_name or "").lower().replace(" ", "_")[:10]
+                    unit = Unit(name=unit_name, code=unit_code or "u")
+                    db.add(unit)
+                    db.commit()
+                    db.refresh(unit)
+                product = db.query(Product).filter(Product.code == code).first()
+                if not product:
+                    product = Product(code=code)
+                    db.add(product)
+                    added += 1
+                product.name = name
+                product.type = type_
+                product.category_id = None
+                product.unit_id = unit.id if unit else None
+                product.sale_price = sale_price
+                product.purchase_price = purchase_price
+                db.commit()
+            except Exception as e:
+                db.rollback()
+                continue
+        return RedirectResponse(url="/products?import_ok=1&added=" + str(added), status_code=303)
+    except Exception as e:
+        return RedirectResponse(
+            url="/products?error=import&detail=" + quote(str(e)[:200]),
+            status_code=303
+        )
 
 @app.get("/products", response_class=HTMLResponse)
 async def products_list(request: Request, type: str = "all", db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
@@ -2344,6 +2649,11 @@ async def products_list(request: Request, type: str = "all", db: Session = Depen
     products = query.all()
     categories = db.query(Category).all()
     units = db.query(Unit).all()
+    from urllib.parse import unquote
+    import_ok = request.query_params.get("import_ok")
+    added = request.query_params.get("added")
+    import_error = request.query_params.get("error") == "import"
+    import_detail = unquote(request.query_params.get("detail", "") or "")
     
     return templates.TemplateResponse("products/list.html", {
         "request": request,
@@ -2352,7 +2662,11 @@ async def products_list(request: Request, type: str = "all", db: Session = Depen
         "units": units,
         "current_type": type,
         "current_user": current_user,
-        "page_title": "Tovarlar"
+        "page_title": "Tovarlar",
+        "import_ok": import_ok,
+        "import_added": added,
+        "import_error": import_error,
+        "import_detail": import_detail,
     })
 
 
@@ -2391,6 +2705,33 @@ async def product_add(
     return RedirectResponse(url="/products", status_code=303)
 
 
+@app.post("/products/edit/{product_id}")
+async def product_edit(
+    product_id: int,
+    name: str = Form(...),
+    type: str = Form(...),
+    category_id: int = Form(None),
+    unit_id: int = Form(None),
+    barcode: str = Form(None),
+    sale_price: float = Form(0),
+    purchase_price: float = Form(0),
+    db: Session = Depends(get_db)
+):
+    """Tovar tahrirlash"""
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Mahsulot topilmadi")
+    product.name = name
+    product.type = type
+    product.category_id = category_id if category_id and category_id > 0 else None
+    product.unit_id = unit_id if unit_id and unit_id > 0 else None
+    product.barcode = barcode or None
+    product.sale_price = sale_price
+    product.purchase_price = purchase_price
+    db.commit()
+    return RedirectResponse(url="/products", status_code=303)
+
+
 @app.post("/products/{product_id}/upload-image")
 async def product_upload_image(
     product_id: int,
@@ -2425,18 +2766,18 @@ async def product_upload_image(
 # ==========================================
 
 @app.get("/warehouse", response_class=HTMLResponse)
-async def warehouse_list(request: Request, db: Session = Depends(get_db)):
-    """Ombor qoldiqlari"""
+async def warehouse_list(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+    """Qaysi omborda nima bor — ombor qoldiqlari"""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
     warehouses = db.query(Warehouse).all()
-    
-    # Qoldiqlar
     stocks = db.query(Stock).join(Product).join(Warehouse).all()
-    
     return templates.TemplateResponse("warehouse/list.html", {
         "request": request,
         "warehouses": warehouses,
         "stocks": stocks,
-        "page_title": "Ombor"
+        "current_user": current_user,
+        "page_title": "Ombor qoldiqlari"
     })
 
 
@@ -2459,13 +2800,15 @@ async def warehouse_movement(request: Request, db: Session = Depends(get_db)):
 # ==========================================
 
 @app.get("/purchases", response_class=HTMLResponse)
-async def purchases_list(request: Request, db: Session = Depends(get_db)):
+async def purchases_list(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Tovar kirimlari ro'yxati"""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
     purchases = db.query(Purchase).order_by(Purchase.date.desc()).limit(100).all()
-    
     return templates.TemplateResponse("purchases/list.html", {
         "request": request,
         "purchases": purchases,
+        "current_user": current_user,
         "page_title": "Tovar kirimlari"
     })
 
@@ -2513,19 +2856,27 @@ async def purchase_create(
 
 
 @app.get("/purchases/edit/{purchase_id}", response_class=HTMLResponse)
-async def purchase_edit(request: Request, purchase_id: int, db: Session = Depends(get_db)):
-    """Tovar kirimini tahrirlash"""
+async def purchase_edit(request: Request, purchase_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+    """Tovar kirimini tahrirlash (tasdiqlangan kirimni faqat admin tahrirlashi mumkin)"""
+    from urllib.parse import unquote
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
     purchase = db.query(Purchase).filter(Purchase.id == purchase_id).first()
     if not purchase:
         raise HTTPException(status_code=404, detail="Tovar kirimi topilmadi")
-    
+    if purchase.status == "confirmed" and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Tasdiqlangan kirimni faqat administrator tahrirlashi mumkin")
     products = db.query(Product).filter(Product.is_active == True).all()
-    
+    revert_error = request.query_params.get("error") == "revert"
+    revert_detail = unquote(request.query_params.get("detail", "") or "")
     return templates.TemplateResponse("purchases/edit.html", {
         "request": request,
         "purchase": purchase,
         "products": products,
-        "page_title": f"Tovar kirimi: {purchase.number}"
+        "current_user": current_user,
+        "page_title": f"Tovar kirimi: {purchase.number}",
+        "revert_error": revert_error,
+        "revert_detail": revert_detail,
     })
 
 
@@ -2554,7 +2905,7 @@ async def purchase_add_item(
     
     purchase.total = db.query(PurchaseItem).filter(
         PurchaseItem.purchase_id == purchase_id
-    ).with_entities(db.func.sum(PurchaseItem.total)).scalar() or 0
+    ).with_entities(func.sum(PurchaseItem.total)).scalar() or 0
     purchase.total += total
     
     db.commit()
@@ -2600,6 +2951,50 @@ async def purchase_confirm(purchase_id: int, db: Session = Depends(get_db)):
     
     db.commit()
     return RedirectResponse(url=f"/purchases", status_code=303)
+
+
+@app.post("/purchases/{purchase_id}/revert")
+async def purchase_revert(
+    purchase_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Tasdiqni bekor qilish (faqat admin): ombor qoldig'ini qaytarish, holatni qoralamaga o'tkazish"""
+    from urllib.parse import quote
+    purchase = db.query(Purchase).filter(Purchase.id == purchase_id).first()
+    if not purchase:
+        raise HTTPException(status_code=404, detail="Tovar kirimi topilmadi")
+    if purchase.status != "confirmed":
+        db.rollback()
+        return RedirectResponse(
+            url=f"/purchases/edit/{purchase_id}?error=revert&detail=" + quote("Faqat tasdiqlangan kirimning tasdiqini bekor qilish mumkin."),
+            status_code=303
+        )
+    for item in purchase.items:
+        stock = db.query(Stock).filter(
+            Stock.warehouse_id == purchase.warehouse_id,
+            Stock.product_id == item.product_id
+        ).first()
+        if not stock:
+            db.rollback()
+            return RedirectResponse(
+                url=f"/purchases/edit/{purchase_id}?error=revert&detail=" + quote("Ombor qoldig'i topilmadi yoki o'zgargan. Tasdiqni bekor qilish mumkin emas."),
+                status_code=303
+            )
+        stock.quantity -= item.quantity
+        if stock.quantity < 0:
+            db.rollback()
+            return RedirectResponse(
+                url=f"/purchases/edit/{purchase_id}?error=revert&detail=" + quote("Ombor qoldig'i yetarli emas (qoldiq o'zgartirilgan). Tasdiqni bekor qilish mumkin emas."),
+                status_code=303
+            )
+    if purchase.partner_id:
+        partner = db.query(Partner).filter(Partner.id == purchase.partner_id).first()
+        if partner:
+            partner.balance += purchase.total
+    purchase.status = "draft"
+    db.commit()
+    return RedirectResponse(url=f"/purchases/edit/{purchase_id}", status_code=303)
 
 
 # ==========================================
@@ -2806,17 +3201,31 @@ async def sales_list(request: Request, db: Session = Depends(get_db)):
 
 
 @app.get("/sales/new", response_class=HTMLResponse)
-async def sales_new(request: Request, db: Session = Depends(get_db)):
-    """Yangi sotuv"""
-    products = db.query(Product).filter(Product.type.in_(["tayyor", "yarim_tayyor"]), Product.is_active == True).all()
-    partners = db.query(Partner).filter(Partner.type.in_(["customer", "both"])).all()
+async def sales_new(
+    request: Request,
+    price_type_id: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    """Yangi sotuv — narx turini tanlang, shu bo'yicha mahsulot narxlari ko'rsatiladi"""
+    products = db.query(Product).filter(Product.type.in_(["tayyor", "yarim_tayyor"]), Product.is_active == True).order_by(Product.name).all()
+    partners = db.query(Partner).filter(Partner.type.in_(["customer", "both"])).order_by(Partner.name).all()
+    if not partners:
+        partners = db.query(Partner).filter(Partner.is_active == True).order_by(Partner.name).all()
     warehouses = db.query(Warehouse).all()
-    
+    price_types = db.query(PriceType).filter(PriceType.is_active == True).order_by(PriceType.name).all()
+    current_pt_id = price_type_id or (price_types[0].id if price_types else None)
+    product_prices_by_type = {}
+    if current_pt_id:
+        pps = db.query(ProductPrice).filter(ProductPrice.price_type_id == current_pt_id).all()
+        product_prices_by_type = {pp.product_id: pp.sale_price for pp in pps}
     return templates.TemplateResponse("sales/new.html", {
         "request": request,
         "products": products,
         "partners": partners,
         "warehouses": warehouses,
+        "price_types": price_types,
+        "current_price_type_id": current_pt_id,
+        "product_prices_by_type": product_prices_by_type,
         "page_title": "Yangi sotuv"
     })
 
@@ -2826,23 +3235,22 @@ async def sales_create(
     request: Request,
     partner_id: int = Form(...),
     warehouse_id: int = Form(...),
+    price_type_id: Optional[int] = Form(None),
     db: Session = Depends(get_db)
 ):
-    """Sotuv yaratish"""
-    # Yangi raqam generatsiya
+    """Sotuv yaratish — narx turi saqlanadi, savdo vaqtida shu narx ishlatiladi"""
     last_order = db.query(Order).filter(Order.type == "sale").order_by(Order.id.desc()).first()
     new_number = f"S-{datetime.now().strftime('%Y%m%d')}-{(last_order.id + 1) if last_order else 1:04d}"
-    
     order = Order(
         number=new_number,
         type="sale",
         partner_id=partner_id,
         warehouse_id=warehouse_id,
+        price_type_id=price_type_id if price_type_id else None,
         status="draft"
     )
     db.add(order)
     db.commit()
-    
     return RedirectResponse(url=f"/sales/edit/{order.id}", status_code=303)
 
 
@@ -3060,59 +3468,64 @@ async def report_debts(request: Request, db: Session = Depends(get_db)):
 # ==========================================
 
 @app.get("/production", response_class=HTMLResponse)
-async def production_dashboard(request: Request, db: Session = Depends(get_db)):
+async def production_index_page(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Ishlab chiqarish bosh sahifasi"""
+    # Omborlar birinchi (info/warehouses bilan bir xil so'rov)
+    warehouses = db.query(Warehouse).all()
+    recipes = db.query(Recipe).filter(Recipe.is_active == True).all()
+
     today = datetime.now().date()
-    
-    # Statistika
     total_recipes = db.query(Recipe).filter(Recipe.is_active == True).count()
     today_productions = db.query(Production).filter(
         Production.date >= today,
         Production.status == "completed"
     ).all()
     today_quantity = sum(p.quantity for p in today_productions)
-    
     pending_productions = db.query(Production).filter(
         Production.status == "draft"
     ).count()
-    
-    # Oxirgi ishlab chiqarishlar
     recent_productions = db.query(Production).order_by(
         Production.date.desc()
     ).limit(10).all()
-    
-    # Retseptlar
-    recipes = db.query(Recipe).filter(Recipe.is_active == True).all()
-    
-    return templates.TemplateResponse("production/index.html", {
+
+    now = datetime.now()
+    resp = templates.TemplateResponse("production/index.html", {
         "request": request,
+        "current_user": current_user,
         "total_recipes": total_recipes,
         "today_quantity": today_quantity,
         "pending_productions": pending_productions,
         "recent_productions": recent_productions,
         "recipes": recipes,
-        "page_title": "Ishlab chiqarish"
+        "warehouses": warehouses,
+        "page_title": "Ishlab chiqarish",
+        "now": now,
     })
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return resp
 
 
 @app.get("/production/recipes", response_class=HTMLResponse)
-async def production_recipes(request: Request, db: Session = Depends(get_db)):
+async def production_recipes(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Retseptlar ro'yxati"""
+    warehouses = db.query(Warehouse).all()
     recipes = db.query(Recipe).all()
     products = db.query(Product).filter(Product.type.in_(["tayyor", "yarim_tayyor"])).all()
     materials = db.query(Product).filter(Product.type == "hom_ashyo").all()
-    
+
     return templates.TemplateResponse("production/recipes.html", {
         "request": request,
+        "current_user": current_user,
         "recipes": recipes,
         "products": products,
         "materials": materials,
+        "warehouses": warehouses,
         "page_title": "Retseptlar"
     })
 
 
 @app.get("/production/recipes/{recipe_id}", response_class=HTMLResponse)
-async def production_recipe_detail(request: Request, recipe_id: int, db: Session = Depends(get_db)):
+async def production_recipe_detail(request: Request, recipe_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Retsept tafsilotlari"""
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if not recipe:
@@ -3122,6 +3535,7 @@ async def production_recipe_detail(request: Request, recipe_id: int, db: Session
     
     return templates.TemplateResponse("production/recipe_detail.html", {
         "request": request,
+        "current_user": current_user,
         "recipe": recipe,
         "materials": materials,
         "page_title": f"Retsept: {recipe.name}"
@@ -3155,9 +3569,13 @@ async def add_recipe_item(
     recipe_id: int,
     product_id: int = Form(...),
     quantity: float = Form(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
 ):
     """Retseptga xom ashyo qo'shish"""
+    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Retsept topilmadi")
     item = RecipeItem(
         recipe_id=recipe_id,
         product_id=product_id,
@@ -3168,26 +3586,145 @@ async def add_recipe_item(
     return RedirectResponse(url=f"/production/recipes/{recipe_id}", status_code=303)
 
 
+@app.post("/production/recipes/{recipe_id}/edit-item/{item_id}")
+async def edit_recipe_item(
+    recipe_id: int,
+    item_id: int,
+    product_id: int = Form(...),
+    quantity: float = Form(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Retsept tarkibidagi qatorni tahrirlash"""
+    item = db.query(RecipeItem).filter(
+        RecipeItem.id == item_id,
+        RecipeItem.recipe_id == recipe_id
+    ).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Tarkib qatori topilmadi")
+    item.product_id = product_id
+    item.quantity = quantity
+    db.commit()
+    return RedirectResponse(url=f"/production/recipes/{recipe_id}", status_code=303)
+
+
+@app.post("/production/recipes/{recipe_id}/delete-item/{item_id}")
+async def delete_recipe_item(
+    recipe_id: int,
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Retsept tarkibidagi qatorni o'chirish"""
+    item = db.query(RecipeItem).filter(
+        RecipeItem.id == item_id,
+        RecipeItem.recipe_id == recipe_id
+    ).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Tarkib qatori topilmadi")
+    db.delete(item)
+    db.commit()
+    return RedirectResponse(url=f"/production/recipes/{recipe_id}", status_code=303)
+
+
+@app.get("/production/{prod_id}/materials", response_class=HTMLResponse)
+async def production_edit_materials(
+    prod_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Kutilmoqdagi buyurtma uchun xom ashyo miqdorlarini tahrirlash. Yakunlangan buyurtmani faqat admin ko'ra oladi (faqat ko'rish)."""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    production = db.query(Production).filter(Production.id == prod_id).first()
+    if not production:
+        raise HTTPException(status_code=404, detail="Buyurtma topilmadi")
+    if production.status == "completed" and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Yakunlangan buyurtmani faqat administrator ko'ra oladi")
+    if production.status not in ("draft", "completed"):
+        raise HTTPException(status_code=400, detail="Faqat kutilmoqdagi yoki yakunlangan buyurtmani ko'rish mumkin")
+    recipe = db.query(Recipe).filter(Recipe.id == production.recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Retsept topilmadi")
+    # Agar production_items bo'sh bo'lsa, retseptdan yaratib olaylik
+    if not production.production_items:
+        for item in recipe.items:
+            pi = ProductionItem(
+                production_id=production.id,
+                product_id=item.product_id,
+                quantity=item.quantity * production.quantity
+            )
+            db.add(pi)
+        db.commit()
+        db.refresh(production)
+    read_only = production.status == "completed"
+    return templates.TemplateResponse("production/edit_materials.html", {
+        "request": request,
+        "current_user": current_user,
+        "production": production,
+        "recipe": recipe,
+        "read_only": read_only,
+        "page_title": f"Xom ashyo: {production.number}",
+    })
+
+
+@app.post("/production/{prod_id}/materials")
+async def production_save_materials(
+    prod_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Xom ashyo miqdorlarini saqlash."""
+    production = db.query(Production).filter(Production.id == prod_id).first()
+    if not production or production.status != "draft":
+        raise HTTPException(status_code=404, detail="Buyurtma topilmadi yoki tahrirlab bo'lmaydi")
+    form = await request.form()
+    for key, value in form.items():
+        if key.startswith("qty_"):
+            try:
+                item_id = int(key.replace("qty_", ""))
+                qty = float(value.replace(",", "."))
+            except (ValueError, TypeError):
+                continue
+            pi = db.query(ProductionItem).filter(
+                ProductionItem.id == item_id,
+                ProductionItem.production_id == prod_id
+            ).first()
+            if pi and qty >= 0:
+                pi.quantity = qty
+    db.commit()
+    return RedirectResponse(url="/production/orders", status_code=303)
+
+
 @app.get("/production/orders", response_class=HTMLResponse)
-async def production_orders(request: Request, db: Session = Depends(get_db)):
+async def production_orders(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Ishlab chiqarish buyurtmalari"""
     productions = db.query(Production).order_by(Production.date.desc()).all()
+    from urllib.parse import unquote
+    error = request.query_params.get("error")
+    detail = unquote(request.query_params.get("detail", "") or "")
     
     return templates.TemplateResponse("production/orders.html", {
         "request": request,
+        "current_user": current_user,
         "productions": productions,
-        "page_title": "Ishlab chiqarish buyurtmalari"
+        "page_title": "Ishlab chiqarish buyurtmalari",
+        "error": error,
+        "error_detail": detail,
     })
 
 
 @app.get("/production/new", response_class=HTMLResponse)
-async def production_new(request: Request, db: Session = Depends(get_db)):
+async def production_new(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Yangi ishlab chiqarish"""
-    recipes = db.query(Recipe).filter(Recipe.is_active == True).all()
     warehouses = db.query(Warehouse).all()
-    
+    recipes = db.query(Recipe).filter(Recipe.is_active == True).all()
+
     return templates.TemplateResponse("production/new_order.html", {
         "request": request,
+        "current_user": current_user,
         "recipes": recipes,
         "warehouses": warehouses,
         "page_title": "Yangi ishlab chiqarish"
@@ -3202,13 +3739,13 @@ async def create_production(
     request: Request,
     recipe_id: int = Form(...),
     warehouse_id: int = Form(...),
+    output_warehouse_id: int = Form(...),
     quantity: float = Form(...),
     note: str = Form(""),
-    material_product_id: List[int] = Form([]),
-    material_quantity: List[float] = Form([]),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """Ishlab chiqarish yaratish (tarkibni qo'lda o'zgartirish bilan)"""
+    """Ishlab chiqarish yaratish: 1-ombor (xom ashyo) dan oladi, 2-ombor (yarim tayyor) ga yozadi"""
     today = datetime.now()
     count = db.query(Production).filter(
         Production.date >= today.replace(hour=0, minute=0, second=0)
@@ -3219,20 +3756,26 @@ async def create_production(
         number=number,
         recipe_id=recipe_id,
         warehouse_id=warehouse_id,
+        output_warehouse_id=output_warehouse_id,
         quantity=quantity,
         note=note,
-        status="draft"
+        status="draft",
+        user_id=current_user.id if current_user else None
     )
     db.add(production)
-    db.flush()  # production.id olish uchun
-
-    # Foydalanuvchi o'zgartirgan tarkibni saqlash (Production tarkibi sifatida)
-    # (Agar kerak bo'lsa, alohida ProductionMaterial model qilish mumkin, hozircha RecipeItem orqali)
-    for pid, qty in zip(material_product_id, material_quantity):
-        if pid and qty:
-            db.add(RecipeItem(recipe_id=production.id, product_id=pid, quantity=qty))
-
     db.commit()
+    db.refresh(production)
+    # Retsept bo'yicha xom ashyo miqdorlarini shu buyurtma uchun yozish (keyin tahrirlash mumkin)
+    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+    if recipe:
+        for item in recipe.items:
+            pi = ProductionItem(
+                production_id=production.id,
+                product_id=item.product_id,
+                quantity=item.quantity * quantity
+            )
+            db.add(pi)
+        db.commit()
     return RedirectResponse(url="/production/orders", status_code=303)
 
 
@@ -3244,33 +3787,122 @@ async def complete_production(prod_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Topilmadi")
     
     recipe = db.query(Recipe).filter(Recipe.id == production.recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Retsept topilmadi")
     
-    # Xom ashyolarni ayirish
-    for item in recipe.items:
+    # Xom ashyo ro'yxati: tahrirlangan (production_items) bo'lsa shuni, yo'q bo'lsa retsept bo'yicha
+    if production.production_items:
+        items_to_use = [(pi.product_id, pi.quantity) for pi in production.production_items]
+    else:
+        items_to_use = [(item.product_id, item.quantity * production.quantity) for item in recipe.items]
+    
+    # Omborda yetarli xom ashyo borligini tekshirish
+    for product_id, required in items_to_use:
         stock = db.query(Stock).filter(
             Stock.warehouse_id == production.warehouse_id,
-            Stock.product_id == item.product_id
+            Stock.product_id == product_id
+        ).first()
+        if not stock or stock.quantity < required:
+            product_name = db.query(Product).filter(Product.id == product_id).first()
+            name = product_name.name if product_name else f"#{product_id}"
+            from urllib.parse import quote
+            msg = quote(f"Yetarli yo'q: {name} (kerak: {required}, mavjud: {stock.quantity if stock else 0})", safe="")
+            return RedirectResponse(
+                url=f"/production/orders?error=insufficient_stock&detail={msg}",
+                status_code=303
+            )
+    
+    # Xom ashyolarni ayirish
+    for product_id, required in items_to_use:
+        stock = db.query(Stock).filter(
+            Stock.warehouse_id == production.warehouse_id,
+            Stock.product_id == product_id
         ).first()
         if stock:
-            stock.quantity -= item.quantity * production.quantity
+            stock.quantity -= required
     
-    # Tayyor mahsulotni qo'shish
+    # Xom ashyo tannarxini hisoblash (tayyor mahsulot narxi uchun)
+    total_material_cost = 0.0
+    for product_id, required in items_to_use:
+        product = db.query(Product).filter(Product.id == product_id).first()
+        if product and getattr(product, "purchase_price", None) is not None:
+            total_material_cost += required * (product.purchase_price or 0)
+    output_units = production.quantity * (recipe.output_quantity or 1)
+    cost_per_unit = (total_material_cost / output_units) if output_units > 0 else 0
+
+    # Tayyor / yarim tayyor mahsulotni 2-ombor (yarim tayyor ombori) ga qo'shish
+    out_wh_id = production.output_warehouse_id if production.output_warehouse_id else production.warehouse_id
     product_stock = db.query(Stock).filter(
-        Stock.warehouse_id == production.warehouse_id,
+        Stock.warehouse_id == out_wh_id,
         Stock.product_id == recipe.product_id
     ).first()
     
     if product_stock:
-        product_stock.quantity += production.quantity * recipe.output_quantity
+        product_stock.quantity += output_units
     else:
         new_stock = Stock(
-            warehouse_id=production.warehouse_id,
+            warehouse_id=out_wh_id,
             product_id=recipe.product_id,
-            quantity=production.quantity * recipe.output_quantity
+            quantity=output_units
         )
         db.add(new_stock)
     
+    # Tayyor mahsulot tannarxini o'rnatish (yangi yoki o'rtacha)
+    output_product = db.query(Product).filter(Product.id == recipe.product_id).first()
+    if output_product:
+        old_price = output_product.purchase_price or 0
+        old_qty = product_stock.quantity - output_units if product_stock else 0  # mavjud qoldiq (qo'shishdan oldin)
+        if old_qty > 0 and old_price > 0 and output_units > 0:
+            # O'rtacha tannarx (mavjud + yangi)
+            output_product.purchase_price = (old_qty * old_price + output_units * cost_per_unit) / (old_qty + output_units)
+        elif cost_per_unit > 0:
+            output_product.purchase_price = cost_per_unit
+    
     production.status = "completed"
+    db.commit()
+    return RedirectResponse(url="/production/orders", status_code=303)
+
+
+@app.post("/production/{prod_id}/revert")
+async def production_revert(
+    prod_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Tasdiqni bekor qilish (faqat admin): xom ashyoni qaytarish, tayyor mahsulotni olib tashlash, holatni qoralamaga o'tkazish"""
+    production = db.query(Production).filter(Production.id == prod_id).first()
+    if not production:
+        raise HTTPException(status_code=404, detail="Topilmadi")
+    if production.status != "completed":
+        raise HTTPException(status_code=400, detail="Faqat yakunlangan buyurtmaning tasdiqini bekor qilish mumkin")
+    recipe = db.query(Recipe).filter(Recipe.id == production.recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Retsept topilmadi")
+    items_to_use = [(pi.product_id, pi.quantity) for pi in production.production_items] if production.production_items else [(item.product_id, item.quantity * production.quantity) for item in recipe.items]
+    output_units = production.quantity * (recipe.output_quantity or 1)
+    out_wh_id = production.output_warehouse_id if production.output_warehouse_id else production.warehouse_id
+    # Tayyor mahsulotni 2-ombordan ayirish
+    product_stock = db.query(Stock).filter(
+        Stock.warehouse_id == out_wh_id,
+        Stock.product_id == recipe.product_id
+    ).first()
+    if not product_stock or product_stock.quantity < output_units:
+        raise HTTPException(
+            status_code=400,
+            detail="Omborda tayyor mahsulot yetarli emas yoki o'zgargan. Tasdiqni bekor qilish mumkin emas."
+        )
+    product_stock.quantity -= output_units
+    # Xom ashyolarni 1-omborga qaytarish
+    for product_id, required in items_to_use:
+        stock = db.query(Stock).filter(
+            Stock.warehouse_id == production.warehouse_id,
+            Stock.product_id == product_id
+        ).first()
+        if stock:
+            stock.quantity += required
+        else:
+            db.add(Stock(warehouse_id=production.warehouse_id, product_id=product_id, quantity=required))
+    production.status = "draft"
     db.commit()
     return RedirectResponse(url="/production/orders", status_code=303)
 
@@ -4049,17 +4681,15 @@ async def regions_test_page(request: Request, db: Session = Depends(get_db)):
 
 
 @app.get("/info/regions", response_class=HTMLResponse)
-async def regions_page(request: Request, db: Session = Depends(get_db)):
+async def info_regions(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Hududlar sahifasi"""
-    user = get_user_from_token(request)
-    if not user:
+    if not current_user:
         return RedirectResponse(url="/login", status_code=303)
-    
-    regions = db.query(Region).all()
+    regions = db.query(Region).filter(Region.is_active == True).all()
     return templates.TemplateResponse("info/regions.html", {
         "request": request,
+        "current_user": current_user,
         "page_title": "Hududlar",
-        "user": user,
         "regions": regions
     })
 

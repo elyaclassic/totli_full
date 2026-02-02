@@ -2,6 +2,12 @@
 
 {% block content %}
 <div class="container-fluid">
+    {% if revert_error and revert_detail %}
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <strong>Tasdiqni bekor qilish mumkin emas.</strong> {{ revert_detail }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
     <div class="row mb-3">
         <div class="col-12">
             <a href="/purchases" class="btn btn-outline-secondary mb-3">
@@ -21,6 +27,13 @@
                             <button type="submit" class="btn btn-success btn-sm"
                                 onclick="return confirm('Tovar kirimini tasdiqlaysizmi?')">
                                 <i class="bi bi-check-circle"></i> Tasdiqlash
+                            </button>
+                        </form>
+                        {% elif purchase.status == 'confirmed' and current_user and current_user.role == 'admin' %}
+                        <form method="POST" action="/purchases/{{ purchase.id }}/revert" style="display: inline;">
+                            <button type="submit" class="btn btn-warning btn-sm"
+                                onclick="return confirm('Tasdiqni bekor qilish — ombor qoldig\'i kamayadi. Davom etasizmi?');">
+                                <i class="bi bi-arrow-counterclockwise"></i> Tasdiqni bekor qilish
                             </button>
                         </form>
                         {% endif %}

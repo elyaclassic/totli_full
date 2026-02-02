@@ -1,6 +1,18 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 
 {% block content %}
+{% if import_ok %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <strong>Import muvaffaqiyatli.</strong> {% if import_added %}{{ import_added }} ta qator qo'shildi/yangilandi.{% endif %}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if import_error and import_detail %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <strong>Import xatosi.</strong> {{ import_detail }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
 <div class="row mb-4">
     <div class="col-12">
         <div class="card">
@@ -27,10 +39,10 @@
                         <i class="bi bi-download"></i> Andoza
                     </a>
                     <form action="/products/import" method="post" enctype="multipart/form-data" style="display:inline;">
-                        <label class="btn btn-outline-primary btn-sm mb-0">
+                        <label class="btn btn-outline-primary btn-sm mb-0" for="products_excel_file">
                             <i class="bi bi-upload"></i> Import
-                            <input type="file" name="excel_file" accept=".xlsx" style="display:none;"
-                                onchange="this.form.submit()">
+                            <input type="file" id="products_excel_file" name="excel_file" accept=".xlsx" style="display:none;"
+                                onchange="this.form.submit()" aria-label="Excel fayl tanlash">
                         </label>
                     </form>
                     <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addProductModal">
@@ -43,12 +55,10 @@
                     <thead class="table-light">
                         <tr>
                             <th width="50">#</th>
-                            <th>Kodi</th>
+                            <th>Shtrix kod</th>
                             <th>Nomi</th>
                             <th>Turi</th>
-                            <th>Kategoriya</th>
-                            <!-- <th>Sotish narxi</th> -->
-                            <!-- <th>Olish narxi</th> -->
+                            <!-- <th>Kategoriya</th> -->
                             <th width="100">Amallar</th>
                         </tr>
                     </thead>
@@ -57,12 +67,9 @@
                         {% for product in products %}
                         <tr>
                             <td>{{ loop.index }}</td>
-                            <td><code>{{ product.code }}</code></td>
+                            <td><code>{{ product.barcode or '-' }}</code></td>
                             <td>
                                 <a href="/products/{{ product.id }}"><strong>{{ product.name }}</strong></a>
-                                {% if product.barcode %}
-                                <br><small class="text-muted">{{ product.barcode }}</small>
-                                {% endif %}
                             </td>
                             <td>
                                 {% if product.type == 'tayyor' %}
@@ -73,11 +80,16 @@
                                 <span class="badge bg-info">Xom ashyo</span>
                                 {% endif %}
                             </td>
-                            <td>{{ product.category.name if product.category else '-' }}</td>
-                            <!-- <td class="text-success">{{ "{:,.0f}".format(product.sale_price) }}</td> -->
-                            <!-- <td class="text-muted">{{ "{:,.0f}".format(product.purchase_price) }}</td> -->
                             <td>
-                                <button class="btn btn-sm btn-outline-primary" title="Tahrirlash">
+                                <button type="button" class="btn btn-sm btn-outline-primary btn-edit-product" title="Tahrirlash"
+                                    data-bs-toggle="modal" data-bs-target="#editProductModal"
+                                    data-product-id="{{ product.id }}"
+                                    data-name="{{ product.name|e }}"
+                                    data-type="{{ product.type|e }}"
+                                    data-unit-id="{{ product.unit_id or 0 }}"
+                                    data-barcode="{{ (product.barcode or '')|e }}"
+                                    data-purchase-price="{{ product.purchase_price or 0 }}"
+                                    data-sale-price="{{ product.sale_price or 0 }}">
                                     <i class="bi bi-pencil"></i>
                                 </button>
                                 <button class="btn btn-sm btn-outline-danger" title="O'chirish">
@@ -88,7 +100,7 @@
                         {% endfor %}
                         {% else %}
                         <tr>
-                            <td colspan="8" class="text-center text-muted py-5">
+                            <td colspan="6" class="text-center text-muted py-5">
                                 <i class="bi bi-box-seam fs-1 d-block mb-2"></i>
                                 Hozircha tovarlar yo'q<br>
                                 <small>Yuqoridagi "Yangi tovar" tugmasini bosing</small>
@@ -114,41 +126,31 @@
                 <div class="modal-body">
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <label class="form-label">Nomi *</label>
-                            <input type="text" class="form-control" name="name" required>
+                            <label class="form-label" for="add_product_name">Nomi *</label>
+                            <input type="text" id="add_product_name" class="form-control" name="name" required
+                                autocomplete="off">
                         </div>
-                        <!-- Kod maydoni olib tashlandi -->
                         <div class="col-md-3">
-                            <label class="form-label">Turi *</label>
-                            <select class="form-select" name="type" required>
+                            <label class="form-label" for="add_product_type">Turi *</label>
+                            <select id="add_product_type" class="form-select" name="type" required autocomplete="off">
                                 <option value="tayyor">Tayyor mahsulot</option>
                                 <option value="yarim_tayyor">Yarim tayyor</option>
                                 <option value="hom_ashyo">Xom ashyo</option>
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label">Kategoriya</label>
-                            <select class="form-select" name="category_id">
-                                <option value="0">-- Tanlang --</option>
-                                {% for cat in categories %}
-                                <option value="{{ cat.id }}">{{ cat.name }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">O'lchov birligi</label>
-                            <select class="form-select" name="unit_id">
+                            <label class="form-label" for="add_product_unit">O'lchov birligi</label>
+                            <select id="add_product_unit" class="form-select" name="unit_id" autocomplete="off">
                                 <option value="0">-- Tanlang --</option>
                                 {% for unit in units %}
                                 <option value="{{ unit.id }}">{{ unit.name }} ({{ unit.code }})</option>
                                 {% endfor %}
                             </select>
                         </div>
-                        <!-- Olish narxi va Sotish narxi olib tashlandi -->
-                        <!-- Min. qoldiq olib tashlandi -->
                         <div class="col-md-6">
-                            <label class="form-label">Shtixkod</label>
-                            <input type="text" class="form-control" name="barcode">
+                            <label class="form-label" for="add_product_barcode">Shtixkod</label>
+                            <input type="text" id="add_product_barcode" class="form-control" name="barcode"
+                                autocomplete="off">
                         </div>
                         <!-- Rasm keyinroq alohida yuklash mumkin -->
                     </div>
@@ -161,4 +163,80 @@
         </div>
     </div>
 </div>
+
+<!-- Tovar tahrirlash modal -->
+<div class="modal fade" id="editProductModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form id="editProductForm" method="POST" action="">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil"></i> Tovarni tahrirlash</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label" for="edit_product_name">Nomi *</label>
+                            <input type="text" id="edit_product_name" class="form-control" name="name" required autocomplete="off">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label" for="edit_product_type">Turi *</label>
+                            <select id="edit_product_type" class="form-select" name="type" required autocomplete="off">
+                                <option value="tayyor">Tayyor mahsulot</option>
+                                <option value="yarim_tayyor">Yarim tayyor</option>
+                                <option value="hom_ashyo">Xom ashyo</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="edit_product_unit">O'lchov birligi</label>
+                            <select id="edit_product_unit" class="form-select" name="unit_id" autocomplete="off">
+                                <option value="0">-- Tanlang --</option>
+                                {% for unit in units %}
+                                <option value="{{ unit.id }}">{{ unit.name }} ({{ unit.code }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="edit_product_barcode">Shtrixkod</label>
+                            <input type="text" id="edit_product_barcode" class="form-control" name="barcode" autocomplete="off">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label" for="edit_product_purchase_price">Olish narxi</label>
+                            <input type="number" id="edit_product_purchase_price" class="form-control" name="purchase_price" step="0.01" min="0" value="0">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label" for="edit_product_sale_price">Sotuv narxi</label>
+                            <input type="number" id="edit_product_sale_price" class="form-control" name="sale_price" step="0.01" min="0" value="0">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor qilish</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Saqlash</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    var editModal = document.getElementById('editProductModal');
+    if (!editModal) return;
+    editModal.addEventListener('show.bs.modal', function (e) {
+        var btn = e.relatedTarget;
+        if (!btn || !btn.classList.contains('btn-edit-product')) return;
+        var id = btn.getAttribute('data-product-id');
+        var form = document.getElementById('editProductForm');
+        if (!form) return;
+        form.action = '/products/edit/' + id;
+        document.getElementById('edit_product_name').value = btn.getAttribute('data-name') || '';
+        document.getElementById('edit_product_type').value = btn.getAttribute('data-type') || 'tayyor';
+        document.getElementById('edit_product_unit').value = btn.getAttribute('data-unit-id') || '0';
+        document.getElementById('edit_product_barcode').value = btn.getAttribute('data-barcode') || '';
+        document.getElementById('edit_product_purchase_price').value = btn.getAttribute('data-purchase-price') || '0';
+        document.getElementById('edit_product_sale_price').value = btn.getAttribute('data-sale-price') || '0';
+    });
+})();
+</script>
 {% endblock %}
