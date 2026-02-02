@@ -1,6 +1,20 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% if error == "insufficient_stock" %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <strong>Omborda yetarli xom ashyo yo'q.</strong>
+    {% if error_detail %}<br><small>{{ error_detail }}</small>{% endif %}
+    Kerakli mahsulotlarni omborga kiriting.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if error == "revert" %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <strong>Tasdiqni bekor qilish mumkin emas.</strong> {% if error_detail %}{{ error_detail }}{% endif %}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
 <div class="d-flex justify-content-between mb-4">
     <h4><i class="bi bi-clipboard-check"></i> Ishlab chiqarish buyurtmalari</h4>
     <a href="/production/new" class="btn btn-primary">
@@ -38,7 +52,8 @@
                     <th>Sana</th>
                     <th>Retsept</th>
                     <th>Miqdor</th>
-                    <th>Ombor</th>
+                    <th>1-ombor (xom ashyo)</th>
+                    <th>2-ombor (yarim tayyor)</th>
                     <th>Holat</th>
                     <th>Amallar</th>
                 </tr>
@@ -49,8 +64,8 @@
                     <td><strong>{{ prod.number }}</strong></td>
                     <td>{{ prod.date.strftime('%d.%m.%Y %H:%M') }}</td>
                     <td>
-                        {% if prod.recipe_id %}
-                        <a href="/production/recipes/{{ prod.recipe_id }}">Retsept #{{ prod.recipe_id }}</a>
+                        {% if prod.recipe %}
+                        <a href="/production/recipes/{{ prod.recipe_id }}">{{ prod.recipe.name }}</a>
                         {% else %}
                         -
                         {% endif %}
@@ -59,10 +74,17 @@
                         <strong>{{ "%.1f"|format(prod.quantity) }} kg</strong>
                     </td>
                     <td>
-                        {% if prod.warehouse_id %}
-                        Ombor #{{ prod.warehouse_id }}
+                        {% if prod.warehouse %}
+                        {{ prod.warehouse.name }}
                         {% else %}
                         -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if prod.output_warehouse %}
+                        {{ prod.output_warehouse.name }}
+                        {% else %}
+                        {{ prod.warehouse.name if prod.warehouse else '-' }}
                         {% endif %}
                     </td>
                     <td>
@@ -76,6 +98,9 @@
                     </td>
                     <td>
                         {% if prod.status == 'draft' %}
+                        <a href="/production/{{ prod.id }}/materials" class="btn btn-sm btn-outline-primary" title="Xom ashyoni tahrirlash">
+                            <i class="bi bi-pencil"></i>
+                        </a>
                         <form method="POST" action="/production/{{ prod.id }}/complete" style="display: inline;">
                             <button type="submit" class="btn btn-sm btn-success" title="Yakunlash">
                                 <i class="bi bi-check-lg"></i>
@@ -86,6 +111,16 @@
                                 <i class="bi bi-x-lg"></i>
                             </button>
                         </form>
+                        {% elif prod.status == 'completed' and current_user and current_user.role == 'admin' %}
+                        <a href="/production/{{ prod.id }}/materials" class="btn btn-sm btn-outline-primary" title="Tahrirlash (ko'rish)">
+                            <i class="bi bi-pencil"></i>
+                        </a>
+                        <form method="POST" action="/production/{{ prod.id }}/revert" style="display: inline;">
+                            <button type="submit" class="btn btn-sm btn-outline-warning" title="Tasdiqni bekor qilish"
+                                onclick="return confirm('Tasdiqni bekor qilish — xom ashyo qaytadi, tayyor mahsulot olib tashlanadi. Davom etasizmi?');">
+                                <i class="bi bi-arrow-counterclockwise"></i>
+                            </button>
+                        </form>
                         {% else %}
                         <span class="text-muted">-</span>
                         {% endif %}
@@ -93,7 +128,7 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="7" class="text-center text-muted py-4">
+                    <td colspan="8" class="text-center text-muted py-4">
                         <i class="bi bi-inbox fs-1"></i><br>
                         Ishlab chiqarish buyurtmalari yo'q
                     </td>

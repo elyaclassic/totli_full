@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between mb-4">
+    <div>
+        <a href="/production/orders" class="btn btn-outline-secondary btn-sm mb-2">
+            <i class="bi bi-arrow-left"></i> Buyurtmalar
+        </a>
+        <h4><i class="bi bi-pencil-square"></i> Xom ashyo miqdorlarini tahrirlash</h4>
+    </div>
+</div>
+
+<div class="alert alert-info">
+    <strong>{{ production.number }}</strong> — {{ recipe.name }}<br>
+    <strong>Ishlab chiqarish miqdori: {{ "%.1f"|format(production.quantity) }} kg</strong> (o'zgarmaydi).<br>
+    {% if read_only %}
+    <span class="badge bg-success">Yakunlangan</span> — faqat ko'rish rejimi. Tasdiqni bekor qilish uchun pastdagi tugmani bosing.
+    {% else %}
+    Retsept asli turadi; faqat shu buyurtma uchun xom ashyo miqdorlarini o'zgartiring.
+    {% endif %}
+</div>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-list-check"></i> Shu buyurtma uchun xom ashyo (kg)</span>
+        {% if read_only and current_user and current_user.role == 'admin' %}
+        <form method="POST" action="/production/{{ production.id }}/revert" style="display: inline;">
+            <button type="submit" class="btn btn-warning btn-sm"
+                onclick="return confirm('Tasdiqni bekor qilish — xom ashyo qaytadi, tayyor mahsulot olib tashlanadi. Davom etasizmi?');">
+                <i class="bi bi-arrow-counterclockwise"></i> Tasdiqni bekor qilish
+            </button>
+        </form>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        <form method="POST" action="/production/{{ production.id }}/materials" {% if read_only %}style="pointer-events: none;"{% endif %}>
+            <table class="table">
+                <thead class="table-light">
+                    <tr>
+                        <th>Xom ashyo</th>
+                        <th>Retseptda (1 kg uchun)</th>
+                        <th>Shu buyurtma uchun (kg)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pi in production.production_items %}
+                    <tr>
+                        <td>
+                            <strong>{{ pi.product.name if pi.product else 'Noma\'lum' }}</strong>
+                            {% if pi.product %}<br><small class="text-muted"><code>{{ pi.product.barcode or pi.product.code or '-' }}</code></small>{% endif %}
+                        </td>
+                        <td>
+                            {% for ri in recipe.items %}
+                                {% if ri.product_id == pi.product_id %}
+                                {{ "%.3f"|format(ri.quantity) }} kg
+                                {% endif %}
+                            {% endfor %}
+                        </td>
+                        <td>
+                            {% if read_only %}
+                            {{ "%.3f"|format(pi.quantity) }} kg
+                            {% else %}
+                            <input type="number" name="qty_{{ pi.id }}" class="form-control form-control-sm" 
+                                   value="{{ "%.3f"|format(pi.quantity) }}" step="0.001" min="0" required style="max-width: 120px;">
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="3" class="text-center text-muted">Xom ashyo yo'q.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% if production.production_items and not read_only %}
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-check-lg"></i> Saqlash
+            </button>
+            <a href="/production/orders" class="btn btn-secondary">Bekor</a>
+            {% elif read_only %}
+            <a href="/production/orders" class="btn btn-secondary">Buyurtmalarga qaytish</a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+{% endblock %}

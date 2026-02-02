@@ -24,7 +24,7 @@
                 <table class="table table-sm">
                     <tr>
                         <td>Mahsulot:</td>
-                        <td><strong>{% if recipe.product_id %}Mahsulot #{{ recipe.product_id }}{% else %}-{% endif %}</strong></td>
+                        <td><strong>{% if recipe.product %}{{ recipe.product.name }}{% else %}-{% endif %}</strong></td>
                     </tr>
                     <tr>
                         <td>Chiqish miqdori:</td>
@@ -85,6 +85,7 @@
                             <th>Miqdor</th>
                             <th>Narx</th>
                             <th>Summa</th>
+                            <th width="100">Amallar</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -93,15 +94,24 @@
                             <td>{{ loop.index }}</td>
                             <td>
                                 <strong>{{ item.product.name if item.product else 'Noma\'lum' }}</strong>
-                                {% if item.product %}<br><small class="text-muted">{{ item.product.code }}</small>{% endif %}
+                                {% if item.product %}<br><small class="text-muted"><code>{{ item.product.barcode or item.product.code or '-' }}</code></small>{% endif %}
                             </td>
                             <td>{{ item.quantity }} kg</td>
                             <td>{{ "{:,.0f}".format(item.product.purchase_price) if item.product else 0 }} so'm</td>
                             <td><strong>{{ "{:,.0f}".format(item.quantity * item.product.purchase_price) if item.product else 0 }} so'm</strong></td>
+                            <td>
+                                <button type="button" class="btn btn-sm btn-outline-primary" title="Tahrirlash"
+                                    onclick="editItem({{ item.id }}, {{ item.product_id if item.product_id else 0 }}, {{ item.quantity }})">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <form method="POST" action="/production/recipes/{{ recipe.id }}/delete-item/{{ item.id }}" style="display:inline;" onsubmit="return confirm('Ushbu xom ashyoni tarkibdan o\'chirmoqchimisiz?');">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="O'chirish"><i class="bi bi-trash"></i></button>
+                                </form>
+                            </td>
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="5" class="text-center text-muted py-4">
+                            <td colspan="6" class="text-center text-muted py-4">
                                 <i class="bi bi-inbox fs-1"></i><br>
                                 Tarkib bo'sh. Xom ashyo qo'shing.
                             </td>
@@ -112,7 +122,7 @@
                     <tfoot class="table-light">
                         <tr>
                             <td colspan="4" class="text-end"><strong>Jami:</strong></td>
-                            <td>
+                            <td colspan="2">
                                 <strong class="text-primary">
                                     {% set total = namespace(value=0) %}
                                     {% for item in recipe.items %}
@@ -128,6 +138,39 @@
                     {% endif %}
                 </table>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tahrirlash modal -->
+<div class="modal fade" id="editItemModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" id="editItemForm">
+                <div class="modal-header">
+                    <h5 class="modal-title">Tarkib qatorini tahrirlash</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Xom ashyo</label>
+                        <select class="form-select" name="product_id" id="edit_product_id" required>
+                            <option value="">Tanlang...</option>
+                            {% for m in materials %}
+                            <option value="{{ m.id }}">{{ m.name }} ({{ m.code }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Miqdor (kg)</label>
+                        <input type="number" class="form-control" name="quantity" id="edit_quantity" step="0.001" min="0.001" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Saqlash</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -153,7 +196,7 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Miqdor (kg)</label>
-                        <input type="number" class="form-control" name="quantity" step="0.01" min="0.01" required>
+                        <input type="number" class="form-control" name="quantity" step="0.001" min="0.001" required>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -164,6 +207,15 @@
         </div>
     </div>
 </div>
+
+<script>
+function editItem(itemId, productId, quantity) {
+    document.getElementById('editItemForm').action = '/production/recipes/{{ recipe.id }}/edit-item/' + itemId;
+    document.getElementById('edit_product_id').value = productId || '';
+    document.getElementById('edit_quantity').value = quantity || '';
+    new bootstrap.Modal(document.getElementById('editItemModal')).show();
+}
+</script>
 
 <!-- Ishlab chiqarish modal -->
 <div class="modal fade" id="produceModal" tabindex="-1">

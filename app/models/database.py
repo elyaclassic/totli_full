@@ -378,6 +378,7 @@ class OrderItem(Base):
     total = Column(Float)
     
     order = relationship("Order", back_populates="items")
+    product = relationship("Product")
 
 
 # ==========================================

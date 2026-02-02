@@ -92,9 +92,9 @@
                                     data-sale-price="{{ product.sale_price or 0 }}">
                                     <i class="bi bi-pencil"></i>
                                 </button>
-                                <button class="btn btn-sm btn-outline-danger" title="O'chirish">
-                                    <i class="bi bi-trash"></i>
-                                </button>
+                                <form method="POST" action="/products/delete/{{ product.id }}" style="display:inline;" onsubmit="return confirm('Haqiqatan ham \"{{ product.name|e }}\" ni o\'chirmoqchimisiz?');">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="O'chirish"><i class="bi bi-trash"></i></button>
+                                </form>
                             </td>
                         </tr>
                         {% endfor %}

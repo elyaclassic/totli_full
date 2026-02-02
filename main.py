@@ -2638,7 +2638,7 @@ async def import_products(
 @app.get("/products", response_class=HTMLResponse)
 async def products_list(request: Request, type: str = "all", db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Tovarlar ro'yxati"""
-    query = db.query(Product)
+    query = db.query(Product).filter(Product.is_active == True)
     if type == "tayyor":
         query = query.filter(Product.type == "tayyor")
     elif type == "yarim_tayyor":
@@ -2728,6 +2728,21 @@ async def product_edit(
     product.barcode = barcode or None
     product.sale_price = sale_price
     product.purchase_price = purchase_price
+    db.commit()
+    return RedirectResponse(url="/products", status_code=303)
+
+
+@app.post("/products/delete/{product_id}")
+async def product_delete(
+    product_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Tovarni o'chirish (soft delete: is_active=False)"""
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Mahsulot topilmadi")
+    product.is_active = False
     db.commit()
     return RedirectResponse(url="/products", status_code=303)
 
@@ -3189,14 +3204,18 @@ async def import_partners(file: UploadFile = File(...), db: Session = Depends(ge
 # ==========================================
 
 @app.get("/sales", response_class=HTMLResponse)
-async def sales_list(request: Request, db: Session = Depends(get_db)):
+async def sales_list(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Sotuvlar ro'yxati"""
+    from urllib.parse import unquote
     orders = db.query(Order).filter(Order.type == "sale").order_by(Order.date.desc()).limit(100).all()
-    
+    error = request.query_params.get("error")
+    error_detail = unquote(request.query_params.get("detail", "") or "")
     return templates.TemplateResponse("sales/list.html", {
         "request": request,
         "orders": orders,
-        "page_title": "Sotuvlar"
+        "page_title": "Sotuvlar",
+        "error": error,
+        "error_detail": error_detail,
     })
 
 
@@ -3252,6 +3271,27 @@ async def sales_create(
     db.add(order)
     db.commit()
     return RedirectResponse(url=f"/sales/edit/{order.id}", status_code=303)
+
+
+@app.post("/sales/delete/{order_id}")
+async def sales_delete(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Sotuvni bekor qilish (faqat qoralama holatida)"""
+    order = db.query(Order).filter(Order.id == order_id, Order.type == "sale").first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Sotuv topilmadi")
+    if order.status != "draft":
+        from urllib.parse import quote
+        return RedirectResponse(
+            url="/sales?error=delete&detail=" + quote("Faqat qoralama holatidagi sotuvni bekor qilish mumkin."),
+            status_code=303
+        )
+    order.status = "cancelled"
+    db.commit()
+    return RedirectResponse(url="/sales", status_code=303)
 
 
 # ==========================================
@@ -3870,14 +3910,21 @@ async def production_revert(
     current_user: User = Depends(require_admin)
 ):
     """Tasdiqni bekor qilish (faqat admin): xom ashyoni qaytarish, tayyor mahsulotni olib tashlash, holatni qoralamaga o'tkazish"""
+    from urllib.parse import quote
     production = db.query(Production).filter(Production.id == prod_id).first()
     if not production:
         raise HTTPException(status_code=404, detail="Topilmadi")
     if production.status != "completed":
-        raise HTTPException(status_code=400, detail="Faqat yakunlangan buyurtmaning tasdiqini bekor qilish mumkin")
+        return RedirectResponse(
+            url="/production/orders?error=revert&detail=" + quote("Faqat yakunlangan buyurtmaning tasdiqini bekor qilish mumkin."),
+            status_code=303
+        )
     recipe = db.query(Recipe).filter(Recipe.id == production.recipe_id).first()
     if not recipe:
-        raise HTTPException(status_code=404, detail="Retsept topilmadi")
+        return RedirectResponse(
+            url="/production/orders?error=revert&detail=" + quote("Retsept topilmadi."),
+            status_code=303
+        )
     items_to_use = [(pi.product_id, pi.quantity) for pi in production.production_items] if production.production_items else [(item.product_id, item.quantity * production.quantity) for item in recipe.items]
     output_units = production.quantity * (recipe.output_quantity or 1)
     out_wh_id = production.output_warehouse_id if production.output_warehouse_id else production.warehouse_id
@@ -3887,9 +3934,9 @@ async def production_revert(
         Stock.product_id == recipe.product_id
     ).first()
     if not product_stock or product_stock.quantity < output_units:
-        raise HTTPException(
-            status_code=400,
-            detail="Omborda tayyor mahsulot yetarli emas yoki o'zgargan. Tasdiqni bekor qilish mumkin emas."
+        return RedirectResponse(
+            url="/production/orders?error=revert&detail=" + quote("Omborda tayyor mahsulot yetarli emas yoki o'zgargan. Tasdiqni bekor qilish mumkin emas."),
+            status_code=303
         )
     product_stock.quantity -= output_units
     # Xom ashyolarni 1-omborga qaytarish

@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% if error == "delete" and error_detail %}
+<div class="alert alert-warning alert-dismissible fade show" role="alert">
+    {{ error_detail }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
 <div class="row mb-4">
     <div class="col-12">
         <div class="card">
@@ -47,9 +53,11 @@
                                     <a href="/sales/edit/{{ order.id }}" class="btn btn-sm btn-outline-primary" title="Ko'rish">
                                         <i class="bi bi-eye"></i>
                                     </a>
-                                    <button class="btn btn-sm btn-outline-danger" title="O'chirish">
-                                        <i class="bi bi-trash"></i>
-                                    </button>
+                                    {% if order.status == 'draft' %}
+                                    <form method="POST" action="/sales/delete/{{ order.id }}" style="display:inline;" onsubmit="return confirm('Ushbu sotuvni bekor qilmoqchimisiz?');">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Bekor qilish"><i class="bi bi-trash"></i></button>
+                                    </form>
+                                    {% endif %}
                                 </td>
                             </tr>
                             {% endfor %}

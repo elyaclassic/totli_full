@@ -1,82 +1,124 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-building"></i> Omborlar</span>
-                <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addWarehouseModal">
-                    <i class="bi bi-plus-circle"></i> Yangi ombor
-                </button>
-            </div>
-            <div class="card-body">
-                <div class="row g-3">
-                    {% if warehouses %}
-                        {% for wh in warehouses %}
-                        <div class="col-md-4">
-                            <div class="card h-100">
-                                <div class="card-body">
-                                    <h5><i class="bi bi-building"></i> {{ wh.name }}</h5>
-                                    <p class="text-muted mb-0">{{ wh.address or 'Manzil ko\'rsatilmagan' }}</p>
-                                </div>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    {% else %}
-                        <div class="col-12 text-center text-muted py-4">
-                            <i class="bi bi-building fs-1 d-block mb-2"></i>
-                            Omborlar yo'q
-                        </div>
-                    {% endif %}
-                </div>
-            </div>
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-12">
+            <h4 class="mb-0"><i class="bi bi-box-seam"></i> Qaysi omborda nima bor</h4>
+            <p class="text-muted mb-0 small">Omborlar va ulardagi mahsulot qoldiqlari</p>
         </div>
     </div>
-</div>
 
-<!-- Qoldiqlar -->
-<div class="card">
-    <div class="card-header">
-        <i class="bi bi-boxes"></i> Ombor qoldiqlari
+    <!-- Ombor bo'yicha (qaysi omborda nima bor) -->
+    <div class="card mb-4">
+        <div class="card-header bg-light">
+            <i class="bi bi-building"></i> Ombor bo'yicha qoldiqlar
+        </div>
+        <div class="card-body p-0">
+            {% if warehouses %}
+            <div class="accordion accordion-flush" id="warehouseAccordion">
+                {% for wh in warehouses %}
+                {% set wh_stocks = stocks|selectattr('warehouse_id', 'eq', wh.id)|list %}
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#wh-{{ wh.id }}" aria-expanded="false">
+                            <strong>{{ wh.name }}</strong>
+                            <span class="badge bg-secondary ms-2">{{ wh_stocks|length }} ta mahsulot</span>
+                        </button>
+                    </h2>
+                    <div id="wh-{{ wh.id }}" class="accordion-collapse collapse" data-bs-parent="#warehouseAccordion">
+                        <div class="accordion-body p-0">
+                            <table class="table table-sm table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Mahsulot</th>
+                                        <th>Qoldiq</th>
+                                        <th>Tannarx</th>
+                                        <th>Summa</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% if wh_stocks %}
+                                        {% for stock in wh_stocks %}
+                                        <tr class="{% if stock.product and stock.quantity <= stock.product.min_stock %}table-warning{% endif %}">
+                                            <td>{{ loop.index }}</td>
+                                            <td>
+                                                <strong>{{ stock.product.name if stock.product else '-' }}</strong>
+                                                {% if stock.product and (stock.product.barcode or stock.product.code) %}
+                                                <br><small class="text-muted"><code>{{ stock.product.barcode or stock.product.code }}</code></small>
+                                                {% endif %}
+                                            </td>
+                                            <td class="fw-bold">{{ "{:,.2f}".format(stock.quantity) }}</td>
+                                            <td>{{ "{:,.0f}".format(stock.product.purchase_price if stock.product else 0) }} so'm</td>
+                                            <td class="text-success">{{ "{:,.0f}".format(stock.quantity * (stock.product.purchase_price if stock.product else 0)) }} so'm</td>
+                                        </tr>
+                                        {% endfor %}
+                                    {% else %}
+                                        <tr><td colspan="5" class="text-center text-muted py-3">Bu omborda hozircha qoldiq yo'q</td></tr>
+                                    {% endif %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-center text-muted py-5">Omborlar yo'q</div>
+            {% endif %}
+        </div>
     </div>
-    <div class="card-body p-0">
-        <table class="table table-hover">
-            <thead class="table-light">
-                <tr>
-                    <th>#</th>
-                    <th>Tovar</th>
-                    <th>Ombor</th>
-                    <th>Qoldiq</th>
-                    <th>Tannarx</th>
-                    <th>Summa</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% if stocks %}
-                    {% for stock in stocks %}
-                    <tr class="{% if stock.quantity <= stock.product.min_stock %}table-warning{% endif %}">
-                        <td>{{ loop.index }}</td>
-                        <td>
-                            <strong>{{ stock.product.name }}</strong>
-                            <br><small class="text-muted">{{ stock.product.code }}</small>
-                        </td>
-                        <td>{{ stock.warehouse.name }}</td>
-                        <td class="fw-bold">{{ "{:,.2f}".format(stock.quantity) }}</td>
-                        <td>{{ "{:,.0f}".format(stock.avg_cost) }}</td>
-                        <td class="text-success">{{ "{:,.0f}".format(stock.quantity * stock.avg_cost) }}</td>
-                    </tr>
-                    {% endfor %}
-                {% else %}
+
+    <!-- Barcha qoldiqlar jadvali -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-boxes"></i> Barcha ombor qoldiqlari (umumiy jadval)</span>
+            <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addWarehouseModal">
+                <i class="bi bi-plus-circle"></i> Yangi ombor
+            </button>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-hover">
+                <thead class="table-light">
                     <tr>
-                        <td colspan="6" class="text-center text-muted py-5">
-                            <i class="bi bi-boxes fs-1 d-block mb-2"></i>
-                            Qoldiqlar topilmadi
-                        </td>
+                        <th>#</th>
+                        <th>Tovar</th>
+                        <th>Ombor</th>
+                        <th>Qoldiq</th>
+                        <th>Tannarx</th>
+                        <th>Summa</th>
                     </tr>
-                {% endif %}
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    {% if stocks %}
+                        {% for stock in stocks %}
+                        <tr class="{% if stock.product and stock.quantity <= stock.product.min_stock %}table-warning{% endif %}">
+                            <td>{{ loop.index }}</td>
+                            <td>
+                                <strong>{{ stock.product.name if stock.product else '-' }}</strong>
+                                {% if stock.product and (stock.product.barcode or stock.product.code) %}
+                                <br><small class="text-muted"><code>{{ stock.product.barcode or stock.product.code }}</code></small>
+                                {% endif %}
+                            </td>
+                            <td>{{ stock.warehouse.name if stock.warehouse else '-' }}</td>
+                            <td class="fw-bold">{{ "{:,.2f}".format(stock.quantity) }}</td>
+                            <td>{{ "{:,.0f}".format(stock.product.purchase_price if stock.product else 0) }} so'm</td>
+                            <td class="text-success">{{ "{:,.0f}".format(stock.quantity * (stock.product.purchase_price if stock.product else 0)) }} so'm</td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-5">
+                                <i class="bi bi-boxes fs-1 d-block mb-2"></i>
+                                Qoldiqlar topilmadi
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 
@@ -84,7 +126,7 @@
 <div class="modal fade" id="addWarehouseModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form action="/warehouse/add" method="POST">
+            <form action="/info/warehouses/add" method="POST">
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-plus-circle"></i> Yangi ombor</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
