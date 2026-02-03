@@ -659,7 +659,7 @@ class Notification(Base):
 # Bazani yaratish
 def init_db():
     Base.metadata.create_all(bind=engine)
-    print("✅ Database yaratildi!")
+    print("Database yaratildi!")
 
 
 if __name__ == "__main__":
