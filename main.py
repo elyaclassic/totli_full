@@ -2569,14 +2569,18 @@ async def products_import_get():
 
 @app.post("/products/import")
 async def import_products(
-    excel_file: UploadFile = File(..., description="Excel fayl"),
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth)
 ):
     """Excel dan tovarlarni import. Andoza: ID, Kod, Nomi, Turi, O'lchov, Sotish narxi, Olish narxi (kategoriya yo'q)."""
     from urllib.parse import quote
+    form = await request.form()
+    file = form.get("file") or form.get("excel_file")
+    if not file or not getattr(file, "filename", None):
+        return RedirectResponse(url="/products?error=import&detail=" + quote("Excel fayl tanlang"), status_code=303)
     try:
-        contents = await excel_file.read()
+        contents = await file.read()
         if not contents:
             return RedirectResponse(url="/products?error=import&detail=" + quote("Fayl bo'sh"), status_code=303)
         wb = openpyxl.load_workbook(io.BytesIO(contents), read_only=False, data_only=True)
