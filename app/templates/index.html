@@ -1,6 +1,12 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 
 {% block content %}
+{% if error == "admin_required" %}
+<div class="alert alert-warning alert-dismissible fade show" role="alert">
+    Faqat administrator foydalanuvchilar bo'limiga kirishi mumkin.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
 <!-- Statistika kartalar -->
 <div class="row row-cols-1 row-cols-md-4 g-4 mb-4">
     <div class="col">
@@ -133,7 +139,7 @@
                 <table class="table table-hover">
                     <thead class="table-light">
                         <tr>
-                            <th>в„–</th>
+                            <th>№</th>
                             <th>Sana</th>
                             <th>Mijoz</th>
                             <th>Summa</th>
@@ -141,13 +147,24 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <!-- Bo'sh holat -->
+                        {% if recent_sales %}
+                        {% for s in recent_sales %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td>{{ s.created_at.strftime('%d.%m.%Y %H:%M') if s.created_at else '-' }}</td>
+                            <td>{{ s.partner.name if s.partner else 'Noma\'lum' }}</td>
+                            <td>{{ "{:,.0f}".format(s.total) }}</td>
+                            <td><span class="badge bg-{{ 'success' if s.status == 'completed' else 'warning' }}">{{ s.status or 'Jarayonda' }}</span></td>
+                        </tr>
+                        {% endfor %}
+                        {% else %}
                         <tr>
                             <td colspan="5" class="text-center text-muted py-4">
                                 <i class="bi bi-inbox fs-1 d-block mb-2"></i>
                                 Hozircha sotuvlar yo'q
                             </td>
                         </tr>
+                        {% endif %}
                     </tbody>
                 </table>
             </div>
@@ -162,7 +179,7 @@
             <div class="card-body">
                 <div class="alert alert-warning mb-2">
                     <i class="bi bi-exclamation-triangle"></i>
-                    <small>Kam qolgan tovarlar: <strong>0</strong></small>
+                    <small>Kam qolgan tovarlar: <strong>{{ low_stock_count|default(0) }}</strong></small>
                 </div>
                 <div class="alert alert-info mb-2">
                     <i class="bi bi-info-circle"></i>

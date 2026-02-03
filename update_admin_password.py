@@ -12,8 +12,8 @@ def update_admin_password():
     admin = db.query(User).filter(User.username == "admin").first()
     
     if not admin:
-        print("❌ Admin foydalanuvchisi topilmadi!")
-        print("💡 Iltimos, avval admin foydalanuvchisini yarating.")
+        print("Xato: Admin foydalanuvchisi topilmadi!")
+        print("Iltimos, avval admin foydalanuvchisini yarating.")
         return
     
     # Parolni hash qilish
@@ -21,10 +21,10 @@ def update_admin_password():
     admin.password_hash = new_password_hash
     
     db.commit()
-    print("✅ Admin parol muvaffaqiyatli yangilandi!")
-    print(f"   Username: admin")
-    print(f"   Password: admin123")
-    print(f"   Hash: {new_password_hash[:50]}...")
+    print("OK: Admin parol muvaffaqiyatli yangilandi!")
+    print("   Username: admin")
+    print("   Password: admin123")
+    print("   Hash:", new_password_hash[:50] + "...")
     
     db.close()
 

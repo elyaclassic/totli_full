@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h4><i class="bi bi-currency-exchange"></i> Narxni o'rnatish</h4>
+                <a href="/info" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Ma'lumotnomalar</a>
+            </div>
+            <p class="text-muted mb-0 small">Mahsulot tannarxi (sotib olish) va har bir <strong>narx turi</strong> bo'yicha sotuv narxini shu yerdan o'rnating. Savdo vaqtida narx turini tanlaysiz.</p>
+        </div>
+    </div>
+
+    {% if price_types %}
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <label class="form-label me-2 mb-0">Narx turi:</label>
+            <div class="d-flex flex-wrap gap-2">
+                {% for pt in price_types %}
+                <a href="/info/prices?price_type_id={{ pt.id }}" class="btn btn-sm {% if current_price_type_id == pt.id %}btn-primary{% else %}btn-outline-secondary{% endif %}">{{ pt.name }}</a>
+                {% endfor %}
+            </div>
+            <small class="text-muted">Narx turlarini <a href="/info/price-types">bu yerdan</a> boshqaring.</small>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+        <div class="card-body">
+            <table class="table table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th width="50">#</th>
+                        <th>Mahsulot</th>
+                        <th>Turi</th>
+                        <th width="160">Tannarx (so'm)</th>
+                        <th width="180">Sotuv narxi (so'm) {% if current_price_type_id %}<small class="text-muted">— tanlangan narx turi</small>{% endif %}</th>
+                        <th width="100">Amallar</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if products %}
+                    {% for product in products %}
+                    {% set sale_price_val = product_prices_by_type.get(product.id) if product_prices_by_type is defined else product.sale_price %}
+                    {% if sale_price_val is none %}{% set sale_price_val = product.sale_price %}{% endif %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>
+                            <strong>{{ product.name }}</strong>
+                            {% if product.barcode %}<br><small class="text-muted"><code>{{ product.barcode }}</code></small>{% endif %}
+                        </td>
+                        <td>
+                            {% if product.type == 'tayyor' %}Tayyor{% elif product.type == 'yarim_tayyor' %}Yarim tayyor{% elif product.type == 'hom_ashyo' %}Xom ashyo{% else %}-{% endif %}
+                        </td>
+                        <td>{{ "{:,.0f}".format(product.purchase_price or 0) }}</td>
+                        <td>{{ "{:,.0f}".format(sale_price_val or 0) }}</td>
+                        <td>
+                            <button type="button" class="btn btn-sm btn-outline-primary" title="Narxni tahrirlash"
+                                onclick='editPrice({{ product.id }}, {{ product.name|tojson }}, {{ product.purchase_price or 0 }}, {{ sale_price_val or 0 }}, {{ current_price_type_id if current_price_type_id is not none else "null" }})'>
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-5">
+                            <i class="bi bi-currency-exchange fs-1 d-block mb-2"></i>
+                            {% if not price_types %}
+                            Avval <a href="/info/price-types">Narx turlari</a>ni qo'shing, keyin mahsulot narxlarini kiriting.
+                            {% else %}
+                            Mahsulotlar yo'q. <a href="/products">Tovarlar</a> bo'limida mahsulot qo'shing.
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Narxni tahrirlash modal -->
+<div class="modal fade" id="editPriceModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" id="editPriceForm">
+                <input type="hidden" name="price_type_id" id="editPriceTypeId" value="">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil"></i> Narxni tahrirlash</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-3"><strong id="editProductName"></strong></p>
+                    <div class="mb-3">
+                        <label class="form-label">Tannarx (so'm)</label>
+                        <input type="number" name="purchase_price" id="editPurchasePrice" class="form-control" step="0.01" min="0" value="0">
+                        <small class="text-muted">Sotib olish narxi (tovar kirimida o'rnatiladi)</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Sotuv narxi (so'm)</label>
+                        <input type="number" name="sale_price" id="editSalePrice" class="form-control" step="0.01" min="0" value="0">
+                        <small class="text-muted">Tanlangan narx turi bo'yicha sotuv narxi</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor qilish</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Saqlash</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function editPrice(productId, productName, purchasePrice, salePrice, priceTypeId) {
+    document.getElementById('editProductName').textContent = productName;
+    document.getElementById('editPurchasePrice').value = purchasePrice;
+    document.getElementById('editSalePrice').value = salePrice;
+    document.getElementById('editPriceTypeId').value = priceTypeId || '';
+    document.getElementById('editPriceForm').action = '/info/prices/edit/' + productId;
+    new bootstrap.Modal(document.getElementById('editPriceModal')).show();
+}
+</script>
+{% endblock %}

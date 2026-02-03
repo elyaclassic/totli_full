@@ -24,7 +24,7 @@
                     {% for stock in stocks %}
                     <tr class="{% if stock.quantity <= stock.product.min_stock %}table-warning{% endif %}">
                         <td>{{ loop.index }}</td>
-                        <td><code>{{ stock.product.code }}</code></td>
+                        <td><code>{{ stock.product.barcode or stock.product.code or '-' }}</code></td>
                         <td>
                             <strong>{{ stock.product.name }}</strong>
                             {% if stock.quantity <= stock.product.min_stock %}

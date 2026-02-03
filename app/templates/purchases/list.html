@@ -61,9 +61,19 @@
                                 {% endif %}
                             </td>
                             <td>
-                                <a href="/purchases/edit/{{ purchase.id }}" class="btn btn-sm btn-outline-primary">
+                                {% if purchase.status == 'draft' or (current_user and current_user.role == 'admin') %}
+                                <a href="/purchases/edit/{{ purchase.id }}" class="btn btn-sm btn-outline-primary" title="Tahrirlash">
                                     <i class="bi bi-pencil"></i>
                                 </a>
+                                {% endif %}
+                                {% if purchase.status == 'confirmed' and current_user and current_user.role == 'admin' %}
+                                <form method="POST" action="/purchases/{{ purchase.id }}/revert" style="display: inline;" class="d-inline">
+                                    <button type="submit" class="btn btn-sm btn-outline-warning" title="Tasdiqni bekor qilish"
+                                        onclick="return confirm('Tasdiqni bekor qilish — ombor qoldig\'i kamayadi. Davom etasizmi?');">
+                                        <i class="bi bi-arrow-counterclockwise"></i>
+                                    </button>
+                                </form>
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}

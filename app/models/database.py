@@ -1,10 +1,14 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, Date
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Boolean, ForeignKey, Text, Date, UniqueConstraint
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base
 from datetime import datetime
+import os
 
 Base = declarative_base()
 
-DATABASE_URL = "sqlite:///./totli_holva.db"
+# Loyiha ildizidagi baza (qayerdan ishga tushirilmasa ham bir xil fayl)
+_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_db_path = os.path.join(_root, "totli_holva.db")
+DATABASE_URL = f"sqlite:///{_db_path}"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -37,6 +41,8 @@ class Purchase(Base):
     created_at = Column(DateTime, default=datetime.now)
 
     items = relationship("PurchaseItem", back_populates="purchase")
+    partner = relationship("Partner")
+    warehouse = relationship("Warehouse")
 
 class PurchaseItem(Base):
     """Kirim qatorlari"""
@@ -48,6 +54,7 @@ class PurchaseItem(Base):
     price = Column(Float)
     total = Column(Float)
     purchase = relationship("Purchase", back_populates="items")
+    product = relationship("Product")
 
 
 
@@ -121,6 +128,29 @@ class Product(Base):
     unit = relationship("Unit", back_populates="products")
     stock_items = relationship("Stock", back_populates="product")
     recipe_items = relationship("RecipeItem", back_populates="product")
+    product_prices = relationship("ProductPrice", back_populates="product", cascade="all, delete-orphan")
+
+
+class PriceType(Base):
+    """Narx turlari (Chakana, Ulgurji, VIP va h.k.) — har bir mijoz turi uchun narx"""
+    __tablename__ = "price_types"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    code = Column(String(20), unique=True, index=True, nullable=True)
+    is_active = Column(Boolean, default=True)
+    product_prices = relationship("ProductPrice", back_populates="price_type")
+
+
+class ProductPrice(Base):
+    """Mahsulot narxi narx turi bo'yicha (har bir tur uchun alohida sotuv narxi)"""
+    __tablename__ = "product_prices"
+    __table_args__ = (UniqueConstraint("product_id", "price_type_id", name="uq_product_price_type"),)
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    price_type_id = Column(Integer, ForeignKey("price_types.id"), nullable=False)
+    sale_price = Column(Float, default=0)
+    product = relationship("Product", back_populates="product_prices")
+    price_type = relationship("PriceType", back_populates="product_prices")
 
 
 # ==========================================
@@ -170,6 +200,7 @@ class Recipe(Base):
     description = Column(Text)
     is_active = Column(Boolean, default=True)
     
+    product = relationship("Product")
     items = relationship("RecipeItem", back_populates="recipe")
 
 
@@ -194,12 +225,31 @@ class Production(Base):
     number = Column(String(50), unique=True, index=True)
     date = Column(DateTime, default=datetime.now)
     recipe_id = Column(Integer, ForeignKey("recipes.id"))
-    warehouse_id = Column(Integer, ForeignKey("warehouses.id"))
-    quantity = Column(Float)  # Ishlab chiqarilgan miqdor
+    warehouse_id = Column(Integer, ForeignKey("warehouses.id"))  # 1-ombor: xom ashyo ombori (material shu yerdan olinadi)
+    output_warehouse_id = Column(Integer, ForeignKey("warehouses.id"), nullable=True)  # 2-ombor: yarim tayyor ombori (mahsulot shu yerga yoziladi)
+    quantity = Column(Float)  # Ishlab chiqarilgan miqdor (o'zgarmaydi)
     status = Column(String(20), default="draft")  # draft, completed, cancelled
     user_id = Column(Integer, ForeignKey("users.id"))
     note = Column(Text)
     created_at = Column(DateTime, default=datetime.now)
+
+    recipe = relationship("Recipe")
+    warehouse = relationship("Warehouse", foreign_keys=[warehouse_id])
+    output_warehouse = relationship("Warehouse", foreign_keys=[output_warehouse_id])
+    production_items = relationship("ProductionItem", back_populates="production", cascade="all, delete-orphan")
+
+
+class ProductionItem(Base):
+    """Ishlab chiqarish buyurtmasidagi xom ashyo miqdori (shu buyurtma uchun tahrirlanadi, retsept o'zgarmaydi)"""
+    __tablename__ = "production_items"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    production_id = Column(Integer, ForeignKey("productions.id"))
+    product_id = Column(Integer, ForeignKey("products.id"))
+    quantity = Column(Float)  # Shu buyurtma uchun ishlatiladigan miqdor (kg)
+
+    production = relationship("Production", back_populates="production_items")
+    product = relationship("Product")
 
 
 class Machine(Base):
@@ -299,6 +349,7 @@ class Order(Base):
     type = Column(String(20))  # sale, purchase, return_sale, return_purchase
     partner_id = Column(Integer, ForeignKey("partners.id"))
     warehouse_id = Column(Integer, ForeignKey("warehouses.id"))
+    price_type_id = Column(Integer, ForeignKey("price_types.id"), nullable=True)  # Sotuvda qaysi narx turi ishlatiladi
     user_id = Column(Integer, ForeignKey("users.id"))
     subtotal = Column(Float, default=0)  # Jami (chegirmasiz)
     discount_percent = Column(Float, default=0)
@@ -312,6 +363,7 @@ class Order(Base):
     
     partner = relationship("Partner", back_populates="orders")
     items = relationship("OrderItem", back_populates="order")
+    price_type = relationship("PriceType")
 
 
 class OrderItem(Base):
@@ -327,6 +379,7 @@ class OrderItem(Base):
     total = Column(Float)
     
     order = relationship("Order", back_populates="items")
+    product = relationship("Product")
 
 
 # ==========================================

@@ -33,13 +33,32 @@
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label">Ombor <span class="text-danger">*</span></label>
-                            <select class="form-select" name="warehouse_id" required>
-                                {% for wh in warehouses %}
+                            <label class="form-label">1-ombor: Xom ashyo ombori <span class="text-danger">*</span></label>
+                            {% set wh_list = warehouses or [] %}
+                            {% if not wh_list %}
+                            <div class="alert alert-warning py-2 mb-0"><small><i class="bi bi-exclamation-triangle"></i> <a href="/info/warehouses">Ma'lumotnomalar → Omborlar</a> orqali ombor qo'shing.</small></div>
+                            {% endif %}
+                            <select class="form-select" name="warehouse_id" required title="Xom ashyo shu ombordan olinadi" {% if not wh_list %}disabled{% endif %}>
+                                <option value="">Tanlang...</option>
+                                {% for wh in wh_list %}
                                 <option value="{{ wh.id }}">{{ wh.name }}</option>
                                 {% endfor %}
                             </select>
+                            <small class="text-muted">Xom ashyo shu ombordan olinadi</small>
                         </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">2-ombor: Yarim tayyor mahsulot ombori <span class="text-danger">*</span></label>
+                            <select class="form-select" name="output_warehouse_id" required title="Tayyor mahsulot shu omborga yoziladi" {% if not wh_list %}disabled{% endif %}>
+                                <option value="">Tanlang...</option>
+                                {% for wh in wh_list %}
+                                <option value="{{ wh.id }}">{{ wh.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <small class="text-muted">Ishlab chiqarilgan mahsulot shu omborga jo'natiladi</small>
+                        </div>
+                        <div class="col-md-6"></div>
                     </div>
                     
                     <div class="row mb-3">
@@ -123,7 +142,8 @@ var recipes = {
             {% for item in recipe.items %}
             {
                 name: "{{ item.product.name if item.product else 'Noma\'lum' }}",
-                quantity: {{ item.quantity }}
+                quantity: {{ item.quantity }},
+                product_id: {{ item.product_id }}
             }{% if not loop.last %},{% endif %}
             {% endfor %}
         ]

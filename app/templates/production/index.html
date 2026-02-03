@@ -85,10 +85,33 @@
                         </select>
                     </div>
                     <div class="mb-3">
+                        <label class="form-label">1-ombor: Xom ashyo ombori</label>
+                        {% set wh_list = warehouses or [] %}
+                        {% if not wh_list %}
+                        <div class="alert alert-warning py-2 mb-0">
+                            <small><i class="bi bi-exclamation-triangle"></i> Omborlar ro'yxati bo'sh. Avval <a href="/info/warehouses">Ma'lumotnomalar → Omborlar</a> orqali ombor qo'shing.</small>
+                        </div>
+                        {% endif %}
+                        <select class="form-select" name="warehouse_id" required {% if not wh_list %}disabled{% endif %}>
+                            <option value="">Tanlang...</option>
+                            {% for wh in wh_list %}
+                            <option value="{{ wh.id }}">{{ wh.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">2-ombor: Yarim tayyor ombori</label>
+                        <select class="form-select" name="output_warehouse_id" required {% if not wh_list %}disabled{% endif %}>
+                            <option value="">Tanlang...</option>
+                            {% for wh in wh_list %}
+                            <option value="{{ wh.id }}">{{ wh.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
                         <label class="form-label">Miqdori (kg)</label>
                         <input type="number" class="form-control" name="quantity" step="0.1" min="0.1" value="10" required>
                     </div>
-                    <input type="hidden" name="warehouse_id" value="1">
                     <button type="submit" class="btn btn-success w-100">
                         <i class="bi bi-play-fill"></i> Boshlash
                     </button>
@@ -140,14 +163,14 @@
                         <tr>
                             <td><strong>{{ prod.number }}</strong></td>
                             <td>
-                                {% if prod.recipe_id %}
-                                Retsept #{{ prod.recipe_id }}
+                                {% if prod.recipe %}
+                                <a href="/production/recipes/{{ prod.recipe_id }}">{{ prod.recipe.name }}</a>
                                 {% else %}
                                 -
                                 {% endif %}
                             </td>
                             <td>{{ "%.1f"|format(prod.quantity) }} kg</td>
-                            <td>{{ prod.date.strftime('%d.%m.%Y %H:%M') }}</td>
+                            <td>{{ prod.date.strftime('%d.%m.%Y %H:%M') if prod.date else '-' }}</td>
                             <td>
                                 {% if prod.status == 'completed' %}
                                 <span class="badge bg-success">Yakunlandi</span>

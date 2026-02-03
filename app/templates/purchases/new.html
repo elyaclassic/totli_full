@@ -43,7 +43,7 @@
             <h5 class="mb-0">Yangi tovar kirimi</h5>
         </div>
         <div class="card-body">
-            <form method="POST" action="/purchases/create">
+            <form method="POST" action="/purchases/create" id="purchaseCreateForm">
                 <div class="row">
                     <div class="col-md-6">
                         <div class="mb-3 position-relative">
@@ -218,6 +218,18 @@
     document.addEventListener('click', function (e) {
         if (!partnerInput.contains(e.target) && !searchResults.contains(e.target)) {
             searchResults.style.display = 'none';
+        }
+    });
+
+    // Form yuborishdan oldin ta'minotchi tanlanganligini tekshirish
+    document.getElementById('purchaseCreateForm').addEventListener('submit', function (e) {
+        const pid = (partnerIdHidden.value || '').trim();
+        if (!pid) {
+            e.preventDefault();
+            partnerInput.focus();
+            partnerInput.select();
+            showNotification('Ta\'minotchini ro\'yxatdan tanlang: qidiruv natijasidan bittasini bosing.', 'warning');
+            return;
         }
     });
 

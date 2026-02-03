@@ -10,37 +10,34 @@
                 <li><a href="/info/cash" class="btn btn-outline-dark w-100 mb-2">Kassa</a></li>
                 <li><a href="/info/departments" class="btn btn-outline-dark w-100 mb-2">Bo'limlar</a></li>
                 <li><a href="/info/warehouses" class="btn btn-outline-dark w-100 mb-2">Omborlar</a></li>
-                <li><a href="/info/org" class="btn btn-outline-dark w-100 mb-2">Tashkilot</a></li>
                 <li><a href="/info/directions" class="btn btn-outline-dark w-100 mb-2">Yo'nalishlar</a></li>
             </ul>
         </div>
         <div class="col-md-3">
             <h4 class="text-danger">Xodimlar ma'lumotlari</h4>
             <ul class="list-unstyled">
-                <li><a href="/info/positions" class="btn btn-outline-dark w-100 mb-2">Lavozim</a></li>
-                <li><a href="/info/employees" class="btn btn-outline-dark w-100 mb-2">Xodimlar</a></li>
+                <li><a href="/info/positions" class="btn btn-outline-dark w-100 mb-2">Lavozimlar</a></li>
+                <li><a href="/employees" class="btn btn-outline-dark w-100 mb-2">Xodimlar</a></li>
+                {% if current_user and current_user.role == "admin" %}
                 <li><a href="/info/users" class="btn btn-outline-dark w-100 mb-2">Foydalanuvchi</a></li>
-                <li><a href="/info/schedule" class="btn btn-outline-dark w-100 mb-2">Ish tartibi</a></li>
-                <li><a href="/info/additional" class="btn btn-outline-dark w-100 mb-2">Qo'shimchalar va ushlanmalar</a></li>
+                {% endif %}
             </ul>
         </div>
         <div class="col-md-3">
             <h4 class="text-danger">Tovar ma'lumotlari</h4>
             <ul class="list-unstyled">
-                <li><a href="/info/products" class="btn btn-outline-dark w-100 mb-2">Tovarlar</a></li>
-                <li><a href="/info/packages" class="btn btn-outline-dark w-100 mb-2">Qadoqlar</a></li>
+                <li><a href="/products" class="btn btn-outline-dark w-100 mb-2">Tovarlar</a></li>
+                <li><a href="/info/price-types" class="btn btn-outline-dark w-100 mb-2">Narx turlari</a></li>
+                <li><a href="/info/prices" class="btn btn-outline-dark w-100 mb-2">Narxni o'rnatish</a></li>
                 <li><a href="/info/units" class="btn btn-outline-dark w-100 mb-2">O'lchov birligi</a></li>
+                <li><a href="/info/categories" class="btn btn-outline-dark w-100 mb-2">Kategoriyalar</a></li>
             </ul>
         </div>
         <div class="col-md-3">
             <h4 class="text-danger">Qo'shimcha ma'lumotlar</h4>
             <ul class="list-unstyled">
-                <li><a href="/info/districts" class="btn btn-outline-dark w-100 mb-2">Tumanlar</a></li>
-                <li><a href="/info/regions" class="btn btn-outline-dark w-100 mb-2">Viloyatlar</a></li>
-                <li><a href="/info/partners" class="btn btn-outline-dark w-100 mb-2">Kontragentlar</a></li>
-                <li><a href="/info/specs" class="btn btn-outline-dark w-100 mb-2">Texnik xususiyat</a></li>
-                <li><a href="/info/expenses" class="btn btn-outline-dark w-100 mb-2">Harajat turlari</a></li>
-                <li><a href="/info/stages" class="btn btn-outline-dark w-100 mb-2">Ishlab chiqarish bosqichi</a></li>
+                <li><a href="/info/regions" class="btn btn-outline-dark w-100 mb-2">Hududlar (Viloyatlar)</a></li>
+                <li><a href="/partners" class="btn btn-outline-dark w-100 mb-2">Kontragentlar</a></li>
             </ul>
         </div>
     </div>
