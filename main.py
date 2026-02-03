@@ -3265,12 +3265,19 @@ async def sales_create(
     partner_id: int = Form(...),
     warehouse_id: int = Form(...),
     price_type_id: Optional[int] = Form(None),
-    product_id: Optional[List[int]] = Form(None),
-    quantity: Optional[List[float]] = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth)
 ):
     """Sotuv yaratish — narx turi saqlanadi; savatdagi mahsulotlar bo'lsa ular ham qo'shiladi"""
+    form = await request.form()
+    product_ids = [int(x) for x in form.getlist("product_id") if str(x).strip().isdigit()]
+    quantities_raw = form.getlist("quantity")
+    quantities = []
+    for q in quantities_raw:
+        try:
+            quantities.append(float(q))
+        except (ValueError, TypeError):
+            pass
     last_order = db.query(Order).filter(Order.type == "sale").order_by(Order.id.desc()).first()
     new_number = f"S-{datetime.now().strftime('%Y%m%d')}-{(last_order.id + 1) if last_order else 1:04d}"
     order = Order(
@@ -3284,8 +3291,6 @@ async def sales_create(
     db.add(order)
     db.commit()
     db.refresh(order)
-    product_ids = product_id if isinstance(product_id, list) else ([product_id] if product_id is not None else [])
-    quantities = quantity if isinstance(quantity, list) else ([quantity] if quantity is not None else [])
     for i in range(min(len(product_ids), len(quantities))):
         pid, qty = product_ids[i], float(quantities[i])
         if pid and qty > 0:
@@ -3362,6 +3367,48 @@ async def sales_add_item(
     db.add(item)
     order.subtotal = (order.subtotal or 0) + total_row
     order.total = (order.total or 0) + total_row
+    db.commit()
+    return RedirectResponse(url=f"/sales/edit/{order_id}", status_code=303)
+
+
+@app.post("/sales/{order_id}/add-items")
+async def sales_add_items(
+    request: Request,
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Sotuvga savatdagi barcha mahsulotlarni bir harakatda qo'shish"""
+    order = db.query(Order).filter(Order.id == order_id, Order.type == "sale").first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Sotuv topilmadi")
+    if order.status != "draft":
+        return RedirectResponse(url=f"/sales/edit/{order_id}", status_code=303)
+    form = await request.form()
+    product_ids = [int(x) for x in form.getlist("product_id") if str(x).strip().isdigit()]
+    quantities_raw = form.getlist("quantity")
+    quantities = []
+    for q in quantities_raw:
+        try:
+            quantities.append(float(q))
+        except (ValueError, TypeError):
+            pass
+    for i in range(min(len(product_ids), len(quantities))):
+        pid, qty = product_ids[i], quantities[i]
+        if not pid or qty <= 0:
+            continue
+        price = 0
+        pp = db.query(ProductPrice).filter(ProductPrice.product_id == pid, ProductPrice.price_type_id == order.price_type_id).first()
+        if pp:
+            price = pp.sale_price or 0
+        if not price:
+            prod = db.query(Product).filter(Product.id == pid).first()
+            price = (prod.sale_price or prod.purchase_price or 0) if prod else 0
+        total_row = qty * price
+        item = OrderItem(order_id=order_id, product_id=pid, quantity=qty, price=price, total=total_row)
+        db.add(item)
+        order.subtotal = (order.subtotal or 0) + total_row
+        order.total = (order.total or 0) + total_row
     db.commit()
     return RedirectResponse(url=f"/sales/edit/{order_id}", status_code=303)
 

@@ -80,30 +80,109 @@
 
         {% if order.status == 'draft' %}
         <div class="col-md-4">
-            <div class="card">
+            <div class="card mb-3">
                 <div class="card-header"><h6 class="mb-0">Mahsulot qo'shish</h6></div>
                 <div class="card-body">
-                    <form method="POST" action="/sales/{{ order.id }}/add-item">
-                        <div class="mb-3">
-                            <label class="form-label">Mahsulot</label>
-                            <select name="product_id" class="form-select" required>
-                                <option value="">Tanlang...</option>
-                                {% for product in products %}
-                                {% set pr = product_prices_by_type.get(product.id) if product_prices_by_type is defined else none %}
-                                {% set disp = (pr if (pr is not none and pr > 0) else (product.sale_price or 0)) %}
-                                <option value="{{ product.id }}" data-price="{{ disp }}">{{ product.name }} — {{ "{:,.0f}".format(disp) }} so'm</option>
-                                {% endfor %}
-                            </select>
+                    <div class="mb-3">
+                        <label class="form-label">Mahsulot</label>
+                        <select class="form-select" id="editAddProductId">
+                            <option value="">Tanlang...</option>
+                            {% for product in products %}
+                            {% set pr = product_prices_by_type.get(product.id) if product_prices_by_type is defined else none %}
+                            {% set disp = (pr if (pr is not none and pr > 0) else (product.sale_price or 0)) %}
+                            <option value="{{ product.id }}" data-name="{{ product.name|e }}" data-price="{{ disp }}">{{ product.name }} — {{ "{:,.0f}".format(disp) }} so'm</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Miqdor</label>
+                        <input type="number" class="form-control" id="editAddQuantity" step="0.01" min="0" value="1">
+                    </div>
+                    <button type="button" class="btn btn-primary w-100" id="editBtnAddToCart"><i class="bi bi-plus-circle"></i> Savatga qo'shish</button>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-basket"></i> Savat</span>
+                </div>
+                <div class="card-body">
+                    <form id="editAddItemsForm" method="POST" action="/sales/{{ order.id }}/add-items">
+                        <div id="editCartHiddenInputs"></div>
+                        <div class="table-responsive mb-3">
+                            <table class="table table-sm mb-0" id="editCartTable">
+                                <thead><tr><th>Mahsulot</th><th>Miqdor</th><th>Summa</th><th></th></tr></thead>
+                                <tbody id="editCartTableBody"></tbody>
+                            </table>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label">Miqdor</label>
-                            <input type="number" name="quantity" class="form-control" step="0.01" min="0.001" required>
-                        </div>
-                        <button type="submit" class="btn btn-primary w-100"><i class="bi bi-plus-circle"></i> Qo'shish</button>
+                        <p class="text-muted small text-center mb-2" id="editCartEmptyMsg">Savat bo'sh. Yuqoridan mahsulot tanlab «Savatga qo'shish» bosing.</p>
+                        <button type="submit" class="btn btn-success w-100" id="editBtnSubmitAll" disabled><i class="bi bi-check-lg"></i> Barchasini buyurtmaga qo'shish</button>
                     </form>
                 </div>
             </div>
         </div>
+        <script>
+        (function() {
+            var form = document.getElementById('editAddItemsForm');
+            var cartHidden = document.getElementById('editCartHiddenInputs');
+            var addProductId = document.getElementById('editAddProductId');
+            var addQuantity = document.getElementById('editAddQuantity');
+            var btnAdd = document.getElementById('editBtnAddToCart');
+            var cartBody = document.getElementById('editCartTableBody');
+            var cartEmptyMsg = document.getElementById('editCartEmptyMsg');
+            var btnSubmitAll = document.getElementById('editBtnSubmitAll');
+            var cart = [];
+
+            function addToCart(productId, productName, price, quantity) {
+                if (!productId || quantity <= 0) return;
+                price = parseFloat(price) || 0;
+                quantity = parseFloat(quantity) || 0;
+                var sum = price * quantity;
+                cart.push({ productId: productId, productName: productName, price: price, quantity: quantity, sum: sum });
+                renderCart();
+            }
+
+            function removeFromCart(index) {
+                cart.splice(index, 1);
+                renderCart();
+            }
+
+            function renderCart() {
+                cartBody.innerHTML = '';
+                cartHidden.innerHTML = '';
+                cart.forEach(function(item, i) {
+                    var tr = document.createElement('tr');
+                    tr.innerHTML = '<td>' + (item.productName || '') + '</td><td>' + item.quantity + '</td><td>' + (item.sum || 0).toLocaleString('ru-RU') + ' so\'m</td><td><button type="button" class="btn btn-sm btn-outline-danger" data-index="' + i + '"><i class="bi bi-trash"></i></button></td>';
+                    cartBody.appendChild(tr);
+                    var h1 = document.createElement('input');
+                    h1.type = 'hidden';
+                    h1.name = 'product_id';
+                    h1.value = item.productId;
+                    cartHidden.appendChild(h1);
+                    var h2 = document.createElement('input');
+                    h2.type = 'hidden';
+                    h2.name = 'quantity';
+                    h2.value = item.quantity;
+                    cartHidden.appendChild(h2);
+                });
+                cartBody.querySelectorAll('button[data-index]').forEach(function(btn) {
+                    btn.addEventListener('click', function() { removeFromCart(parseInt(this.getAttribute('data-index'), 10)); });
+                });
+                cartEmptyMsg.style.display = cart.length ? 'none' : 'block';
+                if (btnSubmitAll) btnSubmitAll.disabled = cart.length === 0;
+            }
+
+            if (btnAdd) {
+                btnAdd.addEventListener('click', function() {
+                    var opt = addProductId && addProductId.options[addProductId.selectedIndex];
+                    if (!opt || !opt.value) { alert('Mahsulotni tanlang'); return; }
+                    var qty = parseFloat(addQuantity && addQuantity.value) || 0;
+                    if (qty <= 0) { alert('Miqdorni kiriting'); return; }
+                    addToCart(opt.value, opt.getAttribute('data-name'), opt.getAttribute('data-price'), qty);
+                    if (addQuantity) addQuantity.value = '1';
+                });
+            }
+        })();
+        </script>
         {% endif %}
     </div>
 </div>
