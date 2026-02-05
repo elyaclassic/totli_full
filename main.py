@@ -21,7 +21,7 @@ from app.models.database import (
     get_db, init_db, SessionLocal,
     User, Product, Category, Unit, Warehouse, Stock,
     Partner, Order, OrderItem, Payment, CashRegister,
-    Recipe, RecipeItem, Production, ProductionItem, Machine, Employee, Salary,
+    Recipe, RecipeItem, Production, ProductionItem, ProductionStage, PRODUCTION_STAGE_NAMES, Machine, Employee, Salary,
     Agent, AgentLocation, Route, RoutePoint, Visit,
     Driver, DriverLocation, Delivery, PartnerLocation,
     Purchase, PurchaseItem, Department, Direction, Region, Position,
@@ -37,10 +37,71 @@ from app.utils.notifications import check_low_stock_and_notify
 from app.deps import get_current_user, require_auth, require_admin
 from app.core import templates
 from app.routes import auth as auth_routes
+from app.routes import home as home_routes
+from app.routes import reports as reports_routes
+from app.routes import info as info_routes
 
 app = FastAPI(title="TOTLI HOLVA", description="Biznes boshqaruv tizimi", version="1.0")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+# BaseExceptionGroup ni app.exception_handler ga qo'shmaslik: Starlette faqat Exception vorislarini qabul qiladi.
+# global_safe_middleware allaqachon BaseException (shu jumladan ExceptionGroup) ni ushlaydi.
 app.include_router(auth_routes.router)
+app.include_router(home_routes.router)
+app.include_router(reports_routes.router)
+app.include_router(info_routes.router)
+
+
+# ==========================================
+# GLOBAL FALLBACK - istalgan xatoda 500 o'rniga login (HTML)
+# ==========================================
+@app.middleware("http")
+async def global_safe_middleware(request: Request, call_next):
+    try:
+        response = await call_next(request)
+        try:
+            response.headers["X-Server-Source"] = "pwp"
+        except Exception:
+            pass
+        return response
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except BaseException as e:
+        tb = traceback.format_exc()
+        traceback.print_exc()
+        for _dir in [os.path.dirname(os.path.abspath(__file__)), os.getcwd(), r"C:\Users\ELYOR\.cursor\worktrees\business_system\pwp"]:
+            try:
+                if _dir:
+                    log_path = os.path.join(_dir, "server_error.log")
+                    with open(log_path, "a", encoding="utf-8") as f:
+                        f.write("\n--- [global_safe] %s ---\n%s\n" % (datetime.now().isoformat(), tb))
+                    break
+            except Exception:
+                continue
+        try:
+            path = (getattr(request, "url", None) and getattr(request.url, "path", None)) or getattr(request, "path", None) or "/"
+        except Exception:
+            path = "/"
+        if path == "/login" or path == "/favicon.ico":
+            r = JSONResponse(status_code=500, content={"detail": "Server xatosi"})
+        else:
+            try:
+                accept = getattr(request, "headers", None) and (request.headers.get("accept") or "")
+            except Exception:
+                accept = ""
+            if "text/html" in (accept or ""):
+                r = RedirectResponse(url="/login?error=please_retry", status_code=303)
+                try:
+                    r.delete_cookie("session_token", path="/")
+                except Exception:
+                    pass
+            else:
+                r = JSONResponse(status_code=500, content={"detail": "Server xatosi"})
+        try:
+            r.headers["X-Server-Source"] = "pwp"
+        except Exception:
+            pass
+        return r
 
 
 # ==========================================
@@ -48,19 +109,37 @@ app.include_router(auth_routes.router)
 # ==========================================
 @app.middleware("http")
 async def csrf_middleware(request: Request, call_next):
+    try:
+        return await _csrf_middleware_impl(request, call_next)
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return await call_next(request)
+
+
+async def _csrf_middleware_impl(request: Request, call_next):
     from urllib.parse import parse_qs
     from starlette.requests import Request as StarletteRequest
 
-    path = request.url.path
-    method = request.method.upper()
+    try:
+        path = (getattr(request, "url", None) and getattr(request.url, "path", None)) or getattr(request, "path", None) or "/"
+    except Exception:
+        path = "/"
+    method = (getattr(request, "method", None) or "GET")
+    if not isinstance(method, str):
+        method = "GET"
+    method = method.upper()
     # GET, HEAD, OPTIONS da CSRF tekshiruvi yo'q
     if method in ("GET", "HEAD", "OPTIONS"):
         token = request.cookies.get("csrf_token")
         if not token:
             token = generate_csrf_token()
-            request.state.csrf_token = token
-        else:
-            request.state.csrf_token = token
+        try:
+            setattr(request.state, "csrf_token", token)
+        except Exception:
+            pass
         response = await call_next(request)
         if not request.cookies.get("csrf_token"):
             response.set_cookie("csrf_token", token, path="/", httponly=False, samesite="lax", max_age=86400 * 7)
@@ -68,16 +147,20 @@ async def csrf_middleware(request: Request, call_next):
 
     # Himoyalanmaydigan yo'llar (API login, static, PWA location)
     if path in ("/login", "/api/agent/login", "/api/driver/login") or path.startswith("/static"):
-        request.state.csrf_token = request.cookies.get("csrf_token") or generate_csrf_token()
+        try:
+            setattr(request.state, "csrf_token", request.cookies.get("csrf_token") or generate_csrf_token())
+        except Exception:
+            pass
         return await call_next(request)
 
     # Cookie dan yoki yangi token
     token = request.cookies.get("csrf_token")
     if not token:
         token = generate_csrf_token()
-        request.state.csrf_token = token
-    else:
-        request.state.csrf_token = token
+    try:
+        setattr(request.state, "csrf_token", token)
+    except Exception:
+        pass
 
     # POST/PUT/PATCH/DELETE da token tekshirish
     received_token = request.headers.get("X-CSRF-Token")
@@ -89,7 +172,10 @@ async def csrf_middleware(request: Request, call_next):
         async def receive():
             return {"type": "http.request", "body": body}
         request = StarletteRequest(request.scope, receive)
-        request.state.csrf_token = token  # yangi request ga state nusxalash
+        try:
+            setattr(request.state, "csrf_token", token)
+        except Exception:
+            pass
     elif "multipart/form-data" in content_type and not received_token:
         body = await request.body()
         # multipart dan csrf_token ni qidirish (name="csrf_token" dan keyingi qiymat)
@@ -102,7 +188,10 @@ async def csrf_middleware(request: Request, call_next):
         async def receive():
             return {"type": "http.request", "body": body}
         request = StarletteRequest(request.scope, receive)
-        request.state.csrf_token = token  # multipart uchun ham state
+        try:
+            setattr(request.state, "csrf_token", token)
+        except Exception:
+            pass
 
     if not verify_csrf_token(received_token, token):
         if "text/html" in request.headers.get("accept", ""):
@@ -120,16 +209,54 @@ async def csrf_middleware(request: Request, call_next):
 # ==========================================
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    path = request.url.path
-    # Login, logout, static, favicon - himoya kerak emas
-    if path == "/login" or path == "/logout" or path == "/favicon.ico":
+    try:
+        return await _auth_middleware_impl(request, call_next)
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except BaseException as e:
+        # ExceptionGroup va boshqa BaseException (traceback brauzerga chiqmasin)
+        tb = traceback.format_exc()
+        traceback.print_exc()
+        for _dir in [os.path.dirname(os.path.abspath(__file__)), os.getcwd(), r"C:\Users\ELYOR\.cursor\worktrees\business_system\pwp"]:
+            try:
+                if _dir:
+                    with open(os.path.join(_dir, "server_error.log"), "a", encoding="utf-8") as f:
+                        f.write("\n--- [auth_middleware] %s ---\n%s\n" % (datetime.now().isoformat(), tb))
+                    break
+            except Exception:
+                continue
+        try:
+            path = (getattr(request, "url", None) and getattr(request.url, "path", None)) or getattr(request, "path", None) or "/"
+        except Exception:
+            path = "/"
+        if path == "/login" or path == "/favicon.ico":
+            return JSONResponse(status_code=500, content={"detail": "Server xatosi"})
+        try:
+            accept = (request.headers.get("accept") or "") if getattr(request, "headers", None) else ""
+        except Exception:
+            accept = ""
+        if "text/html" in accept:
+            resp = RedirectResponse(url="/login?error=please_retry", status_code=303)
+            try:
+                resp.delete_cookie("session_token", path="/")
+            except Exception:
+                pass
+            return resp
+        return JSONResponse(status_code=500, content={"detail": "Server xatosi"})
+
+
+async def _auth_middleware_impl(request: Request, call_next):
+    path = (getattr(request, "url", None) and getattr(request.url, "path", None)) or getattr(request, "path", "/") or "/"
+    method = (getattr(request, "method", None) or "GET").upper() if isinstance(getattr(request, "method", None), str) else "GET"
+    # Login, logout, static, favicon, ping - himoya kerak emas
+    if path in ("/login", "/logout", "/favicon.ico", "/ping"):
         return await call_next(request)
     if path.startswith("/static"):
         return await call_next(request)
     # Mobil/PWA agent va haydovchi API (alohida token bilan)
     if path in ("/api/agent/login", "/api/driver/login"):
         return await call_next(request)
-    if (path == "/api/agent/location" or path == "/api/driver/location") and request.method == "POST":
+    if (path == "/api/agent/location" or path == "/api/driver/location") and method == "POST":
         return await call_next(request)
     if path in ("/api/agent/orders", "/api/agent/partners"):
         return await call_next(request)
@@ -155,9 +282,9 @@ async def auth_middleware(request: Request, call_next):
             resp = RedirectResponse(url="/login", status_code=303)
             resp.delete_cookie("session_token")
             return resp
+        return await call_next(request)
     finally:
         db.close()
-    return await call_next(request)
 
 
 # ==========================================
@@ -174,18 +301,53 @@ async def forbidden_handler(request: Request, exc: HTTPException):
 
 @app.exception_handler(Exception)
 async def debug_500_handler(request: Request, exc: Exception):
-    """500 xatolikda sababni ko'rsatish (tuzatish uchun)"""
+    """500 da: brauzer uchun login ga yo'naltirish, traceback konsolda va server_error.log da."""
     tb = traceback.format_exc()
-    body = f"<pre style='white-space:pre-wrap;font-size:12px;'>{tb}</pre>"
-    return HTMLResponse(content=body, status_code=500)
+    traceback.print_exc()
+    for _dir in [os.path.dirname(os.path.abspath(__file__)), os.getcwd(), r"C:\Users\ELYOR\.cursor\worktrees\business_system\pwp"]:
+        try:
+            if _dir:
+                with open(os.path.join(_dir, "server_error.log"), "a", encoding="utf-8") as f:
+                    f.write("\n--- [exception_handler] %s ---\n%s\n" % (datetime.now().isoformat(), tb))
+                break
+        except Exception:
+            continue
+    try:
+        path = (getattr(request, "url", None) and getattr(request.url, "path", None)) or getattr(request, "path", None) or "/"
+    except Exception:
+        path = "/"
+    if path == "/login" or path == "/favicon.ico":
+        return JSONResponse(status_code=500, content={"detail": "Server xatosi"})
+    try:
+        accept = (request.headers.get("accept") or "") if getattr(request, "headers", None) else ""
+    except Exception:
+        accept = ""
+    if "text/html" in accept:
+        resp = RedirectResponse(url="/login?error=please_retry", status_code=303)
+        try:
+            resp.delete_cookie("session_token", path="/")
+        except Exception:
+            pass
+        return resp
+    return JSONResponse(status_code=500, content={"detail": "Server xatosi"})
+
+
+@app.get("/ping", include_in_schema=False)
+async def ping():
+    """Qaysi main.py ishlayotganini tekshirish (auth kerak emas)."""
+    return {"ok": True, "main_py": os.path.abspath(__file__)}
 
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     """Brauzer uchun favicon (logo) — 404 oldini olish"""
-    favicon_path = "app/static/images/logo.png"
-    if os.path.isfile(favicon_path):
-        return FileResponse(favicon_path, media_type="image/png")
+    try:
+        root = os.path.dirname(os.path.abspath(__file__))
+        favicon_path = os.path.join(root, "app", "static", "images", "logo.png")
+        if os.path.isfile(favicon_path):
+            return FileResponse(os.path.abspath(favicon_path), media_type="image/png")
+    except Exception:
+        pass
     return Response(status_code=204)
 
 
@@ -249,6 +411,7 @@ async def executive_dashboard_test(request: Request, db: Session = Depends(get_d
     return templates.TemplateResponse("dashboards/executive.html", {
         "request": request,
         "page_title": "Rahbariyat Dashboard",
+        "current_user": None,
         "user": fake_user,
         "stats": stats,
         "sales_trend": sales_trend,
@@ -416,6 +579,7 @@ async def executive_dashboard(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("dashboards/executive.html", {
         "request": request,
         "page_title": "Rahbariyat Dashboard",
+        "current_user": user,
         "user": user,
         "stats": stats,
         "sales_trend": {
@@ -603,6 +767,7 @@ async def sales_dashboard(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("dashboards/sales.html", {
         "request": request,
         "page_title": "Savdo Dashboard",
+        "current_user": user,
         "user": user,
         "metrics": metrics,
         "order_status": order_status,
@@ -710,6 +875,7 @@ async def agent_dashboard(request: Request, db: Session = Depends(get_db)):
         return templates.TemplateResponse("dashboards/agent.html", {
             "request": request,
             "page_title": "Agent Dashboard",
+            "current_user": user,
             "user": user,
             "agent": agent,
             "kpi": {'visits_completed': 0, 'visits_total': 0, 'visits_percent': 0, 'today_sales': 0, 'orders': 0, 'orders_completed': 0, 'target_achieved': 0, 'target_total': 25000000, 'target_percent': 0},
@@ -876,6 +1042,7 @@ async def agent_dashboard(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("dashboards/agent.html", {
         "request": request,
         "page_title": "Agent Dashboard",
+        "current_user": user,
         "user": user,
         "agent": agent_info,
         "kpi": kpi,
@@ -951,6 +1118,7 @@ async def agent_dashboard_test(request: Request, db: Session = Depends(get_db), 
     return templates.TemplateResponse("dashboards/agent.html", {
         "request": request,
         "page_title": "Agent Dashboard",
+        "current_user": None,
         "user": fake_user,
         "agent": agent,
         "kpi": kpi,
@@ -1071,6 +1239,7 @@ async def production_dashboard(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("dashboards/production.html", {
         "request": request,
         "page_title": "Ishlab chiqarish Dashboard",
+        "current_user": user,
         "user": user,
         "metrics": metrics,
         "production_orders": production_orders,
@@ -1120,6 +1289,7 @@ async def production_dashboard_test(request: Request, db: Session = Depends(get_
     return templates.TemplateResponse("dashboards/production.html", {
         "request": request,
         "page_title": "Ishlab chiqarish Dashboard",
+        "current_user": None,
         "user": fake_user,
         "metrics": metrics,
         "production_orders": production_orders,
@@ -1255,6 +1425,7 @@ async def warehouse_dashboard(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("dashboards/warehouse.html", {
         "request": request,
         "page_title": "Ombor Dashboard",
+        "current_user": user,
         "user": user,
         "metrics": metrics,
         "low_stock": low_stock,
@@ -1471,6 +1642,7 @@ async def delivery_dashboard(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("dashboards/delivery.html", {
         "request": request,
         "page_title": "Yetkazib berish Dashboard",
+        "current_user": user,
         "user": user,
         "metrics": metrics,
         "deliveries": deliveries,
@@ -1528,197 +1700,8 @@ async def delivery_dashboard_test(request: Request, db: Session = Depends(get_db
     })
 
 
-# ==========================================
-# ASOSIY SAHIFALAR
-# ==========================================
-
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
-    """Bosh sahifa - Dashboard"""
-    if not current_user:
-        return RedirectResponse(url="/login", status_code=303)
-    stats = {
-        "tayyor_count": db.query(Product).filter(Product.type == "tayyor").count(),
-        "yarim_tayyor_count": db.query(Product).filter(Product.type == "yarim_tayyor").count(),
-        "hom_ashyo_count": db.query(Product).filter(Product.type == "hom_ashyo").count(),
-        "partners_count": db.query(Partner).count(),
-        "employees_count": db.query(Employee).count(),
-        "products_count": db.query(Product).filter(Product.is_active == True).count(),
-        "materials_count": db.query(Product).filter(Product.type == "hom_ashyo", Product.is_active == True).count(),
-    }
-    today = datetime.now().date()
-    today_sales = db.query(Order).filter(
-        Order.type == "sale",
-        Order.date >= today
-    ).all()
-    stats["today_sales"] = sum(s.total for s in today_sales)
-    stats["today_orders"] = len(today_sales)
-    cash = db.query(CashRegister).first()
-    stats["cash_balance"] = cash.balance if cash else 0
-    debtors = db.query(Partner).filter(Partner.balance > 0).all()
-    stats["total_debt"] = sum(p.balance for p in debtors)
-    # So'nggi sotuvlar (bosh sahifa jadvali uchun)
-    recent_sales = (
-        db.query(Order)
-        .filter(Order.type == "sale")
-        .order_by(Order.created_at.desc())
-        .limit(10)
-        .all()
-    )
-    # Kam qolgan tovarlar (qoldiq < min_stock)
-    low_stock_count = db.query(Stock).join(Product).filter(Stock.quantity < Product.min_stock).count()
-    # Bugun tug'ilgan kunlar (Employee.birth_date)
-    birthday_today_count = 0
-    if hasattr(Employee, "birth_date"):
-        try:
-            birthday_today_count = db.query(Employee).filter(
-                Employee.birth_date.isnot(None),
-                func.strftime("%m-%d", Employee.birth_date) == today.strftime("%m-%d"),
-                Employee.is_active == True,
-            ).count()
-        except Exception:
-            pass
-    # Muddati o'tgan qarzlar (sotuvda qarz > 0 va 7+ kun oldin)
-    overdue_cutoff = datetime.now() - timedelta(days=7)
-    overdue_debts_count = db.query(Order).filter(
-        Order.type == "sale",
-        Order.debt > 0,
-        Order.created_at < overdue_cutoff,
-    ).count()
-    error = request.query_params.get("error")
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "stats": stats,
-        "current_user": current_user,
-        "page_title": "Bosh sahifa",
-        "error": error,
-        "recent_sales": recent_sales,
-        "low_stock_count": low_stock_count,
-        "birthday_today_count": birthday_today_count,
-        "overdue_debts_count": overdue_debts_count,
-    })
-
-
-# ==========================================
-# MA'LUMOTLAR BO'LIMI
-# ==========================================
-@app.get("/info")
-async def info_index(request: Request, current_user: User = Depends(require_auth)):
-    """Ma'lumotlar - overview ko'rsatilmaydi, to'g'ridan-to'g'ri birinchi bo'limga yo'naltirish"""
-    if not current_user:
-        return RedirectResponse(url="/login", status_code=303)
-    return RedirectResponse(url="/info/units", status_code=303)
-
-# Omborlar bo'limi
-@app.get("/info/warehouses", response_class=HTMLResponse)
-async def info_warehouses(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
-    """Omborlar ro'yxati"""
-    if not current_user:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    warehouses = db.query(Warehouse).all()
-    return templates.TemplateResponse("info/warehouses.html", {"request": request, "warehouses": warehouses, "current_user": current_user, "page_title": "Omborlar"})
-
-@app.post("/info/warehouses/add")
-async def info_warehouses_add(
-    request: Request,
-    name: str = Form(...),
-    address: str = Form(""),
-    db: Session = Depends(get_db)
-):
-    # Dublikat tekshiruvi - nom bo'yicha
-    existing_by_name = db.query(Warehouse).filter(Warehouse.name == name).first()
-    if existing_by_name:
-        raise HTTPException(status_code=400, detail=f"'{name}' nomli ombor allaqachon mavjud!")
-    
-    warehouse = Warehouse(name=name, code=None, address=address, is_active=True)
-    db.add(warehouse)
-    db.commit()
-    return RedirectResponse(url="/info/warehouses", status_code=303)
-
-@app.post("/info/warehouses/edit/{warehouse_id}")
-async def info_warehouses_edit(
-    warehouse_id: int,
-    name: str = Form(...),
-    address: str = Form(""),
-    db: Session = Depends(get_db)
-):
-    warehouse = db.query(Warehouse).filter(Warehouse.id == warehouse_id).first()
-    if not warehouse:
-        raise HTTPException(status_code=404, detail="Ombor topilmadi")
-    
-    # Dublikat tekshiruvi - nom bo'yicha (o'zidan boshqa)
-    existing_by_name = db.query(Warehouse).filter(
-        Warehouse.name == name,
-        Warehouse.id != warehouse_id
-    ).first()
-    if existing_by_name:
-        raise HTTPException(status_code=400, detail=f"'{name}' nomli ombor allaqachon mavjud!")
-    
-    warehouse.name = name
-    warehouse.address = address
-    
-    db.commit()
-    return RedirectResponse(url="/info/warehouses", status_code=303)
-
-@app.post("/info/warehouses/delete/{warehouse_id}")
-async def info_warehouses_delete(warehouse_id: int, db: Session = Depends(get_db)):
-    warehouse = db.query(Warehouse).filter(Warehouse.id == warehouse_id).first()
-    if not warehouse:
-        raise HTTPException(status_code=404, detail="Ombor topilmadi")
-    
-    db.delete(warehouse)
-    db.commit()
-    return RedirectResponse(url="/info/warehouses", status_code=303)
-
-# --- WAREHOUSE EXCEL OPERATIONS ---
-@app.get("/info/warehouses/export")
-async def export_warehouses(db: Session = Depends(get_db)):
-    warehouses = db.query(Warehouse).all()
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Warehouses"
-    ws.append(["ID", "Kod", "Nomi", "Manzil"])
-    for w in warehouses:
-        ws.append([w.id, w.code, w.name, w.address])
-    stream = io.BytesIO()
-    wb.save(stream)
-    stream.seek(0)
-    return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=omborlar.xlsx"})
-
-@app.get("/info/warehouses/template")
-async def template_warehouses():
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Template"
-    ws.append(["Kod", "Nomi", "Manzil"])
-    ws.append(["MAIN", "Asosiy ombor", "Toshkent sh."])
-    stream = io.BytesIO()
-    wb.save(stream)
-    stream.seek(0)
-    return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=ombor_andoza.xlsx"})
-
-@app.post("/info/warehouses/import")
-async def import_warehouses(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    contents = await file.read()
-    wb = openpyxl.load_workbook(io.BytesIO(contents))
-    ws = wb.active
-    rows = list(ws.iter_rows(min_row=2, values_only=True))
-    for row in rows:
-        if not row[0]: continue
-        code, name, address = row[0], row[1], row[2]
-        warehouse = db.query(Warehouse).filter(Warehouse.code == code).first()
-        if not warehouse:
-            warehouse = Warehouse(code=code, name=name, address=address)
-            db.add(warehouse)
-        else:
-            warehouse.name = name
-            warehouse.address = address
-        db.commit()
-    return RedirectResponse(url="/info/warehouses", status_code=303)
-
-# O'lchov birliklari bo'limi
-@app.get("/info/units", response_class=HTMLResponse)
+# O'lchov birliklari bo'limi (moved to app/routes/info.py)
+# @app.get("/info/units", response_class=HTMLResponse)
 async def info_units(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     units = db.query(Unit).all()
     return templates.TemplateResponse("info/units.html", {"request": request, "units": units, "current_user": current_user, "page_title": "O'lchov birliklari"})
@@ -3632,217 +3615,6 @@ async def import_employees(file: UploadFile = File(...), db: Session = Depends(g
 
 
 # ==========================================
-# HISOBOTLAR
-# ==========================================
-
-@app.get("/reports", response_class=HTMLResponse)
-async def reports(request: Request):
-    """Hisobotlar"""
-    return templates.TemplateResponse("reports/index.html", {
-        "request": request,
-        "page_title": "Hisobotlar"
-    })
-
-
-@app.get("/reports/sales", response_class=HTMLResponse)
-async def report_sales(
-    request: Request,
-    start_date: str = None,
-    end_date: str = None,
-    db: Session = Depends(get_db)
-):
-    """Savdo hisoboti"""
-    if not start_date:
-        start_date = datetime.now().replace(day=1).strftime("%Y-%m-%d")
-    if not end_date:
-        end_date = datetime.now().strftime("%Y-%m-%d")
-    
-    orders = db.query(Order).filter(
-        Order.type == "sale",
-        Order.date >= start_date,
-        Order.date <= end_date + " 23:59:59"
-    ).all()
-    
-    total = sum(o.total for o in orders)
-    
-    return templates.TemplateResponse("reports/sales.html", {
-        "request": request,
-        "orders": orders,
-        "total": total,
-        "start_date": start_date,
-        "end_date": end_date,
-        "page_title": "Savdo hisoboti"
-    })
-
-
-@app.get("/reports/sales/export")
-async def report_sales_export(
-    start_date: str = None,
-    end_date: str = None,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_auth),
-):
-    """Savdo hisoboti Excel"""
-    if not current_user:
-        return RedirectResponse(url="/login", status_code=303)
-    if not start_date:
-        start_date = datetime.now().replace(day=1).strftime("%Y-%m-%d")
-    if not end_date:
-        end_date = datetime.now().strftime("%Y-%m-%d")
-    orders = db.query(Order).filter(
-        Order.type == "sale",
-        Order.date >= start_date,
-        Order.date <= end_date + " 23:59:59"
-    ).order_by(Order.date.desc()).all()
-    import io
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Savdo"
-    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
-    ws["A1"] = "Savdo hisoboti"
-    ws["A1"].font = Font(bold=True, size=14)
-    ws["A2"] = f"Davr: {start_date} — {end_date}"
-    ws.append(["№", "Sana", "Buyurtma", "Mijoz", "Jami", "Holat"])
-    for c in range(1, 7):
-        ws.cell(row=4, column=c).fill = header_fill
-        ws.cell(row=4, column=c).font = Font(bold=True, color="FFFFFF")
-    for i, o in enumerate(orders, 1):
-        ws.append([
-            i,
-            o.date.strftime("%d.%m.%Y %H:%M") if o.date else "",
-            o.number or "",
-            o.partner.name if o.partner else "",
-            float(o.total or 0),
-            o.status or "",
-        ])
-    total = sum(o.total or 0 for o in orders)
-    ws.append(["", "", "", "JAMI:", total, ""])
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    return StreamingResponse(
-        buf,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename=savdo_{start_date}_{end_date}.xlsx"},
-    )
-
-
-@app.get("/reports/stock", response_class=HTMLResponse)
-async def report_stock(request: Request, db: Session = Depends(get_db)):
-    """Qoldiq hisoboti"""
-    stocks = db.query(Stock).join(Product).all()
-    
-    return templates.TemplateResponse("reports/stock.html", {
-        "request": request,
-        "stocks": stocks,
-        "page_title": "Qoldiq hisoboti"
-    })
-
-
-@app.get("/reports/stock/export")
-async def report_stock_export(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
-    """Qoldiq hisoboti Excel"""
-    if not current_user:
-        return RedirectResponse(url="/login", status_code=303)
-    stocks = db.query(Stock).join(Product, Stock.product_id == Product.id).join(Warehouse, Stock.warehouse_id == Warehouse.id).order_by(Warehouse.name, Product.name).all()
-    import io
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Qoldiq"
-    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
-    ws["A1"] = "Qoldiq hisoboti"
-    ws["A1"].font = Font(bold=True, size=14)
-    ws["A2"] = datetime.now().strftime("%d.%m.%Y %H:%M")
-    ws.append(["Ombor", "Mahsulot", "Kod", "Qoldiq", "Minimal", "Narx", "Summa"])
-    for c in range(1, 8):
-        ws.cell(row=4, column=c).fill = header_fill
-        ws.cell(row=4, column=c).font = Font(bold=True, color="FFFFFF")
-    for s in stocks:
-        p = s.product
-        wh = s.warehouse
-        min_s = getattr(p, "min_stock", 0) or 0
-        price = getattr(p, "purchase_price", 0) or 0
-        ws.append([
-            wh.name if wh else "",
-            p.name if p else "",
-            (p.barcode or p.code or "") if p else "",
-            float(s.quantity or 0),
-            float(min_s),
-            float(price),
-            float((s.quantity or 0) * price),
-        ])
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    return StreamingResponse(
-        buf,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename=qoldiq_{datetime.now().strftime('%Y%m%d')}.xlsx"},
-    )
-
-
-@app.get("/reports/debts", response_class=HTMLResponse)
-async def report_debts(request: Request, db: Session = Depends(get_db)):
-    """Qarzdorlik hisoboti"""
-    debtors = db.query(Partner).filter(Partner.balance != 0).all()
-    
-    total_debt = sum(p.balance for p in debtors if p.balance > 0)
-    total_credit = sum(abs(p.balance) for p in debtors if p.balance < 0)
-    
-    return templates.TemplateResponse("reports/debts.html", {
-        "request": request,
-        "debtors": debtors,
-        "total_debt": total_debt,
-        "total_credit": total_credit,
-        "page_title": "Qarzdorlik hisoboti"
-    })
-
-
-@app.get("/reports/debts/export")
-async def report_debts_export(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
-    """Qarzdorlik hisoboti Excel"""
-    if not current_user:
-        return RedirectResponse(url="/login", status_code=303)
-    debtors = db.query(Partner).filter(Partner.balance != 0).order_by(Partner.name).all()
-    import io
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Qarzdorlik"
-    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
-    ws["A1"] = "Qarzdorlik hisoboti"
-    ws["A1"].font = Font(bold=True, size=14)
-    ws["A2"] = datetime.now().strftime("%d.%m.%Y %H:%M")
-    ws.append(["Kod", "Mijoz", "Telefon", "Balans (qarz +)", "Kredit limiti"])
-    for c in range(1, 6):
-        ws.cell(row=4, column=c).fill = header_fill
-        ws.cell(row=4, column=c).font = Font(bold=True, color="FFFFFF")
-    for p in debtors:
-        ws.append([
-            p.code or "",
-            p.name or "",
-            p.phone or "",
-            float(p.balance or 0),
-            float(p.credit_limit or 0),
-        ])
-    total = sum(p.balance for p in debtors if (p.balance or 0) > 0)
-    ws.append(["", "", "JAMI QARZ:", total, ""])
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    return StreamingResponse(
-        buf,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename=qarzdorlik_{datetime.now().strftime('%Y%m%d')}.xlsx"},
-    )
-
-
-# ==========================================
 # ISHLAB CHIQARISH
 # ==========================================
 
@@ -4081,17 +3853,21 @@ async def production_save_materials(
 async def production_orders(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Ishlab chiqarish buyurtmalari"""
     productions = db.query(Production).order_by(Production.date.desc()).all()
+    machines = db.query(Machine).filter(Machine.is_active == True).all()
+    employees = db.query(Employee).filter(Employee.is_active == True).all()
     from urllib.parse import unquote
     error = request.query_params.get("error")
     detail = unquote(request.query_params.get("detail", "") or "")
-    
     return templates.TemplateResponse("production/orders.html", {
         "request": request,
         "current_user": current_user,
         "productions": productions,
+        "machines": machines,
+        "employees": employees,
         "page_title": "Ishlab chiqarish buyurtmalari",
         "error": error,
         "error_detail": detail,
+        "stage_names": PRODUCTION_STAGE_NAMES,
     })
 
 
@@ -4145,6 +3921,7 @@ async def create_production(
         quantity=quantity,
         note=note,
         status="draft",
+        current_stage=1,
         user_id=current_user.id if current_user else None,
         machine_id=int(machine_id) if machine_id else None,
         operator_id=int(operator_id) if operator_id else None,
@@ -4152,6 +3929,11 @@ async def create_production(
     db.add(production)
     db.commit()
     db.refresh(production)
+    # 4 ta bosqich yozuvi: qiyom, hamir, sovutish/kesish, qadoqlash
+    for stage_num in range(1, 5):
+        stage = ProductionStage(production_id=production.id, stage_number=stage_num)
+        db.add(stage)
+    db.commit()
     # Retsept bo'yicha xom ashyo miqdorlarini shu buyurtma uchun yozish (keyin tahrirlash mumkin)
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if recipe:
@@ -4166,24 +3948,13 @@ async def create_production(
     return RedirectResponse(url="/production/orders", status_code=303)
 
 
-@app.post("/production/{prod_id}/complete")
-async def complete_production(prod_id: int, db: Session = Depends(get_db)):
-    """Ishlab chiqarishni yakunlash"""
-    production = db.query(Production).filter(Production.id == prod_id).first()
-    if not production:
-        raise HTTPException(status_code=404, detail="Topilmadi")
-    
-    recipe = db.query(Recipe).filter(Recipe.id == production.recipe_id).first()
-    if not recipe:
-        raise HTTPException(status_code=404, detail="Retsept topilmadi")
-    
-    # Xom ashyo ro'yxati: tahrirlangan (production_items) bo'lsa shuni, yo'q bo'lsa retsept bo'yicha
+def _do_complete_production_stock(db, production, recipe):
+    """Xom ashyo ayirish, tayyor mahsulot qo'shish. RedirectResponse qaytaradi xato bo'lsa."""
+    from urllib.parse import quote
     if production.production_items:
         items_to_use = [(pi.product_id, pi.quantity) for pi in production.production_items]
     else:
         items_to_use = [(item.product_id, item.quantity * production.quantity) for item in recipe.items]
-    
-    # Omborda yetarli xom ashyo borligini tekshirish
     for product_id, required in items_to_use:
         stock = db.query(Stock).filter(
             Stock.warehouse_id == production.warehouse_id,
@@ -4192,14 +3963,8 @@ async def complete_production(prod_id: int, db: Session = Depends(get_db)):
         if not stock or stock.quantity < required:
             product_name = db.query(Product).filter(Product.id == product_id).first()
             name = product_name.name if product_name else f"#{product_id}"
-            from urllib.parse import quote
             msg = quote(f"Yetarli yo'q: {name} (kerak: {required}, mavjud: {stock.quantity if stock else 0})", safe="")
-            return RedirectResponse(
-                url=f"/production/orders?error=insufficient_stock&detail={msg}",
-                status_code=303
-            )
-    
-    # Xom ashyolarni ayirish
+            return RedirectResponse(url=f"/production/orders?error=insufficient_stock&detail={msg}", status_code=303)
     for product_id, required in items_to_use:
         stock = db.query(Stock).filter(
             Stock.warehouse_id == production.warehouse_id,
@@ -4207,8 +3972,6 @@ async def complete_production(prod_id: int, db: Session = Depends(get_db)):
         ).first()
         if stock:
             stock.quantity -= required
-    
-    # Xom ashyo tannarxini hisoblash (tayyor mahsulot narxi uchun)
     total_material_cost = 0.0
     for product_id, required in items_to_use:
         product = db.query(Product).filter(Product.id == product_id).first()
@@ -4216,36 +3979,93 @@ async def complete_production(prod_id: int, db: Session = Depends(get_db)):
             total_material_cost += required * (product.purchase_price or 0)
     output_units = production.quantity * (recipe.output_quantity or 1)
     cost_per_unit = (total_material_cost / output_units) if output_units > 0 else 0
-
-    # Tayyor / yarim tayyor mahsulotni 2-ombor (yarim tayyor ombori) ga qo'shish
     out_wh_id = production.output_warehouse_id if production.output_warehouse_id else production.warehouse_id
     product_stock = db.query(Stock).filter(
         Stock.warehouse_id == out_wh_id,
         Stock.product_id == recipe.product_id
     ).first()
-    
     if product_stock:
         product_stock.quantity += output_units
     else:
-        new_stock = Stock(
-            warehouse_id=out_wh_id,
-            product_id=recipe.product_id,
-            quantity=output_units
-        )
-        db.add(new_stock)
-    
-    # Tayyor mahsulot tannarxini o'rnatish (yangi yoki o'rtacha)
+        db.add(Stock(warehouse_id=out_wh_id, product_id=recipe.product_id, quantity=output_units))
     output_product = db.query(Product).filter(Product.id == recipe.product_id).first()
     if output_product:
+        product_stock = db.query(Stock).filter(Stock.warehouse_id == out_wh_id, Stock.product_id == recipe.product_id).first()
         old_price = output_product.purchase_price or 0
-        old_qty = product_stock.quantity - output_units if product_stock else 0  # mavjud qoldiq (qo'shishdan oldin)
+        old_qty = (product_stock.quantity - output_units) if product_stock else 0
         if old_qty > 0 and old_price > 0 and output_units > 0:
-            # O'rtacha tannarx (mavjud + yangi)
             output_product.purchase_price = (old_qty * old_price + output_units * cost_per_unit) / (old_qty + output_units)
         elif cost_per_unit > 0:
             output_product.purchase_price = cost_per_unit
-    
+    return None
+
+
+@app.post("/production/{prod_id}/complete-stage")
+async def complete_production_stage(
+    prod_id: int,
+    stage_number: int = Form(...),
+    machine_id: Optional[int] = Form(None),
+    operator_id: Optional[int] = Form(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Bosqichni yakunlash: 1–4. 4-bosqichda ombor harakati qiladi va buyurtma yakunlanadi."""
+    if stage_number < 1 or stage_number > 4:
+        raise HTTPException(status_code=400, detail="Bosqich 1–4 oralig'ida bo'lishi kerak")
+    production = db.query(Production).filter(Production.id == prod_id).first()
+    if not production:
+        raise HTTPException(status_code=404, detail="Topilmadi")
+    if production.status == "completed":
+        return RedirectResponse(url="/production/orders", status_code=303)
+    current = getattr(production, "current_stage", None) or 1
+    if stage_number != current:
+        return RedirectResponse(
+            url=f"/production/orders?error=stage&detail=Keyingi bosqich {current}",
+            status_code=303,
+        )
+    stage_row = db.query(ProductionStage).filter(
+        ProductionStage.production_id == prod_id,
+        ProductionStage.stage_number == stage_number,
+    ).first()
+    now = datetime.now()
+    if stage_row:
+        if not stage_row.started_at:
+            stage_row.started_at = now
+        stage_row.completed_at = now
+        stage_row.machine_id = int(machine_id) if machine_id else None
+        stage_row.operator_id = int(operator_id) if operator_id else None
+    if stage_number < 4:
+        production.current_stage = stage_number + 1
+        production.status = "in_progress"
+        db.commit()
+        return RedirectResponse(url="/production/orders", status_code=303)
+    recipe = db.query(Recipe).filter(Recipe.id == production.recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Retsept topilmadi")
+    err = _do_complete_production_stock(db, production, recipe)
+    if err:
+        return err
     production.status = "completed"
+    production.current_stage = 4
+    db.commit()
+    check_low_stock_and_notify(db)
+    return RedirectResponse(url="/production/orders", status_code=303)
+
+
+@app.post("/production/{prod_id}/complete")
+async def complete_production(prod_id: int, db: Session = Depends(get_db)):
+    """Ishlab chiqarishni bir martada yakunlash (4 bosqichsiz, eski usul)"""
+    production = db.query(Production).filter(Production.id == prod_id).first()
+    if not production:
+        raise HTTPException(status_code=404, detail="Topilmadi")
+    recipe = db.query(Recipe).filter(Recipe.id == production.recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Retsept topilmadi")
+    err = _do_complete_production_stock(db, production, recipe)
+    if err:
+        return err
+    production.status = "completed"
+    production.current_stage = 4
     db.commit()
     check_low_stock_and_notify(db)
     return RedirectResponse(url="/production/orders", status_code=303)
@@ -5254,6 +5074,16 @@ async def startup():
     except Exception as e:
         print("[Startup] Scheduler ishga tushmadi:", e)
     print("TOTLI HOLVA Business System ishga tushdi!")
+    _mp = os.path.abspath(__file__)
+    print("  main.py:", _mp)
+    try:
+        for _dir in [os.path.dirname(_mp), os.getcwd(), r"C:\Users\ELYOR\.cursor\worktrees\business_system\pwp"]:
+            if _dir:
+                with open(os.path.join(_dir, "server_started.txt"), "w", encoding="utf-8") as f:
+                    f.write("main.py: %s\ncwd: %s\n" % (_mp, os.getcwd()))
+                break
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

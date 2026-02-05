@@ -19,7 +19,10 @@ router = APIRouter(tags=["auth"])
 async def login_page(request: Request, current_user: Optional[User] = Depends(get_current_user)):
     if current_user:
         return RedirectResponse(url="/", status_code=303)
-    return templates.TemplateResponse("login.html", {"request": request})
+    err = request.query_params.get("error")
+    if err == "please_retry":
+        err = "Xatolik yuz berdi. Qayta kirishni urinib ko'ring."
+    return templates.TemplateResponse("login.html", {"request": request, "error": err})
 
 
 @router.post("/login")
@@ -30,6 +33,13 @@ async def login(
     db: Session = Depends(get_db),
 ):
     try:
+        username = (username or "").strip()
+        password = (password or "").strip()
+        if not username or not password:
+            return templates.TemplateResponse("login.html", {
+                "request": request,
+                "error": "Login va parolni kiriting!",
+            })
         user = db.query(User).filter(User.username == username).first()
         if not user or not verify_password(password, user.password_hash):
             return templates.TemplateResponse("login.html", {

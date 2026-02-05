@@ -267,12 +267,20 @@ document.addEventListener('visibilitychange', () => {
         }
     }
 });
- 
- / /   L o g o u t   b u t t o n   h a n d l e r  
- d o c u m e n t . g e t E l e m e n t B y I d ( ' l o g o u t B t n ' ) . a d d E v e n t L i s t e n e r ( ' c l i c k ' ,   ( )   = >   {  
-         i f   ( c o n f i r m ( ' C h i q i s h n i   x o h l a y s i z m i ? ' ) )   {  
-                 S e s s i o n . c l e a r ( ) ;  
-                 w i n d o w . l o c a t i o n . h r e f   =   ' / s t a t i c / p w a / l o g i n . h t m l ' ;  
-         }  
- } ) ;  
+
+ 
+ / /   L o g o u t   b u t t o n   h a n d l e r 
+ 
+ d o c u m e n t . g e t E l e m e n t B y I d ( ' l o g o u t B t n ' ) . a d d E v e n t L i s t e n e r ( ' c l i c k ' ,   ( )   = >   { 
+ 
+         i f   ( c o n f i r m ( ' C h i q i s h n i   x o h l a y s i z m i ? ' ) )   { 
+ 
+                 S e s s i o n . c l e a r ( ) ; 
+ 
+                 w i n d o w . l o c a t i o n . h r e f   =   ' / s t a t i c / p w a / l o g i n . h t m l ' ; 
+ 
+         } 
+ 
+ } ) ; 
+ 
  
