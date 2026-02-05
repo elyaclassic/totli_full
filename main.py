@@ -28,17 +28,19 @@ from app.models.database import (
     PriceType, ProductPrice
 )
 from app.utils.auth import (
-    hash_password, verify_password,
-    create_session_token, get_user_from_token,
+    hash_password, get_user_from_token,
     generate_csrf_token, verify_csrf_token,
 )
 from app.utils.dashboard_export import export_executive_dashboard
 from app.utils.live_data import executive_live_data, warehouse_live_data, delivery_live_data
 from app.utils.notifications import check_low_stock_and_notify
+from app.deps import get_current_user, require_auth, require_admin
+from app.core import templates
+from app.routes import auth as auth_routes
 
 app = FastAPI(title="TOTLI HOLVA", description="Biznes boshqaruv tizimi", version="1.0")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
-templates = Jinja2Templates(directory="app/templates")
+app.include_router(auth_routes.router)
 
 
 # ==========================================
@@ -159,41 +161,7 @@ async def auth_middleware(request: Request, call_next):
 
 
 # ==========================================
-# AUTENTIFIKATSIYA HELPER FUNKSIYALARI
-# ==========================================
-
-def get_current_user(session_token: Optional[str] = Cookie(None), db: Session = Depends(get_db)) -> Optional[User]:
-    """Cookie dan foydalanuvchini olish"""
-    if not session_token:
-        return None
-    
-    user_data = get_user_from_token(session_token)
-    if not user_data:
-        return None
-    
-    user = db.query(User).filter(User.id == user_data["user_id"]).first()
-    if not user or not user.is_active:
-        return None
-    
-    return user
-
-
-def require_auth(current_user: User = Depends(get_current_user)) -> Optional[User]:
-    """Login talab qilish - None qaytaradi agar login qilmagan bo'lsa"""
-    return current_user
-
-
-def require_admin(current_user: User = Depends(get_current_user)) -> User:
-    """Faqat admin - boshqa rollar 403 qaytaradi"""
-    if not current_user:
-        raise HTTPException(status_code=401, detail="Login talab qilindi")
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Faqat administrator uchun ruxsat")
-    return current_user
-
-
-# ==========================================
-# AUTENTIFIKATSIYA ENDPOINTLARI
+# AUTENTIFIKATSIYA — app.routes.auth da
 # ==========================================
 
 @app.exception_handler(403)
@@ -219,77 +187,6 @@ async def favicon():
     if os.path.isfile(favicon_path):
         return FileResponse(favicon_path, media_type="image/png")
     return Response(status_code=204)
-
-
-@app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request, current_user: User = Depends(get_current_user)):
-    """Login sahifasi"""
-    # Agar foydalanuvchi allaqachon tizimga kirgan bo'lsa, bosh sahifaga yo'naltirish
-    if current_user:
-        return RedirectResponse(url="/", status_code=303)
-    
-    return templates.TemplateResponse("login.html", {"request": request})
-
-
-@app.post("/login")
-async def login(
-    request: Request,
-    username: str = Form(...),
-    password: str = Form(...),
-    db: Session = Depends(get_db)
-):
-    """Login qilish"""
-    try:
-        # Foydalanuvchini topish
-        user = db.query(User).filter(User.username == username).first()
-        
-        # Parolni tekshirish
-        if not user or not verify_password(password, user.password_hash):
-            return templates.TemplateResponse("login.html", {
-                "request": request,
-                "error": "Login yoki parol noto'g'ri!"
-            })
-        
-        # Faol emasligini tekshirish
-        if not user.is_active:
-            return templates.TemplateResponse("login.html", {
-                "request": request,
-                "error": "Sizning hisobingiz faol emas. Administrator bilan bog'laning."
-            })
-        
-        # Session token yaratish
-        token = create_session_token(user.id, user.username)
-        # Cookie o'rnatish
-        use_https = os.getenv("HTTPS", "").lower() in ("1", "true", "yes")
-        redirect_response = RedirectResponse(url="/", status_code=303)
-        redirect_response.set_cookie(
-            key="session_token",
-            value=token,
-            path="/",
-            httponly=True,
-            max_age=86400,  # 24 soat
-            samesite="lax",
-            secure=use_https
-        )
-        
-        return redirect_response
-    
-    except Exception as e:
-        print(f"❌ LOGIN XATO: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return templates.TemplateResponse("login.html", {
-            "request": request,
-            "error": f"Tizimda xatolik yuz berdi: {str(e)}"
-        })
-
-
-@app.get("/logout")
-async def logout():
-    """Logout qilish"""
-    response = RedirectResponse(url="/login", status_code=303)
-    response.delete_cookie("session_token")
-    return response
 
 
 # ==========================================
