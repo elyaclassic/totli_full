@@ -4130,12 +4130,16 @@ async def production_new(request: Request, db: Session = Depends(get_db), curren
     """Yangi ishlab chiqarish"""
     warehouses = db.query(Warehouse).all()
     recipes = db.query(Recipe).filter(Recipe.is_active == True).all()
+    machines = db.query(Machine).filter(Machine.is_active == True).all()
+    employees = db.query(Employee).filter(Employee.is_active == True).all()
 
     return templates.TemplateResponse("production/new_order.html", {
         "request": request,
         "current_user": current_user,
         "recipes": recipes,
         "warehouses": warehouses,
+        "machines": machines,
+        "employees": employees,
         "page_title": "Yangi ishlab chiqarish"
     })
 
@@ -4151,6 +4155,8 @@ async def create_production(
     output_warehouse_id: int = Form(...),
     quantity: float = Form(...),
     note: str = Form(""),
+    machine_id: Optional[int] = Form(None),
+    operator_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -4169,7 +4175,9 @@ async def create_production(
         quantity=quantity,
         note=note,
         status="draft",
-        user_id=current_user.id if current_user else None
+        user_id=current_user.id if current_user else None,
+        machine_id=int(machine_id) if machine_id else None,
+        operator_id=int(operator_id) if operator_id else None,
     )
     db.add(production)
     db.commit()

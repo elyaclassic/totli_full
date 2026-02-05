@@ -230,11 +230,15 @@ class Production(Base):
     quantity = Column(Float)  # Ishlab chiqarilgan miqdor (o'zgarmaydi)
     status = Column(String(20), default="draft")  # draft, completed, cancelled
     user_id = Column(Integer, ForeignKey("users.id"))
+    machine_id = Column(Integer, ForeignKey("machines.id"), nullable=True)  # Qaysi uskunda
+    operator_id = Column(Integer, ForeignKey("employees.id"), nullable=True)  # Operator (xodim)
     note = Column(Text)
     created_at = Column(DateTime, default=datetime.now)
 
     recipe = relationship("Recipe")
     warehouse = relationship("Warehouse", foreign_keys=[warehouse_id])
+    machine = relationship("Machine")
+    operator = relationship("Employee", foreign_keys=[operator_id])
     output_warehouse = relationship("Warehouse", foreign_keys=[output_warehouse_id])
     production_items = relationship("ProductionItem", back_populates="production", cascade="all, delete-orphan")
 

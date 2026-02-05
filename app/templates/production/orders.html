@@ -52,8 +52,10 @@
                     <th>Sana</th>
                     <th>Retsept</th>
                     <th>Miqdor</th>
-                    <th>1-ombor (xom ashyo)</th>
-                    <th>2-ombor (yarim tayyor)</th>
+                    <th>Uskuna</th>
+                    <th>Operator</th>
+                    <th>1-ombor</th>
+                    <th>2-ombor</th>
                     <th>Holat</th>
                     <th>Amallar</th>
                 </tr>
@@ -73,6 +75,8 @@
                     <td>
                         <strong>{{ "%.1f"|format(prod.quantity) }} kg</strong>
                     </td>
+                    <td>{{ prod.machine.name if prod.machine else '-' }}</td>
+                    <td>{{ prod.operator.full_name if prod.operator else '-' }}</td>
                     <td>
                         {% if prod.warehouse %}
                         {{ prod.warehouse.name }}
