@@ -5006,6 +5006,104 @@ async def region_delete(region_id: int, db: Session = Depends(get_db)):
     return RedirectResponse(url="/info/regions", status_code=303)
 
 
+# ==========================================
+# USKUNALAR (MACHINES)
+# ==========================================
+
+@app.get("/info/machines", response_class=HTMLResponse)
+async def info_machines(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+    """Uskunalar ro'yxati"""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    machines = db.query(Machine).filter(Machine.is_active == True).order_by(Machine.created_at.desc()).all()
+    employees = db.query(Employee).filter(Employee.is_active == True).all()
+    warehouses = db.query(Warehouse).all()
+    return templates.TemplateResponse("info/machines.html", {
+        "request": request,
+        "current_user": current_user,
+        "page_title": "Uskunalar",
+        "machines": machines,
+        "employees": employees,
+        "warehouses": warehouses,
+    })
+
+
+@app.post("/info/machines/add")
+async def machine_add(
+    code: str = Form(...),
+    name: str = Form(...),
+    machine_type: str = Form(""),
+    capacity: float = Form(0),
+    efficiency: float = Form(100.0),
+    status: str = Form("idle"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Uskuna qo'shish"""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    existing = db.query(Machine).filter(Machine.code == code).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"'{code}' kodli uskuna allaqachon mavjud!")
+    machine = Machine(
+        code=code.strip(),
+        name=name.strip(),
+        machine_type=machine_type.strip() or "boshqa",
+        capacity=float(capacity),
+        efficiency=float(efficiency),
+        status=status,
+    )
+    db.add(machine)
+    db.commit()
+    return RedirectResponse(url="/info/machines", status_code=303)
+
+
+@app.post("/info/machines/edit/{machine_id}")
+async def machine_edit(
+    machine_id: int,
+    code: str = Form(...),
+    name: str = Form(...),
+    machine_type: str = Form(""),
+    capacity: float = Form(0),
+    efficiency: float = Form(100.0),
+    status: str = Form("idle"),
+    operator_id: Optional[int] = Form(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Uskunani tahrirlash"""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    machine = db.query(Machine).filter(Machine.id == machine_id).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Uskuna topilmadi")
+    existing = db.query(Machine).filter(Machine.code == code, Machine.id != machine_id).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"'{code}' kodli uskuna allaqachon mavjud!")
+    machine.code = code.strip()
+    machine.name = name.strip()
+    machine.machine_type = machine_type.strip() or "boshqa"
+    machine.capacity = float(capacity)
+    machine.efficiency = float(efficiency)
+    machine.status = status
+    machine.operator_id = int(operator_id) if operator_id else None
+    db.commit()
+    return RedirectResponse(url="/info/machines", status_code=303)
+
+
+@app.post("/info/machines/delete/{machine_id}")
+async def machine_delete(machine_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+    """Uskunani o'chirish (soft: is_active=False)"""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    machine = db.query(Machine).filter(Machine.id == machine_id).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Uskuna topilmadi")
+    machine.is_active = False
+    db.commit()
+    return RedirectResponse(url="/info/machines", status_code=303)
+
+
 @app.on_event("startup")
 async def startup():
     """Dastur ishga tushganda"""

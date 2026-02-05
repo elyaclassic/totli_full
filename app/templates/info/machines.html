@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <h4><i class="bi bi-gear-wide-connected"></i> Uskunalar (ishlab chiqarish)</h4>
+                <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addMachineModal">
+                    <i class="bi bi-plus-circle"></i> Yangi uskuna
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <div class="col-md-4">
+            <div class="card border-primary">
+                <div class="card-body py-2">
+                    <small class="text-muted">Jami</small>
+                    <h5 class="mb-0">{{ machines|length }} ta</h5>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-success">
+                <div class="card-body py-2">
+                    <small class="text-muted">Ishlayapti</small>
+                    <h5 class="mb-0">{{ machines|selectattr('status', 'eq', 'active')|list|length }} ta</h5>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-warning">
+                <div class="card-body py-2">
+                    <small class="text-muted">Ta'mirda</small>
+                    <h5 class="mb-0">{{ machines|selectattr('status', 'eq', 'maintenance')|list|length }} ta</h5>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th width="50">#</th>
+                        <th>Kod</th>
+                        <th>Nomi</th>
+                        <th>Turi</th>
+                        <th>Quvvat</th>
+                        <th>Samaradorlik %</th>
+                        <th>Holat</th>
+                        <th>Operator</th>
+                        <th width="120">Amallar</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for m in machines %}
+                    <tr class="{% if not m.is_active %}table-secondary{% endif %}">
+                        <td>{{ m.id }}</td>
+                        <td><code>{{ m.code }}</code></td>
+                        <td><strong>{{ m.name }}</strong></td>
+                        <td>{{ m.machine_type or '-' }}</td>
+                        <td>{{ "{:,.0f}".format(m.capacity or 0) }}</td>
+                        <td>{{ "{:,.0f}".format(m.efficiency or 100) }}%</td>
+                        <td>
+                            <span class="badge bg-{{ 'success' if m.status == 'active' else 'warning' if m.status == 'maintenance' else 'secondary' }}">
+                                {{ m.status or 'idle' }}
+                            </span>
+                        </td>
+                        <td>{{ m.operator.full_name if m.operator else '-' }}</td>
+                        <td>
+                            <button type="button" class="btn btn-sm btn-outline-primary" title="Tahrirlash"
+                                data-bs-toggle="modal" data-bs-target="#editMachineModal"
+                                data-id="{{ m.id }}" data-code="{{ m.code }}" data-name="{{ m.name }}"
+                                data-type="{{ m.machine_type or '' }}" data-capacity="{{ m.capacity or 0 }}"
+                                data-efficiency="{{ m.efficiency or 100 }}" data-status="{{ m.status or 'idle' }}"
+                                data-operator="{{ m.operator_id or '' }}">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            {% if m.is_active %}
+                            <form action="/info/machines/delete/{{ m.id }}" method="post" class="d-inline" onsubmit="return confirm('Ushbu uskunani o\'chirishni xohlaysizmi?');">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="O'chirish"><i class="bi bi-trash"></i></button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="9" class="text-center text-muted py-5">
+                            <i class="bi bi-gear fs-1 d-block mb-2"></i>
+                            Hozircha uskunalar yo'q<br>
+                            <small>Yuqoridagi "Yangi uskuna" tugmasini bosing</small>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Yangi uskuna modal -->
+<div class="modal fade" id="addMachineModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="/info/machines/add" method="post">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle"></i> Yangi uskuna</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Kod *</label>
+                        <input type="text" class="form-control" name="code" placeholder="MIX-01" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Nomi *</label>
+                        <input type="text" class="form-control" name="name" placeholder="Aralashtirgich 1" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Turi</label>
+                        <select class="form-select" name="machine_type">
+                            <option value="mixer">Aralashtirgich</option>
+                            <option value="oven">Pech</option>
+                            <option value="packaging">Qadoqlash</option>
+                            <option value="boshqa">Boshqa</option>
+                        </select>
+                    </div>
+                    <div class="row">
+                        <div class="col-6 mb-3">
+                            <label class="form-label">Quvvat (soatda)</label>
+                            <input type="number" step="0.01" class="form-control" name="capacity" value="0">
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label class="form-label">Samaradorlik %</label>
+                            <input type="number" step="0.1" class="form-control" name="efficiency" value="100">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Holat</label>
+                        <select class="form-select" name="status">
+                            <option value="idle">Bo'sh</option>
+                            <option value="active">Ishlayapti</option>
+                            <option value="maintenance">Ta'mirda</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor</button>
+                    <button type="submit" class="btn btn-success"><i class="bi bi-check-lg"></i> Saqlash</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Tahrirlash modal -->
+<div class="modal fade" id="editMachineModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="editMachineForm" method="post" action="">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil"></i> Uskunani tahrirlash</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Kod *</label>
+                        <input type="text" class="form-control" name="code" id="edit_code" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Nomi *</label>
+                        <input type="text" class="form-control" name="name" id="edit_name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Turi</label>
+                        <select class="form-select" name="machine_type" id="edit_machine_type">
+                            <option value="mixer">Aralashtirgich</option>
+                            <option value="oven">Pech</option>
+                            <option value="packaging">Qadoqlash</option>
+                            <option value="boshqa">Boshqa</option>
+                        </select>
+                    </div>
+                    <div class="row">
+                        <div class="col-6 mb-3">
+                            <label class="form-label">Quvvat</label>
+                            <input type="number" step="0.01" class="form-control" name="capacity" id="edit_capacity">
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label class="form-label">Samaradorlik %</label>
+                            <input type="number" step="0.1" class="form-control" name="efficiency" id="edit_efficiency">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Holat</label>
+                        <select class="form-select" name="status" id="edit_status">
+                            <option value="idle">Bo'sh</option>
+                            <option value="active">Ishlayapti</option>
+                            <option value="maintenance">Ta'mirda</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Operator</label>
+                        <select class="form-select" name="operator_id" id="edit_operator_id">
+                            <option value="">— Tanlash —</option>
+                            {% for emp in employees %}
+                            <option value="{{ emp.id }}">{{ emp.full_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Saqlash</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('editMachineModal').addEventListener('show.bs.modal', function (e) {
+    var btn = e.relatedTarget;
+    var id = btn.getAttribute('data-id');
+    document.getElementById('editMachineForm').action = '/info/machines/edit/' + id;
+    document.getElementById('edit_code').value = btn.getAttribute('data-code') || '';
+    document.getElementById('edit_name').value = btn.getAttribute('data-name') || '';
+    document.getElementById('edit_machine_type').value = btn.getAttribute('data-type') || 'boshqa';
+    document.getElementById('edit_capacity').value = btn.getAttribute('data-capacity') || '0';
+    document.getElementById('edit_efficiency').value = btn.getAttribute('data-efficiency') || '100';
+    document.getElementById('edit_status').value = btn.getAttribute('data-status') || 'idle';
+    document.getElementById('edit_operator_id').value = btn.getAttribute('data-operator') || '';
+});
+</script>
+{% endblock %}
