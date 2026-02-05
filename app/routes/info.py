@@ -52,6 +52,7 @@ async def info_warehouses_add(
     name: str = Form(...),
     address: str = Form(""),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     existing_by_name = db.query(Warehouse).filter(Warehouse.name == name).first()
     if existing_by_name:
@@ -68,6 +69,7 @@ async def info_warehouses_edit(
     name: str = Form(...),
     address: str = Form(""),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     warehouse = db.query(Warehouse).filter(Warehouse.id == warehouse_id).first()
     if not warehouse:
@@ -166,6 +168,7 @@ async def info_units_add(
     code: str = Form(...),
     name: str = Form(...),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     existing = db.query(Unit).filter(Unit.code == code).first()
     if existing:
@@ -182,6 +185,7 @@ async def info_units_edit(
     code: str = Form(...),
     name: str = Form(...),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     unit = db.query(Unit).filter(Unit.id == unit_id).first()
     if not unit:
@@ -277,6 +281,7 @@ async def info_categories_add(
     name: str = Form(...),
     type: str = Form(...),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     existing = db.query(Category).filter(Category.code == code).first()
     if existing:
@@ -294,6 +299,7 @@ async def info_categories_edit(
     name: str = Form(...),
     type: str = Form(...),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     category = db.query(Category).filter(Category.id == category_id).first()
     if not category:
@@ -529,6 +535,7 @@ async def info_cash_add(
     name: str = Form(...),
     balance: float = Form(0),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     cash = CashRegister(name=name, balance=balance, is_active=True)
     db.add(cash)
@@ -542,6 +549,7 @@ async def info_cash_edit(
     name: str = Form(...),
     balance: float = Form(0),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     cash = db.query(CashRegister).filter(CashRegister.id == cash_id).first()
     if not cash:
@@ -583,6 +591,7 @@ async def info_departments_add(
     name: str = Form(...),
     description: str = Form(""),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     existing = db.query(Department).filter(Department.code == code).first()
     if existing:
@@ -600,6 +609,7 @@ async def info_departments_edit(
     name: str = Form(...),
     description: str = Form(""),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     department = db.query(Department).filter(Department.id == department_id).first()
     if not department:
@@ -702,6 +712,7 @@ async def info_directions_add(
     name: str = Form(...),
     description: str = Form(""),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     existing = db.query(Direction).filter(Direction.code == code).first()
     if existing:
@@ -719,6 +730,7 @@ async def info_directions_edit(
     name: str = Form(...),
     description: str = Form(""),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     direction = db.query(Direction).filter(Direction.id == direction_id).first()
     if not direction:
@@ -982,6 +994,7 @@ async def region_add(
     name: str = Form(...),
     description: str = Form(""),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     existing = db.query(Region).filter(Region.code == code).first()
     if existing:
@@ -999,6 +1012,7 @@ async def region_edit(
     name: str = Form(...),
     description: str = Form(""),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     region = db.query(Region).filter(Region.id == region_id).first()
     if not region:

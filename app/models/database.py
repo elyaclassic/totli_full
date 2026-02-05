@@ -746,10 +746,10 @@ class Notification(Base):
     expires_at = Column(DateTime, nullable=True)
 
 
-# Bazani yaratish
+# Bazani yaratish — faqat jadvallar yaratiladi, mavjud ma'lumotlar o'chirilmaydi (saqlanadi)
 def init_db():
     Base.metadata.create_all(bind=engine)
-    print("Database yaratildi!")
+    print("Database tayyor (mavjud ma'lumotlar saqlanadi).")
 
 
 if __name__ == "__main__":

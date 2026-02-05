@@ -2661,7 +2661,8 @@ async def product_add(
     barcode: str = Form(None),
     sale_price: float = Form(0),
     purchase_price: float = Form(0),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     """Tovar qo'shish"""
     product = Product(
@@ -2695,7 +2696,8 @@ async def product_edit(
     barcode: str = Form(None),
     sale_price: float = Form(0),
     purchase_price: float = Form(0),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     """Tovar tahrirlash"""
     product = db.query(Product).filter(Product.id == product_id).first()
@@ -2731,7 +2733,8 @@ async def product_delete(
 async def product_upload_image(
     product_id: int,
     image: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     """Mahsulot rasmini yuklash"""
     product = db.query(Product).filter(Product.id == product_id).first()
@@ -2781,6 +2784,11 @@ async def warehouse_movement(request: Request, db: Session = Depends(get_db), cu
     """Ombor harakatlari — so'nggi kirim, chiqim, ishlab chiqarish"""
     if not current_user:
         return RedirectResponse(url="/login", status_code=303)
+    products = []
+    warehouses = []
+    recent_purchases = []
+    recent_sales = []
+    recent_productions = []
     try:
         products = db.query(Product).filter(Product.is_active == True).all()
         warehouses = db.query(Warehouse).all()
@@ -2789,14 +2797,14 @@ async def warehouse_movement(request: Request, db: Session = Depends(get_db), cu
         recent_productions = db.query(Production).order_by(Production.created_at.desc()).limit(30).all()
     except Exception as e:
         traceback.print_exc()
-        return RedirectResponse(url="/warehouse?error=movement&detail=" + str(e)[:50], status_code=303)
+        # Xato bo'lsa ham bo'sh ro'yxatlar bilan sahifani ko'rsatamiz, 500 emas
     return templates.TemplateResponse("warehouse/movement.html", {
         "request": request,
-        "products": products,
-        "warehouses": warehouses,
-        "recent_purchases": recent_purchases,
-        "recent_sales": recent_sales,
-        "recent_productions": recent_productions,
+        "products": products or [],
+        "warehouses": warehouses or [],
+        "recent_purchases": recent_purchases or [],
+        "recent_sales": recent_sales or [],
+        "recent_productions": recent_productions or [],
         "current_user": current_user,
         "page_title": "Ombor harakati"
     })
@@ -2841,7 +2849,8 @@ async def purchase_create(
     request: Request,
     partner_id: int = Form(...),
     warehouse_id: int = Form(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     """Tovar kirimini yaratish"""
     today = datetime.now()
@@ -2920,7 +2929,7 @@ async def purchase_add_item(
 
 
 @app.post("/purchases/{purchase_id}/confirm")
-async def purchase_confirm(purchase_id: int, db: Session = Depends(get_db)):
+async def purchase_confirm(purchase_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Tovar kirimini tasdiqlash va ombor qoldiqlarini yangilash"""
     purchase = db.query(Purchase).filter(Purchase.id == purchase_id).first()
     if not purchase:
@@ -4005,7 +4014,7 @@ async def complete_production_stage(
     machine_id: Optional[int] = Form(None),
     operator_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_auth),
 ):
     """Bosqichni yakunlash: 1–4. 4-bosqichda ombor harakati qiladi va buyurtma yakunlanadi."""
     if stage_number < 1 or stage_number > 4:
@@ -4051,7 +4060,7 @@ async def complete_production_stage(
 
 
 @app.post("/production/{prod_id}/complete")
-async def complete_production(prod_id: int, db: Session = Depends(get_db)):
+async def complete_production(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Ishlab chiqarishni bir martada yakunlash (4 bosqichsiz, eski usul)"""
     production = db.query(Production).filter(Production.id == prod_id).first()
     if not production:

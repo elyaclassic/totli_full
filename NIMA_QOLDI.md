@@ -17,10 +17,10 @@
 | # | Narsa | Qisqacha |
 |---|--------|----------|
 | 1 | **main.py da yana route'lar** | products, purchases, sales, warehouse, delivery, production, agents, map hali main.py da (yoki boshqa fayllarda `@app` bilan). Ularni ham alohida routerlarga ko'chirish mumkin. |
-| 2 | **POST/delete da current_user** | Ba'zi info_*_delete va boshqa POST larda `require_auth` / `current_user` yo'q; audit va rol uchun qo'shish ma'qul. |
-| 3 | **Qadoqlash uchun alohida menyu** | Agar kerak bo'lsa — `qadoqlash_menu` (faqat Qadoqlash, Ombor, Hisobot). |
+| ~~2~~ | ~~POST/delete da current_user~~ | ✅ Info barcha POST (add/edit) larda `require_auth` qo'yildi. |
+| ~~3~~ | ~~Qadoqlash uchun alohida menyu~~ | ✅ base.html da `qadoqlash_menu` mavjud. |
 | 4 | **page_title / current_user** | Barcha sahifalarda `page_title` va kerak bo'lsa `current_user` uzatilishini tekshirish. |
-| 5 | **Eksport/import da auth** | `/info/*/export`, `/products/export` va sh.k. da `Depends(require_auth)` qo'yish (audit uchun). |
+| ~~5~~ | ~~Eksport/import da auth~~ | ✅ Eksport/import va products add/edit da `require_auth` bor. |
 
 ---
 
@@ -28,11 +28,11 @@
 
 | # | Muammo | Manba |
 |---|--------|--------|
-| 1 | **Ombor harakati** — `warehouse/movement.html` yo'q, 500 xato | TAHLIL_VA_TAKLIFLAR.md |
-| 2 | **Uskunalar (Machine)** — CRUD/menyu main ga ulanmagan, dashboard da placeholder | TAHLIL_VA_TAKLIFLAR.md |
-| 3 | **Kam qolgan tovar bildirishnomasi** — kirim/sotuv/production tasdiqda avtomatik chaqirilmaydi | TAHLIL_VA_TAKLIFLAR.md |
-| 4 | **Hisobotlar eksport** — Savdo, qoldiq, qarzdorlik uchun Excel/PDF yo'q | TAHLIL_VA_TAKLIFLAR.md |
-| 5 | **Bosh sahifa** — "Tug'ilgan kunlar", "Muddati o'tgan qarzlar" 0 (real hisoblash yo'q) | TAHLIL_VA_TAKLIFLAR.md |
+| ~~1~~ | ~~Ombor harakati~~ | ✅ movement.html mavjud; route xavfsiz (bo'sh ro'yxatlar), template None-safe. |
+| ~~2~~ | ~~Uskunalar (Machine)~~ | ✅ /info/machines CRUD va menyuda (base.html) mavjud. |
+| ~~3~~ | ~~Kam qolgan tovar bildirishnomasi~~ | ✅ Purchase confirm, sales confirm, production complete da check_low_stock_and_notify chaqiriladi. |
+| ~~4~~ | ~~Hisobotlar eksport~~ | ✅ Savdo, qoldiq, qarzdorlik uchun /reports/*/export Excel mavjud. |
+| ~~5~~ | ~~Bosh sahifa~~ | ✅ Tug'ilgan kunlar va muddati o'tgan qarzlar home.py da real hisoblanadi. |
 | 6 | **Production + uskuna/operator** — machine_id, operator_id saqlanmaydi | TAHLIL_VA_TAKLIFLAR.md |
 | 7 | **PWA** — lokatsiya intervali, offline sync to'liq emas | PWA_REJA.md |
 | 8 | **Scheduler** — kunlik kam qoldiq / muddati o'tgan qarz tekshiruvi (bildirishnoma) | TAHLIL_VA_TAKLIFLAR.md |
