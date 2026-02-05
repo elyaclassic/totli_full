@@ -33,6 +33,7 @@ from app.utils.auth import (
 )
 from app.utils.dashboard_export import export_executive_dashboard
 from app.utils.live_data import executive_live_data, warehouse_live_data, delivery_live_data
+from app.utils.notifications import check_low_stock_and_notify
 
 app = FastAPI(title="TOTLI HOLVA", description="Biznes boshqaruv tizimi", version="1.0")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -2986,6 +2987,7 @@ async def purchase_confirm(purchase_id: int, db: Session = Depends(get_db)):
             partner.balance -= purchase.total
     
     db.commit()
+    check_low_stock_and_notify(db)
     return RedirectResponse(url=f"/purchases", status_code=303)
 
 
@@ -3458,6 +3460,7 @@ async def sales_confirm(
             stock.quantity -= item.quantity
     order.status = "completed"
     db.commit()
+    check_low_stock_and_notify(db)
     return RedirectResponse(url=f"/sales/edit/{order_id}", status_code=303)
 
 
@@ -4108,6 +4111,7 @@ async def complete_production(prod_id: int, db: Session = Depends(get_db)):
     
     production.status = "completed"
     db.commit()
+    check_low_stock_and_notify(db)
     return RedirectResponse(url="/production/orders", status_code=303)
 
 
