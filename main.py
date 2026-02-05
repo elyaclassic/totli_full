@@ -2810,15 +2810,23 @@ async def warehouse_list(request: Request, db: Session = Depends(get_db), curren
 
 
 @app.get("/warehouse/movement", response_class=HTMLResponse)
-async def warehouse_movement(request: Request, db: Session = Depends(get_db)):
-    """Ombor harakatlari"""
-    products = db.query(Product).all()
+async def warehouse_movement(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+    """Ombor harakatlari — so'nggi kirim, chiqim, ishlab chiqarish"""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    products = db.query(Product).filter(Product.is_active == True).all()
     warehouses = db.query(Warehouse).all()
-    
+    recent_purchases = db.query(Purchase).order_by(Purchase.date.desc()).limit(30).all()
+    recent_sales = db.query(Order).filter(Order.type == "sale").order_by(Order.created_at.desc()).limit(30).all()
+    recent_productions = db.query(Production).order_by(Production.created_at.desc()).limit(30).all()
     return templates.TemplateResponse("warehouse/movement.html", {
         "request": request,
         "products": products,
         "warehouses": warehouses,
+        "recent_purchases": recent_purchases,
+        "recent_sales": recent_sales,
+        "recent_productions": recent_productions,
+        "current_user": current_user,
         "page_title": "Ombor harakati"
     })
 
