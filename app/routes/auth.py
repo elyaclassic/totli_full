@@ -53,7 +53,10 @@ async def login(
             })
         token = create_session_token(user.id, user.username)
         use_https = os.getenv("HTTPS", "").lower() in ("1", "true", "yes")
-        resp = RedirectResponse(url="/", status_code=303)
+        # Rolga qarab bosh sahifaga yo'naltirish
+        role_home = {"agent": "/dashboard/agent", "driver": "/dashboard/agent", "production": "/production", "qadoqlash": "/production"}
+        redirect_url = role_home.get((user.role or "").strip(), "/")
+        resp = RedirectResponse(url=redirect_url, status_code=303)
         resp.set_cookie(
             key="session_token",
             value=token,

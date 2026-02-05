@@ -34,6 +34,14 @@
                         <span class="badge bg-danger">Administrator</span>
                         {% elif user.role == 'manager' %}
                         <span class="badge bg-warning">Menejer</span>
+                        {% elif user.role == 'production' %}
+                        <span class="badge bg-primary">Ishlab chiqarish</span>
+                        {% elif user.role == 'qadoqlash' %}
+                        <span class="badge bg-success">Qadoqlash</span>
+                        {% elif user.role == 'agent' %}
+                        <span class="badge bg-info">Agent (PWA)</span>
+                        {% elif user.role == 'driver' %}
+                        <span class="badge bg-secondary">Haydovchi (PWA)</span>
                         {% else %}
                         <span class="badge bg-info">Foydalanuvchi</span>
                         {% endif %}
@@ -75,6 +83,7 @@
     {% endif %}
 </div>
 
+{% block modals %}
 <!-- Yangi foydalanuvchi qo'shish modali -->
 <div class="modal fade" id="addUserModal" tabindex="-1">
     <div class="modal-dialog">
@@ -91,7 +100,14 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Parol *</label>
-                        <input type="password" class="form-control" name="password" required>
+                        <div class="input-group">
+                            <input type="password" class="form-control" name="password" id="add_user_password" required autocomplete="new-password">
+                            {% if current_user and current_user.role == 'admin' %}
+                            <button type="button" class="btn btn-outline-secondary" onclick="togglePass(this, 'add_user_password')" title="Parolni ko'rsatish" aria-label="Parolni ko'rsatish">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                            {% endif %}
+                        </div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">To'liq ism *</label>
@@ -109,13 +125,15 @@
                                 <option value="user">Foydalanuvchi</option>
                                 <option value="manager">Menejer</option>
                                 <option value="admin">Administrator</option>
+                                <option value="production">Ishlab chiqarish</option>
+                                <option value="qadoqlash">Qadoqlash</option>
                             </optgroup>
                             <optgroup label="PWA Foydalanuvchilar">
                                 <option value="agent">Agent (PWA)</option>
                                 <option value="driver">Haydovchi (PWA)</option>
                             </optgroup>
                         </select>
-                        <small class="text-muted">Agent va Haydovchilar mobil ilovadan foydalanadi</small>
+                        <small class="text-muted">Rolni shu ro'yxatdan tanlang. Agent/Haydovchi — mobil ilova.</small>
                     </div>
 
                     <!-- PWA uchun qo'shimcha maydonlar -->
@@ -200,6 +218,10 @@
                             <option value="user">Foydalanuvchi</option>
                             <option value="manager">Menejer</option>
                             <option value="admin">Administrator</option>
+                            <option value="production">Ishlab chiqarish</option>
+                            <option value="qadoqlash">Qadoqlash</option>
+                            <option value="agent">Agent (PWA)</option>
+                            <option value="driver">Haydovchi (PWA)</option>
                         </select>
                     </div>
                     <div class="mb-3 form-check">
@@ -229,7 +251,14 @@
                     <p>Foydalanuvchi: <strong id="password_username"></strong></p>
                     <div class="mb-3">
                         <label class="form-label">Yangi parol *</label>
-                        <input type="password" class="form-control" name="new_password" required>
+                        <div class="input-group">
+                            <input type="password" class="form-control" name="new_password" id="new_password_input" required autocomplete="new-password">
+                            {% if current_user and current_user.role == 'admin' %}
+                            <button type="button" class="btn btn-outline-secondary" onclick="togglePass(this, 'new_password_input')" title="Parolni ko'rsatish" aria-label="Parolni ko'rsatish">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -240,6 +269,7 @@
         </div>
     </div>
 </div>
+{% endblock %}
 
 <script>
     function editUser(id, username, fullName, role, isActive) {
@@ -273,6 +303,20 @@
         document.getElementById('changePasswordForm').action = '/info/users/change-password/' + id;
         document.getElementById('password_username').textContent = username;
         new bootstrap.Modal(document.getElementById('changePasswordModal')).show();
+    }
+
+    function togglePass(btn, inputId) {
+        var inp = document.getElementById(inputId);
+        var icon = btn.querySelector('i');
+        if (inp.type === 'password') {
+            inp.type = 'text';
+            icon.className = 'bi bi-eye-slash';
+            btn.title = 'Parolni yashirish';
+        } else {
+            inp.type = 'password';
+            icon.className = 'bi bi-eye';
+            btn.title = 'Parolni ko\'rsatish';
+        }
     }
 
     function deleteUser(id, username) {

@@ -31,12 +31,10 @@ from app.utils.auth import (
     hash_password, get_user_from_token,
     generate_csrf_token, verify_csrf_token,
 )
-from app.utils.dashboard_export import export_executive_dashboard
-from app.utils.live_data import executive_live_data, warehouse_live_data, delivery_live_data
-from app.utils.notifications import check_low_stock_and_notify
 from app.deps import get_current_user, require_auth, require_admin
 from app.core import templates
 from app.routes import auth as auth_routes
+from app.routes import dashboard as dashboard_routes
 from app.routes import home as home_routes
 from app.routes import reports as reports_routes
 from app.routes import info as info_routes
@@ -44,12 +42,64 @@ from app.routes import info as info_routes
 app = FastAPI(title="TOTLI HOLVA", description="Biznes boshqaruv tizimi", version="1.0")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
-# BaseExceptionGroup ni app.exception_handler ga qo'shmaslik: Starlette faqat Exception vorislarini qabul qiladi.
-# global_safe_middleware allaqachon BaseException (shu jumladan ExceptionGroup) ni ushlaydi.
+# Routerlar (auth, dashboard, home, reports, info)
 app.include_router(auth_routes.router)
 app.include_router(home_routes.router)
 app.include_router(reports_routes.router)
 app.include_router(info_routes.router)
+app.include_router(dashboard_routes.router)
+
+
+# ==========================================
+# 404 – sahifa topilmadi (HTML)
+# ==========================================
+_HTML_404 = """
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>404 - Sahifa topilmadi - TOTLI HOLVA</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light d-flex align-items-center justify-content-center min-vh-100">
+    <div class="text-center p-5">
+        <h1 class="display-1 text-muted">404</h1>
+        <h2 class="text-secondary">Sahifa topilmadi</h2>
+        <p class="lead text-muted">So'ralgan sahifa mavjud emas yoki ko'chirilgan.</p>
+        <a href="/" class="btn btn-success mt-3">Bosh sahifaga</a>
+        <a href="/login" class="btn btn-outline-secondary mt-3 ms-2">Kirish</a>
+    </div>
+</body>
+</html>
+"""
+
+_HTML_500 = """
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>500 - Server xatosi - TOTLI HOLVA</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light d-flex align-items-center justify-content-center min-vh-100">
+    <div class="text-center p-5">
+        <h1 class="display-1 text-danger">500</h1>
+        <h2 class="text-secondary">Server xatosi</h2>
+        <p class="lead text-muted">Iltimos, keyinroq urinib ko'ring yoki administrator bilan bog'laning.</p>
+        <a href="/" class="btn btn-success mt-3">Bosh sahifaga</a>
+        <a href="/login" class="btn btn-outline-secondary mt-3 ms-2">Kirish</a>
+    </div>
+</body>
+</html>
+"""
+
+
+@app.exception_handler(404)
+async def not_found_handler(request: Request, exc):
+    """404 – sahifa topilmadi (HTML)."""
+    return HTMLResponse(content=_HTML_404, status_code=404)
 
 
 # ==========================================
@@ -422,23 +472,13 @@ async def executive_dashboard_test(request: Request, db: Session = Depends(get_d
 
 
 @app.get("/dashboard/executive", response_class=HTMLResponse)
-async def executive_dashboard(request: Request, db: Session = Depends(get_db)):
+async def executive_dashboard(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Rahbariyat Dashboard - Real Data"""
     from datetime import datetime, timedelta
     from sqlalchemy import func
     from app.models.database import Order, OrderItem, Agent, Stock, Product
     
-    # Get user from session cookie
-    session_token = request.cookies.get("session_token")
-    if not session_token:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    user_data = get_user_from_token(session_token)
-    if not user_data:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    user = db.query(User).filter(User.id == user_data["user_id"]).first()
-    if not user or not user.is_active:
+    if not current_user:
         return RedirectResponse(url="/login", status_code=303)
     
     # Bugungi sana
@@ -579,8 +619,8 @@ async def executive_dashboard(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("dashboards/executive.html", {
         "request": request,
         "page_title": "Rahbariyat Dashboard",
-        "current_user": user,
-        "user": user,
+        "current_user": current_user,
+        "user": current_user,
         "stats": stats,
         "sales_trend": {
             "labels": sales_trend_labels,
@@ -597,7 +637,7 @@ async def executive_dashboard(request: Request, db: Session = Depends(get_db)):
 
 # Executive Dashboard - Export to Excel
 @app.get("/dashboard/executive/export")
-async def executive_export(request: Request, db: Session = Depends(get_db)):
+async def executive_export(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Export Executive Dashboard to Excel"""
     return await export_executive_dashboard(request, db)
 
@@ -621,23 +661,13 @@ async def delivery_live(request: Request, db: Session = Depends(get_db)):
 
 # Sales Dashboard - Real Data
 @app.get("/dashboard/sales", response_class=HTMLResponse)
-async def sales_dashboard(request: Request, db: Session = Depends(get_db)):
+async def sales_dashboard(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Savdo Dashboard - Real Data"""
     from datetime import datetime, timedelta
     from sqlalchemy import func
     from app.models.database import Order, Partner
     
-    # Get user from session cookie
-    session_token = request.cookies.get("session_token")
-    if not session_token:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    user_data = get_user_from_token(session_token)
-    if not user_data:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    user = db.query(User).filter(User.id == user_data["user_id"]).first()
-    if not user or not user.is_active:
+    if not current_user:
         return RedirectResponse(url="/login", status_code=303)
     
     today = datetime.now().date()
@@ -767,8 +797,8 @@ async def sales_dashboard(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("dashboards/sales.html", {
         "request": request,
         "page_title": "Savdo Dashboard",
-        "current_user": user,
-        "user": user,
+        "current_user": current_user,
+        "user": current_user,
         "metrics": metrics,
         "order_status": order_status,
         "funnel": funnel,
@@ -848,23 +878,13 @@ async def sales_dashboard_test(request: Request, db: Session = Depends(get_db), 
 
 # Agent Dashboard - Real Data
 @app.get("/dashboard/agent", response_class=HTMLResponse)
-async def agent_dashboard(request: Request, db: Session = Depends(get_db)):
+async def agent_dashboard(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Agent Dashboard - Real Data"""
     from datetime import datetime, timedelta
     from sqlalchemy import func
     from app.models.database import Agent, Visit, Route, RoutePoint, Partner, Order, AgentLocation
     
-    # Get user from session cookie
-    session_token = request.cookies.get("session_token")
-    if not session_token:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    user_data = get_user_from_token(session_token)
-    if not user_data:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    user = db.query(User).filter(User.id == user_data["user_id"]).first()
-    if not user or not user.is_active:
+    if not current_user:
         return RedirectResponse(url="/login", status_code=303)
     
     # Get agent for current user (assuming user has agent_id or we use first agent)
@@ -875,8 +895,8 @@ async def agent_dashboard(request: Request, db: Session = Depends(get_db)):
         return templates.TemplateResponse("dashboards/agent.html", {
             "request": request,
             "page_title": "Agent Dashboard",
-            "current_user": user,
-            "user": user,
+            "current_user": current_user,
+            "user": current_user,
             "agent": agent,
             "kpi": {'visits_completed': 0, 'visits_total': 0, 'visits_percent': 0, 'today_sales': 0, 'orders': 0, 'orders_completed': 0, 'target_achieved': 0, 'target_total': 25000000, 'target_percent': 0},
             "schedule": [],
@@ -1042,8 +1062,8 @@ async def agent_dashboard(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("dashboards/agent.html", {
         "request": request,
         "page_title": "Agent Dashboard",
-        "current_user": user,
-        "user": user,
+        "current_user": current_user,
+        "user": current_user,
         "agent": agent_info,
         "kpi": kpi,
         "schedule": schedule,
@@ -1132,23 +1152,13 @@ async def agent_dashboard_test(request: Request, db: Session = Depends(get_db), 
 
 # Production Dashboard - Real Data
 @app.get("/dashboard/production", response_class=HTMLResponse)
-async def production_dashboard(request: Request, db: Session = Depends(get_db)):
+async def production_dashboard(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Ishlab chiqarish Dashboard - Real Data"""
     from datetime import datetime, timedelta
     from sqlalchemy import func
     from app.models.database import Production, Recipe, Product, Employee
     
-    # Get user from session cookie
-    session_token = request.cookies.get("session_token")
-    if not session_token:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    user_data = get_user_from_token(session_token)
-    if not user_data:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    user = db.query(User).filter(User.id == user_data["user_id"]).first()
-    if not user or not user.is_active:
+    if not current_user:
         return RedirectResponse(url="/login", status_code=303)
     
     today = datetime.now().date()
@@ -1239,8 +1249,8 @@ async def production_dashboard(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("dashboards/production.html", {
         "request": request,
         "page_title": "Ishlab chiqarish Dashboard",
-        "current_user": user,
-        "user": user,
+        "current_user": current_user,
+        "user": current_user,
         "metrics": metrics,
         "production_orders": production_orders,
         "machines": machines,
@@ -1300,23 +1310,13 @@ async def production_dashboard_test(request: Request, db: Session = Depends(get_
 
 # Warehouse Dashboard - Real Data
 @app.get("/dashboard/warehouse", response_class=HTMLResponse)
-async def warehouse_dashboard(request: Request, db: Session = Depends(get_db)):
+async def warehouse_dashboard(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Ombor Dashboard - Real Data"""
     from datetime import datetime, timedelta
     from sqlalchemy import func
     from app.models.database import Stock, Product, Category, Purchase, PurchaseItem
     
-    # Get user from session cookie
-    session_token = request.cookies.get("session_token")
-    if not session_token:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    user_data = get_user_from_token(session_token)
-    if not user_data:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    user = db.query(User).filter(User.id == user_data["user_id"]).first()
-    if not user or not user.is_active:
+    if not current_user:
         return RedirectResponse(url="/login", status_code=303)
     
     today = datetime.now().date()
@@ -1425,8 +1425,8 @@ async def warehouse_dashboard(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("dashboards/warehouse.html", {
         "request": request,
         "page_title": "Ombor Dashboard",
-        "current_user": user,
-        "user": user,
+        "current_user": current_user,
+        "user": current_user,
         "metrics": metrics,
         "low_stock": low_stock,
         "recent_moves": recent_moves,
@@ -1483,23 +1483,13 @@ async def warehouse_dashboard_test(request: Request, db: Session = Depends(get_d
 
 # Delivery Dashboard - Real Data
 @app.get("/dashboard/delivery", response_class=HTMLResponse)
-async def delivery_dashboard(request: Request, db: Session = Depends(get_db)):
+async def delivery_dashboard(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Yetkazib berish Dashboard - Real Data"""
     from datetime import datetime, timedelta
     from sqlalchemy import func, case
     from app.models.database import Delivery, Driver, DriverLocation, Order, Partner
     
-    # Get user from session cookie
-    session_token = request.cookies.get("session_token")
-    if not session_token:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    user_data = get_user_from_token(session_token)
-    if not user_data:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    user = db.query(User).filter(User.id == user_data["user_id"]).first()
-    if not user or not user.is_active:
+    if not current_user:
         return RedirectResponse(url="/login", status_code=303)
     
     today = datetime.now().date()
@@ -1642,8 +1632,8 @@ async def delivery_dashboard(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("dashboards/delivery.html", {
         "request": request,
         "page_title": "Yetkazib berish Dashboard",
-        "current_user": user,
-        "user": user,
+        "current_user": current_user,
+        "user": current_user,
         "metrics": metrics,
         "deliveries": deliveries,
         "drivers": drivers,
@@ -1743,7 +1733,7 @@ async def info_units_edit(
     return RedirectResponse(url="/info/units", status_code=303)
 
 @app.post("/info/units/delete/{unit_id}")
-async def info_units_delete(unit_id: int, db: Session = Depends(get_db)):
+async def info_units_delete(unit_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     unit = db.query(Unit).filter(Unit.id == unit_id).first()
     if not unit:
         raise HTTPException(status_code=404, detail="O'lchov birligi topilmadi")
@@ -1754,7 +1744,7 @@ async def info_units_delete(unit_id: int, db: Session = Depends(get_db)):
 
 # --- UNITS EXCEL OPERATIONS ---
 @app.get("/info/units/export")
-async def export_units(db: Session = Depends(get_db)):
+async def export_units(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     units = db.query(Unit).all()
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -1768,7 +1758,7 @@ async def export_units(db: Session = Depends(get_db)):
     return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=olchov_birliklari.xlsx"})
 
 @app.get("/info/units/template")
-async def template_units():
+async def template_units(current_user: User = Depends(require_auth)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Template"
@@ -1780,7 +1770,7 @@ async def template_units():
     return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=birlik_andoza.xlsx"})
 
 @app.post("/info/units/import")
-async def import_units(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def import_units(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     contents = await file.read()
     wb = openpyxl.load_workbook(io.BytesIO(contents))
     ws = wb.active
@@ -1843,7 +1833,7 @@ async def info_categories_edit(
     return RedirectResponse(url="/info/categories", status_code=303)
 
 @app.post("/info/categories/delete/{category_id}")
-async def info_categories_delete(category_id: int, db: Session = Depends(get_db)):
+async def info_categories_delete(category_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     category = db.query(Category).filter(Category.id == category_id).first()
     if not category:
         raise HTTPException(status_code=404, detail="Kategoriya topilmadi")
@@ -1854,7 +1844,7 @@ async def info_categories_delete(category_id: int, db: Session = Depends(get_db)
 
 # --- CATEGORIES EXCEL OPERATIONS ---
 @app.get("/info/categories/export")
-async def export_categories(db: Session = Depends(get_db)):
+async def export_categories(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     categories = db.query(Category).all()
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -1868,7 +1858,7 @@ async def export_categories(db: Session = Depends(get_db)):
     return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=kategoriyalar.xlsx"})
 
 @app.get("/info/categories/template")
-async def template_categories():
+async def template_categories(current_user: User = Depends(require_auth)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Template"
@@ -1880,7 +1870,7 @@ async def template_categories():
     return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=kategoriya_andoza.xlsx"})
 
 @app.post("/info/categories/import")
-async def import_categories(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def import_categories(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     contents = await file.read()
     wb = openpyxl.load_workbook(io.BytesIO(contents))
     ws = wb.active
@@ -2071,7 +2061,7 @@ async def info_cash_edit(
     return RedirectResponse(url="/info/cash", status_code=303)
 
 @app.post("/info/cash/delete/{cash_id}")
-async def info_cash_delete(cash_id: int, db: Session = Depends(get_db)):
+async def info_cash_delete(cash_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     cash = db.query(CashRegister).filter(CashRegister.id == cash_id).first()
     if not cash:
         raise HTTPException(status_code=404, detail="Kassa topilmadi")
@@ -2126,7 +2116,7 @@ async def info_departments_edit(
     return RedirectResponse(url="/info/departments", status_code=303)
 
 @app.post("/info/departments/delete/{department_id}")
-async def info_departments_delete(department_id: int, db: Session = Depends(get_db)):
+async def info_departments_delete(department_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     department = db.query(Department).filter(Department.id == department_id).first()
     if not department:
         raise HTTPException(status_code=404, detail="Bo'lim topilmadi")
@@ -2137,7 +2127,7 @@ async def info_departments_delete(department_id: int, db: Session = Depends(get_
 
 # --- DEPARTMENTS EXCEL OPERATIONS ---
 @app.get("/info/departments/export")
-async def export_departments(db: Session = Depends(get_db)):
+async def export_departments(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     departments = db.query(Department).all()
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -2151,7 +2141,7 @@ async def export_departments(db: Session = Depends(get_db)):
     return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=bolimlar.xlsx"})
 
 @app.get("/info/departments/template")
-async def template_departments():
+async def template_departments(current_user: User = Depends(require_auth)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Template"
@@ -2163,7 +2153,7 @@ async def template_departments():
     return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=bolim_andoza.xlsx"})
 
 @app.post("/info/departments/import")
-async def import_departments(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def import_departments(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     contents = await file.read()
     wb = openpyxl.load_workbook(io.BytesIO(contents))
     ws = wb.active
@@ -2227,7 +2217,7 @@ async def info_directions_edit(
     return RedirectResponse(url="/info/directions", status_code=303)
 
 @app.post("/info/directions/delete/{direction_id}")
-async def info_directions_delete(direction_id: int, db: Session = Depends(get_db)):
+async def info_directions_delete(direction_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     direction = db.query(Direction).filter(Direction.id == direction_id).first()
     if not direction:
         raise HTTPException(status_code=404, detail="Yo'nalish topilmadi")
@@ -2238,7 +2228,7 @@ async def info_directions_delete(direction_id: int, db: Session = Depends(get_db
 
 # --- DIRECTIONS EXCEL OPERATIONS ---
 @app.get("/info/directions/export")
-async def export_directions(db: Session = Depends(get_db)):
+async def export_directions(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     directions = db.query(Direction).all()
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -2252,7 +2242,7 @@ async def export_directions(db: Session = Depends(get_db)):
     return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=yonalishlar.xlsx"})
 
 @app.get("/info/directions/template")
-async def template_directions():
+async def template_directions(current_user: User = Depends(require_auth)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Template"
@@ -2264,7 +2254,7 @@ async def template_directions():
     return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=yonalish_andoza.xlsx"})
 
 @app.post("/info/directions/import")
-async def import_directions(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def import_directions(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     contents = await file.read()
     wb = openpyxl.load_workbook(io.BytesIO(contents))
     ws = wb.active
@@ -2485,7 +2475,7 @@ import openpyxl
 
 # --- EXPORT PRODUCTS TO EXCEL ---
 @app.get("/products/export")
-async def export_products(db: Session = Depends(get_db)):
+async def export_products(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     products = db.query(Product).all()
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -2504,7 +2494,7 @@ async def export_products(db: Session = Depends(get_db)):
 
 # --- DOWNLOAD IMPORT TEMPLATE ---
 @app.get("/products/template")
-async def product_import_template():
+async def product_import_template(current_user: User = Depends(require_auth)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Import Template"
@@ -2528,15 +2518,17 @@ async def product_import_template():
     return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=tovar_andoza.xlsx"})
 
 @app.get("/products/{product_id}", response_class=HTMLResponse)
-async def product_detail(request: Request, product_id: int, db: Session = Depends(get_db)):
+async def product_detail(request: Request, product_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         return HTMLResponse("<h3>Mahsulot topilmadi</h3>", status_code=404)
-    return templates.TemplateResponse("products/detail.html", {"request": request, "product": product})
+    return templates.TemplateResponse("products/detail.html", {
+        "request": request, "product": product, "current_user": current_user, "page_title": product.name or "Tovar"
+    })
 
 # --- IMPORT PRODUCTS FROM EXCEL ---
 @app.get("/products/import")
-async def products_import_get():
+async def products_import_get(current_user: User = Depends(require_auth)):
     """Import sahifasi faqat form orqali; to'g'ridan-to'g'ri ochilsa tovarlar ro'yxatiga yo'naltirish."""
     return RedirectResponse(url="/products", status_code=303)
 
@@ -2824,17 +2816,17 @@ async def purchases_list(request: Request, db: Session = Depends(get_db), curren
 
 
 @app.get("/purchases/new", response_class=HTMLResponse)
-async def purchase_new(request: Request, db: Session = Depends(get_db)):
+async def purchase_new(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Yangi tovar kirimi"""
     products = db.query(Product).filter(Product.is_active == True).all()
     partners = db.query(Partner).filter(Partner.type.in_(["supplier", "both"])).all()
     warehouses = db.query(Warehouse).all()
-    
     return templates.TemplateResponse("purchases/new.html", {
         "request": request,
         "products": products,
         "partners": partners,
         "warehouses": warehouses,
+        "current_user": current_user,
         "page_title": "Yangi tovar kirimi"
     })
 
@@ -3136,7 +3128,7 @@ async def partner_delete(partner_id: int, db: Session = Depends(get_db)):
 
 # --- PARTNERS EXCEL OPERATIONS ---
 @app.get("/partners/export")
-async def export_partners(db: Session = Depends(get_db)):
+async def export_partners(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     partners = db.query(Partner).all()
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -3163,7 +3155,7 @@ async def template_partners():
     return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=kontragent_andoza.xlsx"})
 
 @app.post("/partners/import")
-async def import_partners(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def import_partners(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     contents = await file.read()
     wb = openpyxl.load_workbook(io.BytesIO(contents))
     ws = wb.active
@@ -3483,7 +3475,7 @@ async def sales_delete(
 # ==========================================
 
 @app.get("/finance", response_class=HTMLResponse)
-async def finance(request: Request, db: Session = Depends(get_db)):
+async def finance(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Moliya - kassa"""
     cash_registers = db.query(CashRegister).all()
     
@@ -3511,6 +3503,7 @@ async def finance(request: Request, db: Session = Depends(get_db)):
         "cash_registers": cash_registers,
         "payments": payments,
         "stats": stats,
+        "current_user": current_user,
         "page_title": "Moliya"
     })
 
@@ -3559,7 +3552,7 @@ async def employee_add(
 
 # --- EMPLOYEES EXCEL OPERATIONS ---
 @app.get("/employees/export")
-async def export_employees(db: Session = Depends(get_db)):
+async def export_employees(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     employees = db.query(Employee).all()
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -3585,7 +3578,7 @@ async def template_employees():
     return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=xodim_andoza.xlsx"})
 
 @app.post("/employees/import")
-async def import_employees(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def import_employees(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     contents = await file.read()
     wb = openpyxl.load_workbook(io.BytesIO(contents))
     ws = wb.active

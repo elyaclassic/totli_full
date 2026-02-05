@@ -196,7 +196,7 @@ async def info_units_edit(
 
 
 @router.post("/units/delete/{unit_id}")
-async def info_units_delete(unit_id: int, db: Session = Depends(get_db)):
+async def info_units_delete(unit_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     unit = db.query(Unit).filter(Unit.id == unit_id).first()
     if not unit:
         raise HTTPException(status_code=404, detail="O'lchov birligi topilmadi")
@@ -206,7 +206,7 @@ async def info_units_delete(unit_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/units/export")
-async def export_units(db: Session = Depends(get_db)):
+async def export_units(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     units = db.query(Unit).all()
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -225,7 +225,7 @@ async def export_units(db: Session = Depends(get_db)):
 
 
 @router.get("/units/template")
-async def template_units():
+async def template_units(current_user: User = Depends(require_auth)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Template"
@@ -242,7 +242,7 @@ async def template_units():
 
 
 @router.post("/units/import")
-async def import_units(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def import_units(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     contents = await file.read()
     wb = openpyxl.load_workbook(io.BytesIO(contents))
     ws = wb.active
@@ -309,7 +309,7 @@ async def info_categories_edit(
 
 
 @router.post("/categories/delete/{category_id}")
-async def info_categories_delete(category_id: int, db: Session = Depends(get_db)):
+async def info_categories_delete(category_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     category = db.query(Category).filter(Category.id == category_id).first()
     if not category:
         raise HTTPException(status_code=404, detail="Kategoriya topilmadi")
@@ -319,7 +319,7 @@ async def info_categories_delete(category_id: int, db: Session = Depends(get_db)
 
 
 @router.get("/categories/export")
-async def export_categories(db: Session = Depends(get_db)):
+async def export_categories(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     categories = db.query(Category).all()
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -338,7 +338,7 @@ async def export_categories(db: Session = Depends(get_db)):
 
 
 @router.get("/categories/template")
-async def template_categories():
+async def template_categories(current_user: User = Depends(require_auth)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Template"
@@ -355,7 +355,7 @@ async def template_categories():
 
 
 @router.post("/categories/import")
-async def import_categories(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def import_categories(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     contents = await file.read()
     wb = openpyxl.load_workbook(io.BytesIO(contents))
     ws = wb.active
@@ -553,7 +553,7 @@ async def info_cash_edit(
 
 
 @router.post("/cash/delete/{cash_id}")
-async def info_cash_delete(cash_id: int, db: Session = Depends(get_db)):
+async def info_cash_delete(cash_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     cash = db.query(CashRegister).filter(CashRegister.id == cash_id).first()
     if not cash:
         raise HTTPException(status_code=404, detail="Kassa topilmadi")
@@ -615,7 +615,7 @@ async def info_departments_edit(
 
 
 @router.post("/departments/delete/{department_id}")
-async def info_departments_delete(department_id: int, db: Session = Depends(get_db)):
+async def info_departments_delete(department_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     department = db.query(Department).filter(Department.id == department_id).first()
     if not department:
         raise HTTPException(status_code=404, detail="Bo'lim topilmadi")
@@ -625,7 +625,7 @@ async def info_departments_delete(department_id: int, db: Session = Depends(get_
 
 
 @router.get("/departments/export")
-async def export_departments(db: Session = Depends(get_db)):
+async def export_departments(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     departments = db.query(Department).all()
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -644,7 +644,7 @@ async def export_departments(db: Session = Depends(get_db)):
 
 
 @router.get("/departments/template")
-async def template_departments():
+async def template_departments(current_user: User = Depends(require_auth)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Template"
@@ -661,7 +661,7 @@ async def template_departments():
 
 
 @router.post("/departments/import")
-async def import_departments(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def import_departments(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     contents = await file.read()
     wb = openpyxl.load_workbook(io.BytesIO(contents))
     ws = wb.active
@@ -734,7 +734,7 @@ async def info_directions_edit(
 
 
 @router.post("/directions/delete/{direction_id}")
-async def info_directions_delete(direction_id: int, db: Session = Depends(get_db)):
+async def info_directions_delete(direction_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     direction = db.query(Direction).filter(Direction.id == direction_id).first()
     if not direction:
         raise HTTPException(status_code=404, detail="Yo'nalish topilmadi")
@@ -744,7 +744,7 @@ async def info_directions_delete(direction_id: int, db: Session = Depends(get_db
 
 
 @router.get("/directions/export")
-async def export_directions(db: Session = Depends(get_db)):
+async def export_directions(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     directions = db.query(Direction).all()
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -763,7 +763,7 @@ async def export_directions(db: Session = Depends(get_db)):
 
 
 @router.get("/directions/template")
-async def template_directions():
+async def template_directions(current_user: User = Depends(require_auth)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Template"
@@ -780,7 +780,7 @@ async def template_directions():
 
 
 @router.post("/directions/import")
-async def import_directions(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def import_directions(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     contents = await file.read()
     wb = openpyxl.load_workbook(io.BytesIO(contents))
     ws = wb.active
