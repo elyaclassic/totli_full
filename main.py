@@ -2780,11 +2780,15 @@ async def warehouse_movement(request: Request, db: Session = Depends(get_db), cu
     """Ombor harakatlari — so'nggi kirim, chiqim, ishlab chiqarish"""
     if not current_user:
         return RedirectResponse(url="/login", status_code=303)
-    products = db.query(Product).filter(Product.is_active == True).all()
-    warehouses = db.query(Warehouse).all()
-    recent_purchases = db.query(Purchase).order_by(Purchase.date.desc()).limit(30).all()
-    recent_sales = db.query(Order).filter(Order.type == "sale").order_by(Order.created_at.desc()).limit(30).all()
-    recent_productions = db.query(Production).order_by(Production.created_at.desc()).limit(30).all()
+    try:
+        products = db.query(Product).filter(Product.is_active == True).all()
+        warehouses = db.query(Warehouse).all()
+        recent_purchases = db.query(Purchase).order_by(Purchase.date.desc()).limit(30).all()
+        recent_sales = db.query(Order).filter(Order.type == "sale").order_by(Order.created_at.desc()).limit(30).all()
+        recent_productions = db.query(Production).order_by(Production.created_at.desc()).limit(30).all()
+    except Exception as e:
+        traceback.print_exc()
+        return RedirectResponse(url="/warehouse?error=movement&detail=" + str(e)[:50], status_code=303)
     return templates.TemplateResponse("warehouse/movement.html", {
         "request": request,
         "products": products,

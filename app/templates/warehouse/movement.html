@@ -32,7 +32,7 @@
                                 <tr>
                                     <td>{{ p.date.strftime('%d.%m.%Y') if p.date else '-' }}</td>
                                     <td><a href="/purchases/edit/{{ p.id }}">{{ p.number or '-' }}</a></td>
-                                    <td>{{ p.warehouse.name if p.warehouse else '-' }}</td>
+                                    <td>{{ (p.warehouse.name if p.warehouse else '-') }}</td>
                                     <td>{{ "{:,.0f}".format(p.total or 0) }} so'm</td>
                                     <td><span class="badge bg-{{ 'success' if p.status == 'confirmed' else 'secondary' }}">{{ p.status or 'draft' }}</span></td>
                                 </tr>
@@ -71,7 +71,7 @@
                                 <tr>
                                     <td>{{ o.created_at.strftime('%d.%m.%Y %H:%M') if o.created_at else '-' }}</td>
                                     <td><a href="/sales/edit/{{ o.id }}">{{ o.number or '-' }}</a></td>
-                                    <td>{{ o.partner.name if o.partner else '-' }}</td>
+                                    <td>{{ (o.partner.name if o.partner else 'Noma\'lum') }}</td>
                                     <td>{{ "{:,.0f}".format(o.total or 0) }} so'm</td>
                                     <td><span class="badge bg-{{ 'primary' if o.status == 'completed' else 'warning' if o.status == 'confirmed' else 'secondary' }}">{{ o.status or 'draft' }}</span></td>
                                 </tr>
@@ -110,7 +110,7 @@
                                 <tr>
                                     <td>{{ p.created_at.strftime('%d.%m.%Y %H:%M') if p.created_at else '-' }}</td>
                                     <td><a href="/production/{{ p.id }}/materials">{{ p.number or '-' }}</a></td>
-                                    <td>{{ p.recipe.name if p.recipe else p.recipe_id }}</td>
+                                    <td>{{ (p.recipe.name if p.recipe else p.recipe_id or '-') }}</td>
                                     <td>{{ "{:,.2f}".format(p.quantity or 0) }}</td>
                                     <td><span class="badge bg-{{ 'info' if p.status == 'completed' else 'secondary' }}">{{ p.status or 'draft' }}</span></td>
                                 </tr>
