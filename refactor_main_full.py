@@ -37,10 +37,9 @@ if start_dash is not None and end_dash is not None:
     changed = True
     print("Replaced dashboard block with include_router")
 
-    # Remove imports now only used in dashboard router or scheduler
+    # Remove imports now only used in dashboard router (check_low_stock stays: purchase/sales/production confirm in main call it)
     lines = [l for l in lines if l.strip() != "from app.utils.dashboard_export import export_executive_dashboard"]
     lines = [l for l in lines if l.strip() != "from app.utils.live_data import executive_live_data, warehouse_live_data, delivery_live_data"]
-    lines = [l for l in lines if l.strip() != "from app.utils.notifications import check_low_stock_and_notify"]
     n = len(lines)
 
     # Add dashboard import if missing

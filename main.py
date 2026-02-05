@@ -31,6 +31,7 @@ from app.utils.auth import (
     hash_password, get_user_from_token,
     generate_csrf_token, verify_csrf_token,
 )
+from app.utils.notifications import check_low_stock_and_notify
 from app.deps import get_current_user, require_auth, require_admin
 from app.core import templates
 from app.routes import auth as auth_routes
