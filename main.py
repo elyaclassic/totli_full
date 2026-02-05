@@ -5278,7 +5278,12 @@ async def machine_delete(machine_id: int, db: Session = Depends(get_db), current
 async def startup():
     """Dastur ishga tushganda"""
     init_db()
-    print("рџљЂ TOTLI HOLVA Business System ishga tushdi!")
+    try:
+        from app.utils.scheduler import start_scheduler
+        start_scheduler()
+    except Exception as e:
+        print("[Startup] Scheduler ishga tushmadi:", e)
+    print("TOTLI HOLVA Business System ishga tushdi!")
 
 
 if __name__ == "__main__":
