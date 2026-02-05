@@ -434,6 +434,7 @@ class Employee(Base):
     phone = Column(String(20))
     address = Column(String(255))
     hire_date = Column(Date)
+    birth_date = Column(Date, nullable=True)  # Tug'ilgan kun (bosh sahifa bildirishnomalari uchun)
     salary = Column(Float, default=0)
     is_active = Column(Boolean, default=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)

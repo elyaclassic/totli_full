@@ -1597,6 +1597,24 @@ async def home(request: Request, db: Session = Depends(get_db), current_user: Us
     )
     # Kam qolgan tovarlar (qoldiq < min_stock)
     low_stock_count = db.query(Stock).join(Product).filter(Stock.quantity < Product.min_stock).count()
+    # Bugun tug'ilgan kunlar (Employee.birth_date)
+    birthday_today_count = 0
+    if hasattr(Employee, "birth_date"):
+        try:
+            birthday_today_count = db.query(Employee).filter(
+                Employee.birth_date.isnot(None),
+                func.strftime("%m-%d", Employee.birth_date) == today.strftime("%m-%d"),
+                Employee.is_active == True,
+            ).count()
+        except Exception:
+            pass
+    # Muddati o'tgan qarzlar (sotuvda qarz > 0 va 7+ kun oldin)
+    overdue_cutoff = datetime.now() - timedelta(days=7)
+    overdue_debts_count = db.query(Order).filter(
+        Order.type == "sale",
+        Order.debt > 0,
+        Order.created_at < overdue_cutoff,
+    ).count()
     error = request.query_params.get("error")
     return templates.TemplateResponse("index.html", {
         "request": request,
@@ -1606,6 +1624,8 @@ async def home(request: Request, db: Session = Depends(get_db), current_user: Us
         "error": error,
         "recent_sales": recent_sales,
         "low_stock_count": low_stock_count,
+        "birthday_today_count": birthday_today_count,
+        "overdue_debts_count": overdue_debts_count,
     })
 
 
