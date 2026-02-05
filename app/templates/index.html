@@ -7,6 +7,18 @@
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 {% endif %}
+{% if error == "csrf" %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    Xavfsizlik xatosi: sahifa muddati tugagan. Sahifani yangilab (F5) qayta urinib ko'ring.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if error and error != "admin_required" and error != "csrf" %}
+<div class="alert alert-warning alert-dismissible fade show" role="alert">
+    {{ error }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
 <!-- Statistika kartalar -->
 <div class="row row-cols-1 row-cols-md-4 g-4 mb-4">
     <div class="col">
@@ -183,11 +195,11 @@
                 </div>
                 <div class="alert alert-info mb-2">
                     <i class="bi bi-info-circle"></i>
-                    <small>Bugun tug'ilgan kunlar: <strong>0</strong></small>
+                    <small>Bugun tug'ilgan kunlar: <strong>{{ birthday_today_count|default(0) }}</strong></small>
                 </div>
                 <div class="alert alert-danger mb-0">
                     <i class="bi bi-clock"></i>
-                    <small>Muddati o'tgan qarzlar: <strong>0</strong></small>
+                    <small>Muddati o'tgan qarzlar (7+ kun): <strong>{{ overdue_debts_count|default(0) }}</strong></small>
                 </div>
             </div>
         </div>

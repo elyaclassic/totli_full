@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ page_title }} - TOTLI HOLVA</title>
     <link rel="icon" href="/static/images/logo.png" type="image/png">
+    <meta name="csrf-token" content="{{ getattr(request.state, 'csrf_token', '') }}">
 
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -278,6 +279,11 @@
             color: #d32f2f;
         }
 
+        /* Modal har doim backdrop ustida va bosiladigan qilish */
+        .modal { z-index: 1060 !important; }
+        .modal-backdrop { z-index: 1050 !important; }
+        .modal-dialog, .modal-content { pointer-events: auto !important; }
+
         /* MOBILE RESPONSIVE - FORCED */
         @media screen and (max-width: 768px) {
             .sidebar {
@@ -340,6 +346,12 @@
                 style="color: #FFB50D; font-size: 14px; text-transform: uppercase; letter-spacing: 2px; display: block; margin-top: 5px; font-weight: 700;">SWEETS</span>
         </div>
 
+        {% set user_role = current_user.role if current_user else 'user' %}
+        {% set full_menu = user_role in ['admin', 'manager', 'user'] %}
+        {% set agent_menu = user_role in ['agent', 'driver'] %}
+        {% set production_menu = user_role == 'production' %}
+        {% set qadoqlash_menu = user_role == 'qadoqlash' %}
+
         <ul class="nav flex-column mt-3">
             <li class="nav-item">
                 <a class="nav-link {% if page_title == 'Bosh sahifa' %}active{% endif %}" href="/">
@@ -347,7 +359,8 @@
                 </a>
             </li>
 
-            <!-- DASHBOARDS (yigiladigan) -->
+            {% if full_menu %}
+            <!-- DASHBOARDS (yigiladigan) - admin, manager, user -->
             <li class="nav-item mt-2">
                 <a class="nav-link" data-bs-toggle="collapse" href="#dashboardsMenu" role="button"
                     aria-expanded="false">
@@ -475,6 +488,11 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link {% if 'Uskunalar' in page_title %}active{% endif %}" href="/info/machines">
+                                <i class="bi bi-gear-wide-connected"></i> Uskunalar
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link {% if 'Kontragent' in page_title %}active{% endif %}" href="/partners">
                                 <i class="bi bi-people"></i> Kontragentlar
                             </a>
@@ -563,6 +581,125 @@
                     <i class="bi bi-binoculars"></i> Supervayzer
                 </a>
             </li>
+
+            {% elif agent_menu %}
+            <!-- Agent uchun qisqa menyu -->
+            <li class="nav-item mt-2">
+                <a class="nav-link {% if 'Agent' in page_title %}active{% endif %}" href="/dashboard/agent">
+                    <i class="bi bi-person-badge"></i> Agentlar dashboard
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'Sotuv' in page_title %}active{% endif %}" href="/sales">
+                    <i class="bi bi-cart3"></i> Sotuvlar
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'Yetkazish' in page_title %}active{% endif %}" href="/delivery">
+                    <i class="bi bi-truck"></i> Yetkazish
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'Xarita' in page_title %}active{% endif %}" href="/map">
+                    <i class="bi bi-geo-alt"></i> Xarita
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'Kontragent' in page_title %}active{% endif %}" href="/partners">
+                    <i class="bi bi-people"></i> Kontragentlar
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'Supervayzer' in page_title %}active{% endif %}" href="/supervisor">
+                    <i class="bi bi-binoculars"></i> Supervayzer
+                </a>
+            </li>
+
+            {% elif production_menu %}
+            <!-- Ishlab chiqarish uchun qisqa menyu -->
+            <li class="nav-item mt-2">
+                <a class="nav-link {% if 'Ishlab chiqarish' in page_title %}active{% endif %}" href="/production">
+                    <i class="bi bi-gear-fill"></i> Ishlab chiqarish
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'Retsept' in page_title %}active{% endif %}" href="/production/recipes">
+                    <i class="bi bi-journal-text"></i> Retseptlar
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'Ombor' in page_title %}active{% endif %}" href="/info/warehouses">
+                    <i class="bi bi-building"></i> Omborlar
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'Uskunalar' in page_title %}active{% endif %}" href="/info/machines">
+                    <i class="bi bi-gear-wide-connected"></i> Uskunalar
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'Ombor' in page_title and 'Omborlar' not in page_title %}active{% endif %}" href="/warehouse">
+                    <i class="bi bi-box"></i> Ombor qoldiqlari
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'Hisobot' in page_title %}active{% endif %}" href="/reports">
+                    <i class="bi bi-bar-chart-line"></i> Hisobotlar
+                </a>
+            </li>
+
+            {% elif qadoqlash_menu %}
+            <!-- Qadoqlash uchun qisqa menyu -->
+            <li class="nav-item mt-2">
+                <a class="nav-link {% if 'Ishlab chiqarish' in page_title %}active{% endif %}" href="/production">
+                    <i class="bi bi-gear-fill"></i> Ishlab chiqarish
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'Retsept' in page_title %}active{% endif %}" href="/production/recipes">
+                    <i class="bi bi-journal-text"></i> Retseptlar
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'Ombor' in page_title %}active{% endif %}" href="/info/warehouses">
+                    <i class="bi bi-building"></i> Omborlar
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'Ombor' in page_title and 'Omborlar' not in page_title %}active{% endif %}" href="/warehouse">
+                    <i class="bi bi-box"></i> Ombor qoldiqlari
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'Hisobot' in page_title %}active{% endif %}" href="/reports">
+                    <i class="bi bi-bar-chart-line"></i> Hisobotlar
+                </a>
+            </li>
+
+            {% else %}
+            <!-- Noma'lum rol: to'liq menyu ko'rsatiladi -->
+            <li class="nav-item mt-2">
+                <a class="nav-link" data-bs-toggle="collapse" href="#dashboardsMenu" role="button" aria-expanded="false">
+                    <i class="bi bi-speedometer2"></i> DASHBOARDS <i class="bi bi-chevron-down ms-auto"></i>
+                </a>
+                <div class="collapse" id="dashboardsMenu">
+                    <ul class="nav flex-column ms-3">
+                        <li class="nav-item"><a class="nav-link" href="/test/dashboard/executive"><i class="bi bi-speedometer2"></i> Rahbariyat</a></li>
+                        <li class="nav-item"><a class="nav-link" href="/dashboard/sales"><i class="bi bi-cart-check"></i> Savdo</a></li>
+                        <li class="nav-item"><a class="nav-link" href="/dashboard/agent"><i class="bi bi-person-badge"></i> Agentlar</a></li>
+                        <li class="nav-item"><a class="nav-link" href="/dashboard/production"><i class="bi bi-gear-fill"></i> Ishlab chiqarish</a></li>
+                        <li class="nav-item"><a class="nav-link" href="/dashboard/warehouse"><i class="bi bi-box-seam"></i> Ombor</a></li>
+                        <li class="nav-item"><a class="nav-link" href="/dashboard/delivery"><i class="bi bi-truck"></i> Yetkazib berish</a></li>
+                    </ul>
+                </div>
+            </li>
+            <li class="nav-item"><a class="nav-link" href="/production"><i class="bi bi-gear-fill"></i> Ishlab chiqarish</a></li>
+            <li class="nav-item"><a class="nav-link" href="/sales"><i class="bi bi-cart3"></i> Sotuvlar</a></li>
+            <li class="nav-item"><a class="nav-link" href="/reports"><i class="bi bi-bar-chart-line"></i> Hisobotlar</a></li>
+            <li class="nav-item"><a class="nav-link" href="/agents"><i class="bi bi-person-walking"></i> Agentlar</a></li>
+            <li class="nav-item"><a class="nav-link" href="/delivery"><i class="bi bi-truck"></i> Yetkazish</a></li>
+            <li class="nav-item"><a class="nav-link" href="/map"><i class="bi bi-geo-alt"></i> Xarita</a></li>
+            {% endif %}
         </ul>
 
         <!-- User Profile Section -->
@@ -618,11 +755,43 @@
         {% block content %}{% endblock %}
     </div>
 
+    <!-- Modallar body darajasida (backdrop ustiga chiqmasligi uchun) -->
+    {% block modals %}{% endblock %}
+
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
     {% block extra_js %}{% endblock %}
 
+    <script>
+        // CSRF: barcha formalarga token qo'shish
+        (function () {
+            var meta = document.querySelector('meta[name="csrf-token"]');
+            var token = meta ? meta.getAttribute('content') : '';
+            if (token) {
+                document.querySelectorAll('form').forEach(function (form) {
+                    if (!form.querySelector('input[name="csrf_token"]')) {
+                        var input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = 'csrf_token';
+                        input.value = token;
+                        form.appendChild(input);
+                    }
+                });
+            }
+        })();
+    </script>
+    <script>
+        // Modallarni body ga ko'chirish — backdrop ustiga chiqmasligi va bosish ishlashi uchun
+        document.addEventListener('DOMContentLoaded', function () {
+            document.querySelectorAll('.modal').forEach(function (modalEl) {
+                document.body.appendChild(modalEl);
+                modalEl.addEventListener('shown.bs.modal', function () {
+                    document.body.appendChild(modalEl);
+                });
+            });
+        });
+    </script>
     <script>
         // Force hide sidebar on mobile
         if (window.innerWidth <= 768) {

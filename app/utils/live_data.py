@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func
 
 from app.models.database import (
-    get_db, Order, Stock, Delivery, Production, Notification
+    get_db, Order, Stock, Delivery, Production, Notification, Product
 )
 
 
@@ -46,9 +46,9 @@ async def executive_live_data(request: Request, db: Session):
 async def warehouse_live_data(request: Request, db: Session):
     """Live data for Warehouse Dashboard"""
     
-    # Low stock count
-    low_stock = db.query(func.count(Stock.id)).filter(
-        Stock.quantity < Stock.min_quantity
+    # Low stock count: Stock.quantity < Product.min_stock (Stock da min_quantity yo'q)
+    low_stock = db.query(func.count(Stock.id)).join(Product, Stock.product_id == Product.id).filter(
+        Stock.quantity < Product.min_stock
     ).scalar() or 0
     
     # Total products

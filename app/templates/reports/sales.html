@@ -15,11 +15,17 @@
                 <label class="form-label">Tugash sanasi</label>
                 <input type="date" class="form-control" name="end_date" value="{{ end_date }}">
             </div>
-            <div class="col-md-4">
+            <div class="col-md-2">
                 <label class="form-label">&nbsp;</label>
-                <button type="submit" class="btn btn-primary d-block w-100">
+                <button type="submit" class="btn btn-primary w-100">
                     <i class="bi bi-search"></i> Ko'rsatish
                 </button>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">&nbsp;</label>
+                <a href="/reports/sales/export?start_date={{ start_date }}&end_date={{ end_date }}" class="btn btn-success w-100">
+                    <i class="bi bi-file-earmark-excel"></i> Excel
+                </a>
             </div>
         </form>
     </div>

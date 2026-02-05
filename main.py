@@ -21,22 +21,238 @@ from app.models.database import (
     get_db, init_db, SessionLocal,
     User, Product, Category, Unit, Warehouse, Stock,
     Partner, Order, OrderItem, Payment, CashRegister,
-    Recipe, RecipeItem, Production, ProductionItem, Machine, Employee, Salary,
+    Recipe, RecipeItem, Production, ProductionItem, ProductionStage, PRODUCTION_STAGE_NAMES, Machine, Employee, Salary,
     Agent, AgentLocation, Route, RoutePoint, Visit,
     Driver, DriverLocation, Delivery, PartnerLocation,
     Purchase, PurchaseItem, Department, Direction, Region, Position,
     PriceType, ProductPrice
 )
 from app.utils.auth import (
-    hash_password, verify_password, 
-    create_session_token, get_user_from_token
+    hash_password, get_user_from_token,
+    generate_csrf_token, verify_csrf_token,
 )
-from app.utils.dashboard_export import export_executive_dashboard
-from app.utils.live_data import executive_live_data, warehouse_live_data, delivery_live_data
+from app.utils.notifications import check_low_stock_and_notify
+from app.deps import get_current_user, require_auth, require_admin
+from app.core import templates
+from app.routes import auth as auth_routes
+from app.routes import dashboard as dashboard_routes
+from app.routes import home as home_routes
+from app.routes import reports as reports_routes
+from app.routes import info as info_routes
 
 app = FastAPI(title="TOTLI HOLVA", description="Biznes boshqaruv tizimi", version="1.0")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
-templates = Jinja2Templates(directory="app/templates")
+
+# Routerlar (auth, dashboard, home, reports, info)
+app.include_router(auth_routes.router)
+app.include_router(home_routes.router)
+app.include_router(reports_routes.router)
+app.include_router(info_routes.router)
+app.include_router(dashboard_routes.router)
+
+
+# ==========================================
+# 404 – sahifa topilmadi (HTML)
+# ==========================================
+_HTML_404 = """
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>404 - Sahifa topilmadi - TOTLI HOLVA</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light d-flex align-items-center justify-content-center min-vh-100">
+    <div class="text-center p-5">
+        <h1 class="display-1 text-muted">404</h1>
+        <h2 class="text-secondary">Sahifa topilmadi</h2>
+        <p class="lead text-muted">So'ralgan sahifa mavjud emas yoki ko'chirilgan.</p>
+        <a href="/" class="btn btn-success mt-3">Bosh sahifaga</a>
+        <a href="/login" class="btn btn-outline-secondary mt-3 ms-2">Kirish</a>
+    </div>
+</body>
+</html>
+"""
+
+_HTML_500 = """
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>500 - Server xatosi - TOTLI HOLVA</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light d-flex align-items-center justify-content-center min-vh-100">
+    <div class="text-center p-5">
+        <h1 class="display-1 text-danger">500</h1>
+        <h2 class="text-secondary">Server xatosi</h2>
+        <p class="lead text-muted">Iltimos, keyinroq urinib ko'ring yoki administrator bilan bog'laning.</p>
+        <a href="/" class="btn btn-success mt-3">Bosh sahifaga</a>
+        <a href="/login" class="btn btn-outline-secondary mt-3 ms-2">Kirish</a>
+    </div>
+</body>
+</html>
+"""
+
+
+@app.exception_handler(404)
+async def not_found_handler(request: Request, exc):
+    """404 – sahifa topilmadi (HTML)."""
+    return HTMLResponse(content=_HTML_404, status_code=404)
+
+
+# ==========================================
+# GLOBAL FALLBACK - istalgan xatoda 500 o'rniga login (HTML)
+# ==========================================
+@app.middleware("http")
+async def global_safe_middleware(request: Request, call_next):
+    try:
+        response = await call_next(request)
+        try:
+            response.headers["X-Server-Source"] = "pwp"
+        except Exception:
+            pass
+        return response
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except BaseException as e:
+        tb = traceback.format_exc()
+        traceback.print_exc()
+        for _dir in [os.path.dirname(os.path.abspath(__file__)), os.getcwd(), r"C:\Users\ELYOR\.cursor\worktrees\business_system\pwp"]:
+            try:
+                if _dir:
+                    log_path = os.path.join(_dir, "server_error.log")
+                    with open(log_path, "a", encoding="utf-8") as f:
+                        f.write("\n--- [global_safe] %s ---\n%s\n" % (datetime.now().isoformat(), tb))
+                    break
+            except Exception:
+                continue
+        try:
+            path = (getattr(request, "url", None) and getattr(request.url, "path", None)) or getattr(request, "path", None) or "/"
+        except Exception:
+            path = "/"
+        if path == "/login" or path == "/favicon.ico":
+            r = JSONResponse(status_code=500, content={"detail": "Server xatosi"})
+        else:
+            try:
+                accept = getattr(request, "headers", None) and (request.headers.get("accept") or "")
+            except Exception:
+                accept = ""
+            if "text/html" in (accept or ""):
+                r = RedirectResponse(url="/login?error=please_retry", status_code=303)
+                try:
+                    r.delete_cookie("session_token", path="/")
+                except Exception:
+                    pass
+            else:
+                r = JSONResponse(status_code=500, content={"detail": "Server xatosi"})
+        try:
+            r.headers["X-Server-Source"] = "pwp"
+        except Exception:
+            pass
+        return r
+
+
+# ==========================================
+# CSRF MIDDLEWARE - POST/PUT/DELETE so'rovlarni himoya qilish
+# ==========================================
+@app.middleware("http")
+async def csrf_middleware(request: Request, call_next):
+    try:
+        return await _csrf_middleware_impl(request, call_next)
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return await call_next(request)
+
+
+async def _csrf_middleware_impl(request: Request, call_next):
+    from urllib.parse import parse_qs
+    from starlette.requests import Request as StarletteRequest
+
+    try:
+        path = (getattr(request, "url", None) and getattr(request.url, "path", None)) or getattr(request, "path", None) or "/"
+    except Exception:
+        path = "/"
+    method = (getattr(request, "method", None) or "GET")
+    if not isinstance(method, str):
+        method = "GET"
+    method = method.upper()
+    # GET, HEAD, OPTIONS da CSRF tekshiruvi yo'q
+    if method in ("GET", "HEAD", "OPTIONS"):
+        token = request.cookies.get("csrf_token")
+        if not token:
+            token = generate_csrf_token()
+        try:
+            setattr(request.state, "csrf_token", token)
+        except Exception:
+            pass
+        response = await call_next(request)
+        if not request.cookies.get("csrf_token"):
+            response.set_cookie("csrf_token", token, path="/", httponly=False, samesite="lax", max_age=86400 * 7)
+        return response
+
+    # Himoyalanmaydigan yo'llar (API login, static, PWA location)
+    if path in ("/login", "/api/agent/login", "/api/driver/login") or path.startswith("/static"):
+        try:
+            setattr(request.state, "csrf_token", request.cookies.get("csrf_token") or generate_csrf_token())
+        except Exception:
+            pass
+        return await call_next(request)
+
+    # Cookie dan yoki yangi token
+    token = request.cookies.get("csrf_token")
+    if not token:
+        token = generate_csrf_token()
+    try:
+        setattr(request.state, "csrf_token", token)
+    except Exception:
+        pass
+
+    # POST/PUT/PATCH/DELETE da token tekshirish
+    received_token = request.headers.get("X-CSRF-Token")
+    content_type = request.headers.get("content-type", "")
+    if not received_token and "application/x-www-form-urlencoded" in content_type:
+        body = await request.body()
+        parsed = parse_qs(body.decode("utf-8", errors="replace"))
+        received_token = (parsed.get("csrf_token") or [None])[0]
+        async def receive():
+            return {"type": "http.request", "body": body}
+        request = StarletteRequest(request.scope, receive)
+        try:
+            setattr(request.state, "csrf_token", token)
+        except Exception:
+            pass
+    elif "multipart/form-data" in content_type and not received_token:
+        body = await request.body()
+        # multipart dan csrf_token ni qidirish (name="csrf_token" dan keyingi qiymat)
+        idx = body.find(b'name="csrf_token"')
+        if idx != -1:
+            start = body.find(b"\r\n\r\n", idx) + 4
+            end = body.find(b"\r\n", start)
+            if start != 3 and end != -1:
+                received_token = body[start:end].decode("utf-8", errors="replace")
+        async def receive():
+            return {"type": "http.request", "body": body}
+        request = StarletteRequest(request.scope, receive)
+        try:
+            setattr(request.state, "csrf_token", token)
+        except Exception:
+            pass
+
+    if not verify_csrf_token(received_token, token):
+        if "text/html" in request.headers.get("accept", ""):
+            return RedirectResponse(url=f"/?error=csrf", status_code=303)
+        return JSONResponse(status_code=403, content={"detail": "CSRF token noto'g'ri yoki yo'q"})
+
+    response = await call_next(request)
+    if not request.cookies.get("csrf_token"):
+        response.set_cookie("csrf_token", token, path="/", httponly=False, samesite="lax", max_age=86400 * 7)
+    return response
 
 
 # ==========================================
@@ -44,16 +260,54 @@ templates = Jinja2Templates(directory="app/templates")
 # ==========================================
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    path = request.url.path
-    # Login, logout, static, favicon - himoya kerak emas
-    if path == "/login" or path == "/logout" or path == "/favicon.ico":
+    try:
+        return await _auth_middleware_impl(request, call_next)
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except BaseException as e:
+        # ExceptionGroup va boshqa BaseException (traceback brauzerga chiqmasin)
+        tb = traceback.format_exc()
+        traceback.print_exc()
+        for _dir in [os.path.dirname(os.path.abspath(__file__)), os.getcwd(), r"C:\Users\ELYOR\.cursor\worktrees\business_system\pwp"]:
+            try:
+                if _dir:
+                    with open(os.path.join(_dir, "server_error.log"), "a", encoding="utf-8") as f:
+                        f.write("\n--- [auth_middleware] %s ---\n%s\n" % (datetime.now().isoformat(), tb))
+                    break
+            except Exception:
+                continue
+        try:
+            path = (getattr(request, "url", None) and getattr(request.url, "path", None)) or getattr(request, "path", None) or "/"
+        except Exception:
+            path = "/"
+        if path == "/login" or path == "/favicon.ico":
+            return JSONResponse(status_code=500, content={"detail": "Server xatosi"})
+        try:
+            accept = (request.headers.get("accept") or "") if getattr(request, "headers", None) else ""
+        except Exception:
+            accept = ""
+        if "text/html" in accept:
+            resp = RedirectResponse(url="/login?error=please_retry", status_code=303)
+            try:
+                resp.delete_cookie("session_token", path="/")
+            except Exception:
+                pass
+            return resp
+        return JSONResponse(status_code=500, content={"detail": "Server xatosi"})
+
+
+async def _auth_middleware_impl(request: Request, call_next):
+    path = (getattr(request, "url", None) and getattr(request.url, "path", None)) or getattr(request, "path", "/") or "/"
+    method = (getattr(request, "method", None) or "GET").upper() if isinstance(getattr(request, "method", None), str) else "GET"
+    # Login, logout, static, favicon, ping - himoya kerak emas
+    if path in ("/login", "/logout", "/favicon.ico", "/ping"):
         return await call_next(request)
     if path.startswith("/static"):
         return await call_next(request)
     # Mobil/PWA agent va haydovchi API (alohida token bilan)
     if path in ("/api/agent/login", "/api/driver/login"):
         return await call_next(request)
-    if (path == "/api/agent/location" or path == "/api/driver/location") and request.method == "POST":
+    if (path == "/api/agent/location" or path == "/api/driver/location") and method == "POST":
         return await call_next(request)
     if path in ("/api/agent/orders", "/api/agent/partners"):
         return await call_next(request)
@@ -79,47 +333,13 @@ async def auth_middleware(request: Request, call_next):
             resp = RedirectResponse(url="/login", status_code=303)
             resp.delete_cookie("session_token")
             return resp
+        return await call_next(request)
     finally:
         db.close()
-    return await call_next(request)
 
 
 # ==========================================
-# AUTENTIFIKATSIYA HELPER FUNKSIYALARI
-# ==========================================
-
-def get_current_user(session_token: Optional[str] = Cookie(None), db: Session = Depends(get_db)) -> Optional[User]:
-    """Cookie dan foydalanuvchini olish"""
-    if not session_token:
-        return None
-    
-    user_data = get_user_from_token(session_token)
-    if not user_data:
-        return None
-    
-    user = db.query(User).filter(User.id == user_data["user_id"]).first()
-    if not user or not user.is_active:
-        return None
-    
-    return user
-
-
-def require_auth(current_user: User = Depends(get_current_user)) -> Optional[User]:
-    """Login talab qilish - None qaytaradi agar login qilmagan bo'lsa"""
-    return current_user
-
-
-def require_admin(current_user: User = Depends(get_current_user)) -> User:
-    """Faqat admin - boshqa rollar 403 qaytaradi"""
-    if not current_user:
-        raise HTTPException(status_code=401, detail="Login talab qilindi")
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Faqat administrator uchun ruxsat")
-    return current_user
-
-
-# ==========================================
-# AUTENTIFIKATSIYA ENDPOINTLARI
+# AUTENTIFIKATSIYA — app.routes.auth da
 # ==========================================
 
 @app.exception_handler(403)
@@ -132,90 +352,54 @@ async def forbidden_handler(request: Request, exc: HTTPException):
 
 @app.exception_handler(Exception)
 async def debug_500_handler(request: Request, exc: Exception):
-    """500 xatolikda sababni ko'rsatish (tuzatish uchun)"""
+    """500 da: brauzer uchun login ga yo'naltirish, traceback konsolda va server_error.log da."""
     tb = traceback.format_exc()
-    body = f"<pre style='white-space:pre-wrap;font-size:12px;'>{tb}</pre>"
-    return HTMLResponse(content=body, status_code=500)
+    traceback.print_exc()
+    for _dir in [os.path.dirname(os.path.abspath(__file__)), os.getcwd(), r"C:\Users\ELYOR\.cursor\worktrees\business_system\pwp"]:
+        try:
+            if _dir:
+                with open(os.path.join(_dir, "server_error.log"), "a", encoding="utf-8") as f:
+                    f.write("\n--- [exception_handler] %s ---\n%s\n" % (datetime.now().isoformat(), tb))
+                break
+        except Exception:
+            continue
+    try:
+        path = (getattr(request, "url", None) and getattr(request.url, "path", None)) or getattr(request, "path", None) or "/"
+    except Exception:
+        path = "/"
+    if path == "/login" or path == "/favicon.ico":
+        return JSONResponse(status_code=500, content={"detail": "Server xatosi"})
+    try:
+        accept = (request.headers.get("accept") or "") if getattr(request, "headers", None) else ""
+    except Exception:
+        accept = ""
+    if "text/html" in accept:
+        resp = RedirectResponse(url="/login?error=please_retry", status_code=303)
+        try:
+            resp.delete_cookie("session_token", path="/")
+        except Exception:
+            pass
+        return resp
+    return JSONResponse(status_code=500, content={"detail": "Server xatosi"})
+
+
+@app.get("/ping", include_in_schema=False)
+async def ping():
+    """Qaysi main.py ishlayotganini tekshirish (auth kerak emas)."""
+    return {"ok": True, "main_py": os.path.abspath(__file__)}
 
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     """Brauzer uchun favicon (logo) — 404 oldini olish"""
-    favicon_path = "app/static/images/logo.png"
-    if os.path.isfile(favicon_path):
-        return FileResponse(favicon_path, media_type="image/png")
-    return Response(status_code=204)
-
-
-@app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request, current_user: User = Depends(get_current_user)):
-    """Login sahifasi"""
-    # Agar foydalanuvchi allaqachon tizimga kirgan bo'lsa, bosh sahifaga yo'naltirish
-    if current_user:
-        return RedirectResponse(url="/", status_code=303)
-    
-    return templates.TemplateResponse("login.html", {"request": request})
-
-
-@app.post("/login")
-async def login(
-    request: Request,
-    username: str = Form(...),
-    password: str = Form(...),
-    db: Session = Depends(get_db)
-):
-    """Login qilish"""
     try:
-        # Foydalanuvchini topish
-        user = db.query(User).filter(User.username == username).first()
-        
-        # Parolni tekshirish
-        if not user or not verify_password(password, user.password_hash):
-            return templates.TemplateResponse("login.html", {
-                "request": request,
-                "error": "Login yoki parol noto'g'ri!"
-            })
-        
-        # Faol emasligini tekshirish
-        if not user.is_active:
-            return templates.TemplateResponse("login.html", {
-                "request": request,
-                "error": "Sizning hisobingiz faol emas. Administrator bilan bog'laning."
-            })
-        
-        # Session token yaratish
-        token = create_session_token(user.id, user.username)
-        # Cookie o'rnatish
-        use_https = os.getenv("HTTPS", "").lower() in ("1", "true", "yes")
-        redirect_response = RedirectResponse(url="/", status_code=303)
-        redirect_response.set_cookie(
-            key="session_token",
-            value=token,
-            path="/",
-            httponly=True,
-            max_age=86400,  # 24 soat
-            samesite="lax",
-            secure=use_https
-        )
-        
-        return redirect_response
-    
-    except Exception as e:
-        print(f"❌ LOGIN XATO: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return templates.TemplateResponse("login.html", {
-            "request": request,
-            "error": f"Tizimda xatolik yuz berdi: {str(e)}"
-        })
-
-
-@app.get("/logout")
-async def logout():
-    """Logout qilish"""
-    response = RedirectResponse(url="/login", status_code=303)
-    response.delete_cookie("session_token")
-    return response
+        root = os.path.dirname(os.path.abspath(__file__))
+        favicon_path = os.path.join(root, "app", "static", "images", "logo.png")
+        if os.path.isfile(favicon_path):
+            return FileResponse(os.path.abspath(favicon_path), media_type="image/png")
+    except Exception:
+        pass
+    return Response(status_code=204)
 
 
 # ==========================================
@@ -278,6 +462,7 @@ async def executive_dashboard_test(request: Request, db: Session = Depends(get_d
     return templates.TemplateResponse("dashboards/executive.html", {
         "request": request,
         "page_title": "Rahbariyat Dashboard",
+        "current_user": None,
         "user": fake_user,
         "stats": stats,
         "sales_trend": sales_trend,
@@ -288,23 +473,13 @@ async def executive_dashboard_test(request: Request, db: Session = Depends(get_d
 
 
 @app.get("/dashboard/executive", response_class=HTMLResponse)
-async def executive_dashboard(request: Request, db: Session = Depends(get_db)):
+async def executive_dashboard(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Rahbariyat Dashboard - Real Data"""
     from datetime import datetime, timedelta
     from sqlalchemy import func
     from app.models.database import Order, OrderItem, Agent, Stock, Product
     
-    # Get user from session cookie
-    session_token = request.cookies.get("session_token")
-    if not session_token:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    user_data = get_user_from_token(session_token)
-    if not user_data:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    user = db.query(User).filter(User.id == user_data["user_id"]).first()
-    if not user or not user.is_active:
+    if not current_user:
         return RedirectResponse(url="/login", status_code=303)
     
     # Bugungi sana
@@ -445,7 +620,8 @@ async def executive_dashboard(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("dashboards/executive.html", {
         "request": request,
         "page_title": "Rahbariyat Dashboard",
-        "user": user,
+        "current_user": current_user,
+        "user": current_user,
         "stats": stats,
         "sales_trend": {
             "labels": sales_trend_labels,
@@ -462,7 +638,7 @@ async def executive_dashboard(request: Request, db: Session = Depends(get_db)):
 
 # Executive Dashboard - Export to Excel
 @app.get("/dashboard/executive/export")
-async def executive_export(request: Request, db: Session = Depends(get_db)):
+async def executive_export(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Export Executive Dashboard to Excel"""
     return await export_executive_dashboard(request, db)
 
@@ -486,23 +662,13 @@ async def delivery_live(request: Request, db: Session = Depends(get_db)):
 
 # Sales Dashboard - Real Data
 @app.get("/dashboard/sales", response_class=HTMLResponse)
-async def sales_dashboard(request: Request, db: Session = Depends(get_db)):
+async def sales_dashboard(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Savdo Dashboard - Real Data"""
     from datetime import datetime, timedelta
     from sqlalchemy import func
     from app.models.database import Order, Partner
     
-    # Get user from session cookie
-    session_token = request.cookies.get("session_token")
-    if not session_token:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    user_data = get_user_from_token(session_token)
-    if not user_data:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    user = db.query(User).filter(User.id == user_data["user_id"]).first()
-    if not user or not user.is_active:
+    if not current_user:
         return RedirectResponse(url="/login", status_code=303)
     
     today = datetime.now().date()
@@ -632,7 +798,8 @@ async def sales_dashboard(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("dashboards/sales.html", {
         "request": request,
         "page_title": "Savdo Dashboard",
-        "user": user,
+        "current_user": current_user,
+        "user": current_user,
         "metrics": metrics,
         "order_status": order_status,
         "funnel": funnel,
@@ -712,23 +879,13 @@ async def sales_dashboard_test(request: Request, db: Session = Depends(get_db), 
 
 # Agent Dashboard - Real Data
 @app.get("/dashboard/agent", response_class=HTMLResponse)
-async def agent_dashboard(request: Request, db: Session = Depends(get_db)):
+async def agent_dashboard(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Agent Dashboard - Real Data"""
     from datetime import datetime, timedelta
     from sqlalchemy import func
     from app.models.database import Agent, Visit, Route, RoutePoint, Partner, Order, AgentLocation
     
-    # Get user from session cookie
-    session_token = request.cookies.get("session_token")
-    if not session_token:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    user_data = get_user_from_token(session_token)
-    if not user_data:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    user = db.query(User).filter(User.id == user_data["user_id"]).first()
-    if not user or not user.is_active:
+    if not current_user:
         return RedirectResponse(url="/login", status_code=303)
     
     # Get agent for current user (assuming user has agent_id or we use first agent)
@@ -739,7 +896,8 @@ async def agent_dashboard(request: Request, db: Session = Depends(get_db)):
         return templates.TemplateResponse("dashboards/agent.html", {
             "request": request,
             "page_title": "Agent Dashboard",
-            "user": user,
+            "current_user": current_user,
+            "user": current_user,
             "agent": agent,
             "kpi": {'visits_completed': 0, 'visits_total': 0, 'visits_percent': 0, 'today_sales': 0, 'orders': 0, 'orders_completed': 0, 'target_achieved': 0, 'target_total': 25000000, 'target_percent': 0},
             "schedule": [],
@@ -905,7 +1063,8 @@ async def agent_dashboard(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("dashboards/agent.html", {
         "request": request,
         "page_title": "Agent Dashboard",
-        "user": user,
+        "current_user": current_user,
+        "user": current_user,
         "agent": agent_info,
         "kpi": kpi,
         "schedule": schedule,
@@ -980,6 +1139,7 @@ async def agent_dashboard_test(request: Request, db: Session = Depends(get_db), 
     return templates.TemplateResponse("dashboards/agent.html", {
         "request": request,
         "page_title": "Agent Dashboard",
+        "current_user": None,
         "user": fake_user,
         "agent": agent,
         "kpi": kpi,
@@ -993,23 +1153,13 @@ async def agent_dashboard_test(request: Request, db: Session = Depends(get_db), 
 
 # Production Dashboard - Real Data
 @app.get("/dashboard/production", response_class=HTMLResponse)
-async def production_dashboard(request: Request, db: Session = Depends(get_db)):
+async def production_dashboard(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Ishlab chiqarish Dashboard - Real Data"""
     from datetime import datetime, timedelta
     from sqlalchemy import func
     from app.models.database import Production, Recipe, Product, Employee
     
-    # Get user from session cookie
-    session_token = request.cookies.get("session_token")
-    if not session_token:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    user_data = get_user_from_token(session_token)
-    if not user_data:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    user = db.query(User).filter(User.id == user_data["user_id"]).first()
-    if not user or not user.is_active:
+    if not current_user:
         return RedirectResponse(url="/login", status_code=303)
     
     today = datetime.now().date()
@@ -1100,7 +1250,8 @@ async def production_dashboard(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("dashboards/production.html", {
         "request": request,
         "page_title": "Ishlab chiqarish Dashboard",
-        "user": user,
+        "current_user": current_user,
+        "user": current_user,
         "metrics": metrics,
         "production_orders": production_orders,
         "machines": machines,
@@ -1149,6 +1300,7 @@ async def production_dashboard_test(request: Request, db: Session = Depends(get_
     return templates.TemplateResponse("dashboards/production.html", {
         "request": request,
         "page_title": "Ishlab chiqarish Dashboard",
+        "current_user": None,
         "user": fake_user,
         "metrics": metrics,
         "production_orders": production_orders,
@@ -1159,23 +1311,13 @@ async def production_dashboard_test(request: Request, db: Session = Depends(get_
 
 # Warehouse Dashboard - Real Data
 @app.get("/dashboard/warehouse", response_class=HTMLResponse)
-async def warehouse_dashboard(request: Request, db: Session = Depends(get_db)):
+async def warehouse_dashboard(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Ombor Dashboard - Real Data"""
     from datetime import datetime, timedelta
     from sqlalchemy import func
     from app.models.database import Stock, Product, Category, Purchase, PurchaseItem
     
-    # Get user from session cookie
-    session_token = request.cookies.get("session_token")
-    if not session_token:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    user_data = get_user_from_token(session_token)
-    if not user_data:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    user = db.query(User).filter(User.id == user_data["user_id"]).first()
-    if not user or not user.is_active:
+    if not current_user:
         return RedirectResponse(url="/login", status_code=303)
     
     today = datetime.now().date()
@@ -1284,7 +1426,8 @@ async def warehouse_dashboard(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("dashboards/warehouse.html", {
         "request": request,
         "page_title": "Ombor Dashboard",
-        "user": user,
+        "current_user": current_user,
+        "user": current_user,
         "metrics": metrics,
         "low_stock": low_stock,
         "recent_moves": recent_moves,
@@ -1341,23 +1484,13 @@ async def warehouse_dashboard_test(request: Request, db: Session = Depends(get_d
 
 # Delivery Dashboard - Real Data
 @app.get("/dashboard/delivery", response_class=HTMLResponse)
-async def delivery_dashboard(request: Request, db: Session = Depends(get_db)):
+async def delivery_dashboard(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Yetkazib berish Dashboard - Real Data"""
     from datetime import datetime, timedelta
     from sqlalchemy import func, case
     from app.models.database import Delivery, Driver, DriverLocation, Order, Partner
     
-    # Get user from session cookie
-    session_token = request.cookies.get("session_token")
-    if not session_token:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    user_data = get_user_from_token(session_token)
-    if not user_data:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    user = db.query(User).filter(User.id == user_data["user_id"]).first()
-    if not user or not user.is_active:
+    if not current_user:
         return RedirectResponse(url="/login", status_code=303)
     
     today = datetime.now().date()
@@ -1500,7 +1633,8 @@ async def delivery_dashboard(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("dashboards/delivery.html", {
         "request": request,
         "page_title": "Yetkazib berish Dashboard",
-        "user": user,
+        "current_user": current_user,
+        "user": current_user,
         "metrics": metrics,
         "deliveries": deliveries,
         "drivers": drivers,
@@ -1557,177 +1691,8 @@ async def delivery_dashboard_test(request: Request, db: Session = Depends(get_db
     })
 
 
-# ==========================================
-# ASOSIY SAHIFALAR
-# ==========================================
-
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
-    """Bosh sahifa - Dashboard"""
-    if not current_user:
-        return RedirectResponse(url="/login", status_code=303)
-    stats = {
-        "tayyor_count": db.query(Product).filter(Product.type == "tayyor").count(),
-        "yarim_tayyor_count": db.query(Product).filter(Product.type == "yarim_tayyor").count(),
-        "hom_ashyo_count": db.query(Product).filter(Product.type == "hom_ashyo").count(),
-        "partners_count": db.query(Partner).count(),
-        "employees_count": db.query(Employee).count(),
-        "products_count": db.query(Product).filter(Product.is_active == True).count(),
-        "materials_count": db.query(Product).filter(Product.type == "hom_ashyo", Product.is_active == True).count(),
-    }
-    today = datetime.now().date()
-    today_sales = db.query(Order).filter(
-        Order.type == "sale",
-        Order.date >= today
-    ).all()
-    stats["today_sales"] = sum(s.total for s in today_sales)
-    stats["today_orders"] = len(today_sales)
-    cash = db.query(CashRegister).first()
-    stats["cash_balance"] = cash.balance if cash else 0
-    debtors = db.query(Partner).filter(Partner.balance > 0).all()
-    stats["total_debt"] = sum(p.balance for p in debtors)
-    # So'nggi sotuvlar (bosh sahifa jadvali uchun)
-    recent_sales = (
-        db.query(Order)
-        .filter(Order.type == "sale")
-        .order_by(Order.created_at.desc())
-        .limit(10)
-        .all()
-    )
-    # Kam qolgan tovarlar (qoldiq < min_stock)
-    low_stock_count = db.query(Stock).join(Product).filter(Stock.quantity < Product.min_stock).count()
-    error = request.query_params.get("error")
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "stats": stats,
-        "current_user": current_user,
-        "page_title": "Bosh sahifa",
-        "error": error,
-        "recent_sales": recent_sales,
-        "low_stock_count": low_stock_count,
-    })
-
-
-# ==========================================
-# MA'LUMOTLAR BO'LIMI
-# ==========================================
-@app.get("/info")
-async def info_index(request: Request, current_user: User = Depends(require_auth)):
-    """Ma'lumotlar - overview ko'rsatilmaydi, to'g'ridan-to'g'ri birinchi bo'limga yo'naltirish"""
-    if not current_user:
-        return RedirectResponse(url="/login", status_code=303)
-    return RedirectResponse(url="/info/units", status_code=303)
-
-# Omborlar bo'limi
-@app.get("/info/warehouses", response_class=HTMLResponse)
-async def info_warehouses(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
-    """Omborlar ro'yxati"""
-    if not current_user:
-        return RedirectResponse(url="/login", status_code=303)
-    
-    warehouses = db.query(Warehouse).all()
-    return templates.TemplateResponse("info/warehouses.html", {"request": request, "warehouses": warehouses, "current_user": current_user, "page_title": "Omborlar"})
-
-@app.post("/info/warehouses/add")
-async def info_warehouses_add(
-    request: Request,
-    name: str = Form(...),
-    address: str = Form(""),
-    db: Session = Depends(get_db)
-):
-    # Dublikat tekshiruvi - nom bo'yicha
-    existing_by_name = db.query(Warehouse).filter(Warehouse.name == name).first()
-    if existing_by_name:
-        raise HTTPException(status_code=400, detail=f"'{name}' nomli ombor allaqachon mavjud!")
-    
-    warehouse = Warehouse(name=name, code=None, address=address, is_active=True)
-    db.add(warehouse)
-    db.commit()
-    return RedirectResponse(url="/info/warehouses", status_code=303)
-
-@app.post("/info/warehouses/edit/{warehouse_id}")
-async def info_warehouses_edit(
-    warehouse_id: int,
-    name: str = Form(...),
-    address: str = Form(""),
-    db: Session = Depends(get_db)
-):
-    warehouse = db.query(Warehouse).filter(Warehouse.id == warehouse_id).first()
-    if not warehouse:
-        raise HTTPException(status_code=404, detail="Ombor topilmadi")
-    
-    # Dublikat tekshiruvi - nom bo'yicha (o'zidan boshqa)
-    existing_by_name = db.query(Warehouse).filter(
-        Warehouse.name == name,
-        Warehouse.id != warehouse_id
-    ).first()
-    if existing_by_name:
-        raise HTTPException(status_code=400, detail=f"'{name}' nomli ombor allaqachon mavjud!")
-    
-    warehouse.name = name
-    warehouse.address = address
-    
-    db.commit()
-    return RedirectResponse(url="/info/warehouses", status_code=303)
-
-@app.post("/info/warehouses/delete/{warehouse_id}")
-async def info_warehouses_delete(warehouse_id: int, db: Session = Depends(get_db)):
-    warehouse = db.query(Warehouse).filter(Warehouse.id == warehouse_id).first()
-    if not warehouse:
-        raise HTTPException(status_code=404, detail="Ombor topilmadi")
-    
-    db.delete(warehouse)
-    db.commit()
-    return RedirectResponse(url="/info/warehouses", status_code=303)
-
-# --- WAREHOUSE EXCEL OPERATIONS ---
-@app.get("/info/warehouses/export")
-async def export_warehouses(db: Session = Depends(get_db)):
-    warehouses = db.query(Warehouse).all()
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Warehouses"
-    ws.append(["ID", "Kod", "Nomi", "Manzil"])
-    for w in warehouses:
-        ws.append([w.id, w.code, w.name, w.address])
-    stream = io.BytesIO()
-    wb.save(stream)
-    stream.seek(0)
-    return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=omborlar.xlsx"})
-
-@app.get("/info/warehouses/template")
-async def template_warehouses():
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Template"
-    ws.append(["Kod", "Nomi", "Manzil"])
-    ws.append(["MAIN", "Asosiy ombor", "Toshkent sh."])
-    stream = io.BytesIO()
-    wb.save(stream)
-    stream.seek(0)
-    return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=ombor_andoza.xlsx"})
-
-@app.post("/info/warehouses/import")
-async def import_warehouses(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    contents = await file.read()
-    wb = openpyxl.load_workbook(io.BytesIO(contents))
-    ws = wb.active
-    rows = list(ws.iter_rows(min_row=2, values_only=True))
-    for row in rows:
-        if not row[0]: continue
-        code, name, address = row[0], row[1], row[2]
-        warehouse = db.query(Warehouse).filter(Warehouse.code == code).first()
-        if not warehouse:
-            warehouse = Warehouse(code=code, name=name, address=address)
-            db.add(warehouse)
-        else:
-            warehouse.name = name
-            warehouse.address = address
-        db.commit()
-    return RedirectResponse(url="/info/warehouses", status_code=303)
-
-# O'lchov birliklari bo'limi
-@app.get("/info/units", response_class=HTMLResponse)
+# O'lchov birliklari bo'limi (moved to app/routes/info.py)
+# @app.get("/info/units", response_class=HTMLResponse)
 async def info_units(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     units = db.query(Unit).all()
     return templates.TemplateResponse("info/units.html", {"request": request, "units": units, "current_user": current_user, "page_title": "O'lchov birliklari"})
@@ -1769,7 +1734,7 @@ async def info_units_edit(
     return RedirectResponse(url="/info/units", status_code=303)
 
 @app.post("/info/units/delete/{unit_id}")
-async def info_units_delete(unit_id: int, db: Session = Depends(get_db)):
+async def info_units_delete(unit_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     unit = db.query(Unit).filter(Unit.id == unit_id).first()
     if not unit:
         raise HTTPException(status_code=404, detail="O'lchov birligi topilmadi")
@@ -1780,7 +1745,7 @@ async def info_units_delete(unit_id: int, db: Session = Depends(get_db)):
 
 # --- UNITS EXCEL OPERATIONS ---
 @app.get("/info/units/export")
-async def export_units(db: Session = Depends(get_db)):
+async def export_units(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     units = db.query(Unit).all()
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -1794,7 +1759,7 @@ async def export_units(db: Session = Depends(get_db)):
     return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=olchov_birliklari.xlsx"})
 
 @app.get("/info/units/template")
-async def template_units():
+async def template_units(current_user: User = Depends(require_auth)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Template"
@@ -1806,7 +1771,7 @@ async def template_units():
     return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=birlik_andoza.xlsx"})
 
 @app.post("/info/units/import")
-async def import_units(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def import_units(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     contents = await file.read()
     wb = openpyxl.load_workbook(io.BytesIO(contents))
     ws = wb.active
@@ -1869,7 +1834,7 @@ async def info_categories_edit(
     return RedirectResponse(url="/info/categories", status_code=303)
 
 @app.post("/info/categories/delete/{category_id}")
-async def info_categories_delete(category_id: int, db: Session = Depends(get_db)):
+async def info_categories_delete(category_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     category = db.query(Category).filter(Category.id == category_id).first()
     if not category:
         raise HTTPException(status_code=404, detail="Kategoriya topilmadi")
@@ -1880,7 +1845,7 @@ async def info_categories_delete(category_id: int, db: Session = Depends(get_db)
 
 # --- CATEGORIES EXCEL OPERATIONS ---
 @app.get("/info/categories/export")
-async def export_categories(db: Session = Depends(get_db)):
+async def export_categories(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     categories = db.query(Category).all()
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -1894,7 +1859,7 @@ async def export_categories(db: Session = Depends(get_db)):
     return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=kategoriyalar.xlsx"})
 
 @app.get("/info/categories/template")
-async def template_categories():
+async def template_categories(current_user: User = Depends(require_auth)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Template"
@@ -1906,7 +1871,7 @@ async def template_categories():
     return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=kategoriya_andoza.xlsx"})
 
 @app.post("/info/categories/import")
-async def import_categories(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def import_categories(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     contents = await file.read()
     wb = openpyxl.load_workbook(io.BytesIO(contents))
     ws = wb.active
@@ -2097,7 +2062,7 @@ async def info_cash_edit(
     return RedirectResponse(url="/info/cash", status_code=303)
 
 @app.post("/info/cash/delete/{cash_id}")
-async def info_cash_delete(cash_id: int, db: Session = Depends(get_db)):
+async def info_cash_delete(cash_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     cash = db.query(CashRegister).filter(CashRegister.id == cash_id).first()
     if not cash:
         raise HTTPException(status_code=404, detail="Kassa topilmadi")
@@ -2152,7 +2117,7 @@ async def info_departments_edit(
     return RedirectResponse(url="/info/departments", status_code=303)
 
 @app.post("/info/departments/delete/{department_id}")
-async def info_departments_delete(department_id: int, db: Session = Depends(get_db)):
+async def info_departments_delete(department_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     department = db.query(Department).filter(Department.id == department_id).first()
     if not department:
         raise HTTPException(status_code=404, detail="Bo'lim topilmadi")
@@ -2163,7 +2128,7 @@ async def info_departments_delete(department_id: int, db: Session = Depends(get_
 
 # --- DEPARTMENTS EXCEL OPERATIONS ---
 @app.get("/info/departments/export")
-async def export_departments(db: Session = Depends(get_db)):
+async def export_departments(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     departments = db.query(Department).all()
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -2177,7 +2142,7 @@ async def export_departments(db: Session = Depends(get_db)):
     return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=bolimlar.xlsx"})
 
 @app.get("/info/departments/template")
-async def template_departments():
+async def template_departments(current_user: User = Depends(require_auth)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Template"
@@ -2189,7 +2154,7 @@ async def template_departments():
     return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=bolim_andoza.xlsx"})
 
 @app.post("/info/departments/import")
-async def import_departments(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def import_departments(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     contents = await file.read()
     wb = openpyxl.load_workbook(io.BytesIO(contents))
     ws = wb.active
@@ -2253,7 +2218,7 @@ async def info_directions_edit(
     return RedirectResponse(url="/info/directions", status_code=303)
 
 @app.post("/info/directions/delete/{direction_id}")
-async def info_directions_delete(direction_id: int, db: Session = Depends(get_db)):
+async def info_directions_delete(direction_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     direction = db.query(Direction).filter(Direction.id == direction_id).first()
     if not direction:
         raise HTTPException(status_code=404, detail="Yo'nalish topilmadi")
@@ -2264,7 +2229,7 @@ async def info_directions_delete(direction_id: int, db: Session = Depends(get_db
 
 # --- DIRECTIONS EXCEL OPERATIONS ---
 @app.get("/info/directions/export")
-async def export_directions(db: Session = Depends(get_db)):
+async def export_directions(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     directions = db.query(Direction).all()
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -2278,7 +2243,7 @@ async def export_directions(db: Session = Depends(get_db)):
     return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=yonalishlar.xlsx"})
 
 @app.get("/info/directions/template")
-async def template_directions():
+async def template_directions(current_user: User = Depends(require_auth)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Template"
@@ -2290,7 +2255,7 @@ async def template_directions():
     return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=yonalish_andoza.xlsx"})
 
 @app.post("/info/directions/import")
-async def import_directions(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def import_directions(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     contents = await file.read()
     wb = openpyxl.load_workbook(io.BytesIO(contents))
     ws = wb.active
@@ -2511,7 +2476,7 @@ import openpyxl
 
 # --- EXPORT PRODUCTS TO EXCEL ---
 @app.get("/products/export")
-async def export_products(db: Session = Depends(get_db)):
+async def export_products(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     products = db.query(Product).all()
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -2530,7 +2495,7 @@ async def export_products(db: Session = Depends(get_db)):
 
 # --- DOWNLOAD IMPORT TEMPLATE ---
 @app.get("/products/template")
-async def product_import_template():
+async def product_import_template(current_user: User = Depends(require_auth)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Import Template"
@@ -2554,15 +2519,17 @@ async def product_import_template():
     return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=tovar_andoza.xlsx"})
 
 @app.get("/products/{product_id}", response_class=HTMLResponse)
-async def product_detail(request: Request, product_id: int, db: Session = Depends(get_db)):
+async def product_detail(request: Request, product_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         return HTMLResponse("<h3>Mahsulot topilmadi</h3>", status_code=404)
-    return templates.TemplateResponse("products/detail.html", {"request": request, "product": product})
+    return templates.TemplateResponse("products/detail.html", {
+        "request": request, "product": product, "current_user": current_user, "page_title": product.name or "Tovar"
+    })
 
 # --- IMPORT PRODUCTS FROM EXCEL ---
 @app.get("/products/import")
-async def products_import_get():
+async def products_import_get(current_user: User = Depends(require_auth)):
     """Import sahifasi faqat form orqali; to'g'ridan-to'g'ri ochilsa tovarlar ro'yxatiga yo'naltirish."""
     return RedirectResponse(url="/products", status_code=303)
 
@@ -2694,7 +2661,8 @@ async def product_add(
     barcode: str = Form(None),
     sale_price: float = Form(0),
     purchase_price: float = Form(0),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     """Tovar qo'shish"""
     product = Product(
@@ -2728,7 +2696,8 @@ async def product_edit(
     barcode: str = Form(None),
     sale_price: float = Form(0),
     purchase_price: float = Form(0),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     """Tovar tahrirlash"""
     product = db.query(Product).filter(Product.id == product_id).first()
@@ -2764,7 +2733,8 @@ async def product_delete(
 async def product_upload_image(
     product_id: int,
     image: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     """Mahsulot rasmini yuklash"""
     product = db.query(Product).filter(Product.id == product_id).first()
@@ -2810,15 +2780,32 @@ async def warehouse_list(request: Request, db: Session = Depends(get_db), curren
 
 
 @app.get("/warehouse/movement", response_class=HTMLResponse)
-async def warehouse_movement(request: Request, db: Session = Depends(get_db)):
-    """Ombor harakatlari"""
-    products = db.query(Product).all()
-    warehouses = db.query(Warehouse).all()
-    
+async def warehouse_movement(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+    """Ombor harakatlari — so'nggi kirim, chiqim, ishlab chiqarish"""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    products = []
+    warehouses = []
+    recent_purchases = []
+    recent_sales = []
+    recent_productions = []
+    try:
+        products = db.query(Product).filter(Product.is_active == True).all()
+        warehouses = db.query(Warehouse).all()
+        recent_purchases = db.query(Purchase).order_by(Purchase.date.desc()).limit(30).all()
+        recent_sales = db.query(Order).filter(Order.type == "sale").order_by(Order.created_at.desc()).limit(30).all()
+        recent_productions = db.query(Production).order_by(Production.created_at.desc()).limit(30).all()
+    except Exception as e:
+        traceback.print_exc()
+        # Xato bo'lsa ham bo'sh ro'yxatlar bilan sahifani ko'rsatamiz, 500 emas
     return templates.TemplateResponse("warehouse/movement.html", {
         "request": request,
-        "products": products,
-        "warehouses": warehouses,
+        "products": products or [],
+        "warehouses": warehouses or [],
+        "recent_purchases": recent_purchases or [],
+        "recent_sales": recent_sales or [],
+        "recent_productions": recent_productions or [],
+        "current_user": current_user,
         "page_title": "Ombor harakati"
     })
 
@@ -2842,17 +2829,17 @@ async def purchases_list(request: Request, db: Session = Depends(get_db), curren
 
 
 @app.get("/purchases/new", response_class=HTMLResponse)
-async def purchase_new(request: Request, db: Session = Depends(get_db)):
+async def purchase_new(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Yangi tovar kirimi"""
     products = db.query(Product).filter(Product.is_active == True).all()
     partners = db.query(Partner).filter(Partner.type.in_(["supplier", "both"])).all()
     warehouses = db.query(Warehouse).all()
-    
     return templates.TemplateResponse("purchases/new.html", {
         "request": request,
         "products": products,
         "partners": partners,
         "warehouses": warehouses,
+        "current_user": current_user,
         "page_title": "Yangi tovar kirimi"
     })
 
@@ -2862,7 +2849,8 @@ async def purchase_create(
     request: Request,
     partner_id: int = Form(...),
     warehouse_id: int = Form(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     """Tovar kirimini yaratish"""
     today = datetime.now()
@@ -2941,7 +2929,7 @@ async def purchase_add_item(
 
 
 @app.post("/purchases/{purchase_id}/confirm")
-async def purchase_confirm(purchase_id: int, db: Session = Depends(get_db)):
+async def purchase_confirm(purchase_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Tovar kirimini tasdiqlash va ombor qoldiqlarini yangilash"""
     purchase = db.query(Purchase).filter(Purchase.id == purchase_id).first()
     if not purchase:
@@ -2978,6 +2966,7 @@ async def purchase_confirm(purchase_id: int, db: Session = Depends(get_db)):
             partner.balance -= purchase.total
     
     db.commit()
+    check_low_stock_and_notify(db)
     return RedirectResponse(url=f"/purchases", status_code=303)
 
 
@@ -3153,7 +3142,7 @@ async def partner_delete(partner_id: int, db: Session = Depends(get_db)):
 
 # --- PARTNERS EXCEL OPERATIONS ---
 @app.get("/partners/export")
-async def export_partners(db: Session = Depends(get_db)):
+async def export_partners(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     partners = db.query(Partner).all()
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -3180,7 +3169,7 @@ async def template_partners():
     return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=kontragent_andoza.xlsx"})
 
 @app.post("/partners/import")
-async def import_partners(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def import_partners(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     contents = await file.read()
     wb = openpyxl.load_workbook(io.BytesIO(contents))
     ws = wb.active
@@ -3450,6 +3439,7 @@ async def sales_confirm(
             stock.quantity -= item.quantity
     order.status = "completed"
     db.commit()
+    check_low_stock_and_notify(db)
     return RedirectResponse(url=f"/sales/edit/{order_id}", status_code=303)
 
 
@@ -3499,7 +3489,7 @@ async def sales_delete(
 # ==========================================
 
 @app.get("/finance", response_class=HTMLResponse)
-async def finance(request: Request, db: Session = Depends(get_db)):
+async def finance(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Moliya - kassa"""
     cash_registers = db.query(CashRegister).all()
     
@@ -3527,6 +3517,7 @@ async def finance(request: Request, db: Session = Depends(get_db)):
         "cash_registers": cash_registers,
         "payments": payments,
         "stats": stats,
+        "current_user": current_user,
         "page_title": "Moliya"
     })
 
@@ -3575,7 +3566,7 @@ async def employee_add(
 
 # --- EMPLOYEES EXCEL OPERATIONS ---
 @app.get("/employees/export")
-async def export_employees(db: Session = Depends(get_db)):
+async def export_employees(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     employees = db.query(Employee).all()
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -3601,7 +3592,7 @@ async def template_employees():
     return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=xodim_andoza.xlsx"})
 
 @app.post("/employees/import")
-async def import_employees(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def import_employees(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     contents = await file.read()
     wb = openpyxl.load_workbook(io.BytesIO(contents))
     ws = wb.active
@@ -3628,79 +3619,6 @@ async def import_employees(file: UploadFile = File(...), db: Session = Depends(g
             employee.salary = salary
         db.commit()
     return RedirectResponse(url="/employees", status_code=303)
-
-
-# ==========================================
-# HISOBOTLAR
-# ==========================================
-
-@app.get("/reports", response_class=HTMLResponse)
-async def reports(request: Request):
-    """Hisobotlar"""
-    return templates.TemplateResponse("reports/index.html", {
-        "request": request,
-        "page_title": "Hisobotlar"
-    })
-
-
-@app.get("/reports/sales", response_class=HTMLResponse)
-async def report_sales(
-    request: Request,
-    start_date: str = None,
-    end_date: str = None,
-    db: Session = Depends(get_db)
-):
-    """Savdo hisoboti"""
-    if not start_date:
-        start_date = datetime.now().replace(day=1).strftime("%Y-%m-%d")
-    if not end_date:
-        end_date = datetime.now().strftime("%Y-%m-%d")
-    
-    orders = db.query(Order).filter(
-        Order.type == "sale",
-        Order.date >= start_date,
-        Order.date <= end_date + " 23:59:59"
-    ).all()
-    
-    total = sum(o.total for o in orders)
-    
-    return templates.TemplateResponse("reports/sales.html", {
-        "request": request,
-        "orders": orders,
-        "total": total,
-        "start_date": start_date,
-        "end_date": end_date,
-        "page_title": "Savdo hisoboti"
-    })
-
-
-@app.get("/reports/stock", response_class=HTMLResponse)
-async def report_stock(request: Request, db: Session = Depends(get_db)):
-    """Qoldiq hisoboti"""
-    stocks = db.query(Stock).join(Product).all()
-    
-    return templates.TemplateResponse("reports/stock.html", {
-        "request": request,
-        "stocks": stocks,
-        "page_title": "Qoldiq hisoboti"
-    })
-
-
-@app.get("/reports/debts", response_class=HTMLResponse)
-async def report_debts(request: Request, db: Session = Depends(get_db)):
-    """Qarzdorlik hisoboti"""
-    debtors = db.query(Partner).filter(Partner.balance != 0).all()
-    
-    total_debt = sum(p.balance for p in debtors if p.balance > 0)
-    total_credit = sum(abs(p.balance) for p in debtors if p.balance < 0)
-    
-    return templates.TemplateResponse("reports/debts.html", {
-        "request": request,
-        "debtors": debtors,
-        "total_debt": total_debt,
-        "total_credit": total_credit,
-        "page_title": "Qarzdorlik hisoboti"
-    })
 
 
 # ==========================================
@@ -3942,17 +3860,21 @@ async def production_save_materials(
 async def production_orders(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Ishlab chiqarish buyurtmalari"""
     productions = db.query(Production).order_by(Production.date.desc()).all()
+    machines = db.query(Machine).filter(Machine.is_active == True).all()
+    employees = db.query(Employee).filter(Employee.is_active == True).all()
     from urllib.parse import unquote
     error = request.query_params.get("error")
     detail = unquote(request.query_params.get("detail", "") or "")
-    
     return templates.TemplateResponse("production/orders.html", {
         "request": request,
         "current_user": current_user,
         "productions": productions,
+        "machines": machines,
+        "employees": employees,
         "page_title": "Ishlab chiqarish buyurtmalari",
         "error": error,
         "error_detail": detail,
+        "stage_names": PRODUCTION_STAGE_NAMES,
     })
 
 
@@ -3961,12 +3883,16 @@ async def production_new(request: Request, db: Session = Depends(get_db), curren
     """Yangi ishlab chiqarish"""
     warehouses = db.query(Warehouse).all()
     recipes = db.query(Recipe).filter(Recipe.is_active == True).all()
+    machines = db.query(Machine).filter(Machine.is_active == True).all()
+    employees = db.query(Employee).filter(Employee.is_active == True).all()
 
     return templates.TemplateResponse("production/new_order.html", {
         "request": request,
         "current_user": current_user,
         "recipes": recipes,
         "warehouses": warehouses,
+        "machines": machines,
+        "employees": employees,
         "page_title": "Yangi ishlab chiqarish"
     })
 
@@ -3982,6 +3908,8 @@ async def create_production(
     output_warehouse_id: int = Form(...),
     quantity: float = Form(...),
     note: str = Form(""),
+    machine_id: Optional[int] = Form(None),
+    operator_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -4000,11 +3928,19 @@ async def create_production(
         quantity=quantity,
         note=note,
         status="draft",
-        user_id=current_user.id if current_user else None
+        current_stage=1,
+        user_id=current_user.id if current_user else None,
+        machine_id=int(machine_id) if machine_id else None,
+        operator_id=int(operator_id) if operator_id else None,
     )
     db.add(production)
     db.commit()
     db.refresh(production)
+    # 4 ta bosqich yozuvi: qiyom, hamir, sovutish/kesish, qadoqlash
+    for stage_num in range(1, 5):
+        stage = ProductionStage(production_id=production.id, stage_number=stage_num)
+        db.add(stage)
+    db.commit()
     # Retsept bo'yicha xom ashyo miqdorlarini shu buyurtma uchun yozish (keyin tahrirlash mumkin)
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if recipe:
@@ -4019,24 +3955,13 @@ async def create_production(
     return RedirectResponse(url="/production/orders", status_code=303)
 
 
-@app.post("/production/{prod_id}/complete")
-async def complete_production(prod_id: int, db: Session = Depends(get_db)):
-    """Ishlab chiqarishni yakunlash"""
-    production = db.query(Production).filter(Production.id == prod_id).first()
-    if not production:
-        raise HTTPException(status_code=404, detail="Topilmadi")
-    
-    recipe = db.query(Recipe).filter(Recipe.id == production.recipe_id).first()
-    if not recipe:
-        raise HTTPException(status_code=404, detail="Retsept topilmadi")
-    
-    # Xom ashyo ro'yxati: tahrirlangan (production_items) bo'lsa shuni, yo'q bo'lsa retsept bo'yicha
+def _do_complete_production_stock(db, production, recipe):
+    """Xom ashyo ayirish, tayyor mahsulot qo'shish. RedirectResponse qaytaradi xato bo'lsa."""
+    from urllib.parse import quote
     if production.production_items:
         items_to_use = [(pi.product_id, pi.quantity) for pi in production.production_items]
     else:
         items_to_use = [(item.product_id, item.quantity * production.quantity) for item in recipe.items]
-    
-    # Omborda yetarli xom ashyo borligini tekshirish
     for product_id, required in items_to_use:
         stock = db.query(Stock).filter(
             Stock.warehouse_id == production.warehouse_id,
@@ -4045,14 +3970,8 @@ async def complete_production(prod_id: int, db: Session = Depends(get_db)):
         if not stock or stock.quantity < required:
             product_name = db.query(Product).filter(Product.id == product_id).first()
             name = product_name.name if product_name else f"#{product_id}"
-            from urllib.parse import quote
             msg = quote(f"Yetarli yo'q: {name} (kerak: {required}, mavjud: {stock.quantity if stock else 0})", safe="")
-            return RedirectResponse(
-                url=f"/production/orders?error=insufficient_stock&detail={msg}",
-                status_code=303
-            )
-    
-    # Xom ashyolarni ayirish
+            return RedirectResponse(url=f"/production/orders?error=insufficient_stock&detail={msg}", status_code=303)
     for product_id, required in items_to_use:
         stock = db.query(Stock).filter(
             Stock.warehouse_id == production.warehouse_id,
@@ -4060,8 +3979,6 @@ async def complete_production(prod_id: int, db: Session = Depends(get_db)):
         ).first()
         if stock:
             stock.quantity -= required
-    
-    # Xom ashyo tannarxini hisoblash (tayyor mahsulot narxi uchun)
     total_material_cost = 0.0
     for product_id, required in items_to_use:
         product = db.query(Product).filter(Product.id == product_id).first()
@@ -4069,37 +3986,95 @@ async def complete_production(prod_id: int, db: Session = Depends(get_db)):
             total_material_cost += required * (product.purchase_price or 0)
     output_units = production.quantity * (recipe.output_quantity or 1)
     cost_per_unit = (total_material_cost / output_units) if output_units > 0 else 0
-
-    # Tayyor / yarim tayyor mahsulotni 2-ombor (yarim tayyor ombori) ga qo'shish
     out_wh_id = production.output_warehouse_id if production.output_warehouse_id else production.warehouse_id
     product_stock = db.query(Stock).filter(
         Stock.warehouse_id == out_wh_id,
         Stock.product_id == recipe.product_id
     ).first()
-    
     if product_stock:
         product_stock.quantity += output_units
     else:
-        new_stock = Stock(
-            warehouse_id=out_wh_id,
-            product_id=recipe.product_id,
-            quantity=output_units
-        )
-        db.add(new_stock)
-    
-    # Tayyor mahsulot tannarxini o'rnatish (yangi yoki o'rtacha)
+        db.add(Stock(warehouse_id=out_wh_id, product_id=recipe.product_id, quantity=output_units))
     output_product = db.query(Product).filter(Product.id == recipe.product_id).first()
     if output_product:
+        product_stock = db.query(Stock).filter(Stock.warehouse_id == out_wh_id, Stock.product_id == recipe.product_id).first()
         old_price = output_product.purchase_price or 0
-        old_qty = product_stock.quantity - output_units if product_stock else 0  # mavjud qoldiq (qo'shishdan oldin)
+        old_qty = (product_stock.quantity - output_units) if product_stock else 0
         if old_qty > 0 and old_price > 0 and output_units > 0:
-            # O'rtacha tannarx (mavjud + yangi)
             output_product.purchase_price = (old_qty * old_price + output_units * cost_per_unit) / (old_qty + output_units)
         elif cost_per_unit > 0:
             output_product.purchase_price = cost_per_unit
-    
+    return None
+
+
+@app.post("/production/{prod_id}/complete-stage")
+async def complete_production_stage(
+    prod_id: int,
+    stage_number: int = Form(...),
+    machine_id: Optional[int] = Form(None),
+    operator_id: Optional[int] = Form(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Bosqichni yakunlash: 1–4. 4-bosqichda ombor harakati qiladi va buyurtma yakunlanadi."""
+    if stage_number < 1 or stage_number > 4:
+        raise HTTPException(status_code=400, detail="Bosqich 1–4 oralig'ida bo'lishi kerak")
+    production = db.query(Production).filter(Production.id == prod_id).first()
+    if not production:
+        raise HTTPException(status_code=404, detail="Topilmadi")
+    if production.status == "completed":
+        return RedirectResponse(url="/production/orders", status_code=303)
+    current = getattr(production, "current_stage", None) or 1
+    if stage_number != current:
+        return RedirectResponse(
+            url=f"/production/orders?error=stage&detail=Keyingi bosqich {current}",
+            status_code=303,
+        )
+    stage_row = db.query(ProductionStage).filter(
+        ProductionStage.production_id == prod_id,
+        ProductionStage.stage_number == stage_number,
+    ).first()
+    now = datetime.now()
+    if stage_row:
+        if not stage_row.started_at:
+            stage_row.started_at = now
+        stage_row.completed_at = now
+        stage_row.machine_id = int(machine_id) if machine_id else None
+        stage_row.operator_id = int(operator_id) if operator_id else None
+    if stage_number < 4:
+        production.current_stage = stage_number + 1
+        production.status = "in_progress"
+        db.commit()
+        return RedirectResponse(url="/production/orders", status_code=303)
+    recipe = db.query(Recipe).filter(Recipe.id == production.recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Retsept topilmadi")
+    err = _do_complete_production_stock(db, production, recipe)
+    if err:
+        return err
     production.status = "completed"
+    production.current_stage = 4
     db.commit()
+    check_low_stock_and_notify(db)
+    return RedirectResponse(url="/production/orders", status_code=303)
+
+
+@app.post("/production/{prod_id}/complete")
+async def complete_production(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+    """Ishlab chiqarishni bir martada yakunlash (4 bosqichsiz, eski usul)"""
+    production = db.query(Production).filter(Production.id == prod_id).first()
+    if not production:
+        raise HTTPException(status_code=404, detail="Topilmadi")
+    recipe = db.query(Recipe).filter(Recipe.id == production.recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Retsept topilmadi")
+    err = _do_complete_production_stock(db, production, recipe)
+    if err:
+        return err
+    production.status = "completed"
+    production.current_stage = 4
+    db.commit()
+    check_low_stock_and_notify(db)
     return RedirectResponse(url="/production/orders", status_code=303)
 
 
@@ -4998,11 +4973,124 @@ async def region_delete(region_id: int, db: Session = Depends(get_db)):
     return RedirectResponse(url="/info/regions", status_code=303)
 
 
+# ==========================================
+# USKUNALAR (MACHINES)
+# ==========================================
+
+@app.get("/info/machines", response_class=HTMLResponse)
+async def info_machines(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+    """Uskunalar ro'yxati"""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    machines = db.query(Machine).filter(Machine.is_active == True).order_by(Machine.created_at.desc()).all()
+    employees = db.query(Employee).filter(Employee.is_active == True).all()
+    warehouses = db.query(Warehouse).all()
+    return templates.TemplateResponse("info/machines.html", {
+        "request": request,
+        "current_user": current_user,
+        "page_title": "Uskunalar",
+        "machines": machines,
+        "employees": employees,
+        "warehouses": warehouses,
+    })
+
+
+@app.post("/info/machines/add")
+async def machine_add(
+    code: str = Form(...),
+    name: str = Form(...),
+    machine_type: str = Form(""),
+    capacity: float = Form(0),
+    efficiency: float = Form(100.0),
+    status: str = Form("idle"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Uskuna qo'shish"""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    existing = db.query(Machine).filter(Machine.code == code).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"'{code}' kodli uskuna allaqachon mavjud!")
+    machine = Machine(
+        code=code.strip(),
+        name=name.strip(),
+        machine_type=machine_type.strip() or "boshqa",
+        capacity=float(capacity),
+        efficiency=float(efficiency),
+        status=status,
+    )
+    db.add(machine)
+    db.commit()
+    return RedirectResponse(url="/info/machines", status_code=303)
+
+
+@app.post("/info/machines/edit/{machine_id}")
+async def machine_edit(
+    machine_id: int,
+    code: str = Form(...),
+    name: str = Form(...),
+    machine_type: str = Form(""),
+    capacity: float = Form(0),
+    efficiency: float = Form(100.0),
+    status: str = Form("idle"),
+    operator_id: Optional[int] = Form(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Uskunani tahrirlash"""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    machine = db.query(Machine).filter(Machine.id == machine_id).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Uskuna topilmadi")
+    existing = db.query(Machine).filter(Machine.code == code, Machine.id != machine_id).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"'{code}' kodli uskuna allaqachon mavjud!")
+    machine.code = code.strip()
+    machine.name = name.strip()
+    machine.machine_type = machine_type.strip() or "boshqa"
+    machine.capacity = float(capacity)
+    machine.efficiency = float(efficiency)
+    machine.status = status
+    machine.operator_id = int(operator_id) if operator_id else None
+    db.commit()
+    return RedirectResponse(url="/info/machines", status_code=303)
+
+
+@app.post("/info/machines/delete/{machine_id}")
+async def machine_delete(machine_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+    """Uskunani o'chirish (soft: is_active=False)"""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    machine = db.query(Machine).filter(Machine.id == machine_id).first()
+    if not machine:
+        raise HTTPException(status_code=404, detail="Uskuna topilmadi")
+    machine.is_active = False
+    db.commit()
+    return RedirectResponse(url="/info/machines", status_code=303)
+
+
 @app.on_event("startup")
 async def startup():
     """Dastur ishga tushganda"""
     init_db()
-    print("рџљЂ TOTLI HOLVA Business System ishga tushdi!")
+    try:
+        from app.utils.scheduler import start_scheduler
+        start_scheduler()
+    except Exception as e:
+        print("[Startup] Scheduler ishga tushmadi:", e)
+    print("TOTLI HOLVA Business System ishga tushdi!")
+    _mp = os.path.abspath(__file__)
+    print("  main.py:", _mp)
+    try:
+        for _dir in [os.path.dirname(_mp), os.getcwd(), r"C:\Users\ELYOR\.cursor\worktrees\business_system\pwp"]:
+            if _dir:
+                with open(os.path.join(_dir, "server_started.txt"), "w", encoding="utf-8") as f:
+                    f.write("main.py: %s\ncwd: %s\n" % (_mp, os.getcwd()))
+                break
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

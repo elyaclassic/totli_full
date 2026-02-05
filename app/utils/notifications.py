@@ -4,8 +4,9 @@ Create and manage system notifications
 """
 
 from datetime import datetime, timedelta
+from typing import Optional
 from sqlalchemy.orm import Session
-from app.models.database import Notification
+from app.models.database import Notification, Stock, Product
 
 
 def create_notification(db: Session, title: str, message: str,
@@ -87,18 +88,50 @@ def get_unread_count(db: Session, user_id: int):
     return count
 
 
-def create_low_stock_notification(db: Session, product_name: str, quantity: int, min_quantity: int):
+def create_low_stock_notification(db: Session, product_name: str, quantity: float, min_quantity: float, product_id: Optional[int] = None):
     """Create notification for low stock"""
-    
     return create_notification(
         db=db,
         title="⚠️ Kam qoldiq ogohlantirishi",
-        message=f"{product_name} mahsulotidan faqat {quantity} dona qoldi (minimal: {min_quantity})",
+        message=f"{product_name} mahsulotidan faqat {quantity:,.0f} qoldi (minimal: {min_quantity:,.0f})",
         notification_type="warning",
         priority="high",
         action_url="/warehouse",
-        related_entity_type="stock"
+        related_entity_type="stock",
+        related_entity_id=product_id,
     )
+
+
+def check_low_stock_and_notify(db: Session, warehouse_id: Optional[int] = None) -> int:
+    """Kirim/sotuv/production tasdiqdan keyin chaqiriladi: kam qolgan tovarlar uchun bildirishnoma yaratadi.
+    Bir xil mahsulot uchun 24 soat ichida takroriy bildirishnoma yaratilmaydi.
+    Qaytaradi: yaratilgan bildirishnomalar soni."""
+    low_stocks = db.query(Stock).join(Product, Stock.product_id == Product.id).filter(
+        Stock.quantity < Product.min_stock,
+        Product.is_active == True,
+    )
+    if warehouse_id is not None:
+        low_stocks = low_stocks.filter(Stock.warehouse_id == warehouse_id)
+    low_stocks = low_stocks.all()
+    created = 0
+    since = datetime.now() - timedelta(hours=24)
+    for stock in low_stocks:
+        existing = db.query(Notification).filter(
+            Notification.related_entity_type == "stock",
+            Notification.related_entity_id == stock.product_id,
+            Notification.is_read == False,
+            Notification.created_at >= since,
+        ).first()
+        if not existing and stock.product:
+            create_low_stock_notification(
+                db,
+                product_name=stock.product.name,
+                quantity=stock.quantity,
+                min_quantity=stock.product.min_stock,
+                product_id=stock.product_id,
+            )
+            created += 1
+    return created
 
 
 def create_order_notification(db: Session, order_number: str, customer_name: str, total: float):

@@ -228,15 +228,21 @@ class Production(Base):
     warehouse_id = Column(Integer, ForeignKey("warehouses.id"))  # 1-ombor: xom ashyo ombori (material shu yerdan olinadi)
     output_warehouse_id = Column(Integer, ForeignKey("warehouses.id"), nullable=True)  # 2-ombor: yarim tayyor ombori (mahsulot shu yerga yoziladi)
     quantity = Column(Float)  # Ishlab chiqarilgan miqdor (o'zgarmaydi)
-    status = Column(String(20), default="draft")  # draft, completed, cancelled
+    status = Column(String(20), default="draft")  # draft, in_progress, completed, cancelled
+    current_stage = Column(Integer, default=1)  # 1–4: qiyom, hamir, sovutish_kesish, qadoqlash
     user_id = Column(Integer, ForeignKey("users.id"))
+    machine_id = Column(Integer, ForeignKey("machines.id"), nullable=True)  # Qaysi uskunda (oxirgi bosqich)
+    operator_id = Column(Integer, ForeignKey("employees.id"), nullable=True)  # Operator (xodim)
     note = Column(Text)
     created_at = Column(DateTime, default=datetime.now)
 
     recipe = relationship("Recipe")
     warehouse = relationship("Warehouse", foreign_keys=[warehouse_id])
+    machine = relationship("Machine")
+    operator = relationship("Employee", foreign_keys=[operator_id])
     output_warehouse = relationship("Warehouse", foreign_keys=[output_warehouse_id])
     production_items = relationship("ProductionItem", back_populates="production", cascade="all, delete-orphan")
+    stages = relationship("ProductionStage", back_populates="production", cascade="all, delete-orphan", order_by="ProductionStage.stage_number")
 
 
 class ProductionItem(Base):
@@ -250,6 +256,36 @@ class ProductionItem(Base):
 
     production = relationship("Production", back_populates="production_items")
     product = relationship("Product")
+
+
+# Ishlab chiqarish 4 bosqichi: 1) qiyom tayyorlash 2) hamir qorish (qo'shimchalar) 3) sovutish va kesish 4) qadoqlash
+PRODUCTION_STAGE_NAMES = {
+    1: "Qiyom tayyorlash",
+    2: "Yarim tayyor qiyomni hamir qorish, qo'shimchalar",
+    3: "Hamirni sovutish va kesish",
+    4: "Qadoqlash",
+}
+
+
+class ProductionStage(Base):
+    """Ishlab chiqarish buyurtmasining har bir bosqichi (1–4)"""
+    __tablename__ = "production_stages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    production_id = Column(Integer, ForeignKey("productions.id"), nullable=False)
+    stage_number = Column(Integer, nullable=False)  # 1, 2, 3, 4
+    machine_id = Column(Integer, ForeignKey("machines.id"), nullable=True)
+    operator_id = Column(Integer, ForeignKey("employees.id"), nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    quantity_in = Column(Float, nullable=True)   # Kiruvchi miqdor (kg)
+    quantity_out = Column(Float, nullable=True)  # Chiquvchi miqdor (kg)
+    note = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+    production = relationship("Production", back_populates="stages")
+    machine = relationship("Machine")
+    operator = relationship("Employee", foreign_keys=[operator_id])
 
 
 class Machine(Base):
@@ -434,6 +470,7 @@ class Employee(Base):
     phone = Column(String(20))
     address = Column(String(255))
     hire_date = Column(Date)
+    birth_date = Column(Date, nullable=True)  # Tug'ilgan kun (bosh sahifa bildirishnomalari uchun)
     salary = Column(Float, default=0)
     is_active = Column(Boolean, default=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -709,10 +746,10 @@ class Notification(Base):
     expires_at = Column(DateTime, nullable=True)
 
 
-# Bazani yaratish
+# Bazani yaratish — faqat jadvallar yaratiladi, mavjud ma'lumotlar o'chirilmaydi (saqlanadi)
 def init_db():
     Base.metadata.create_all(bind=engine)
-    print("Database yaratildi!")
+    print("Database tayyor (mavjud ma'lumotlar saqlanadi).")
 
 
 if __name__ == "__main__":

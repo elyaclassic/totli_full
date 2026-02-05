@@ -63,6 +63,26 @@
                     
                     <div class="row mb-3">
                         <div class="col-md-6">
+                            <label class="form-label">Uskuna</label>
+                            <select class="form-select" name="machine_id">
+                                <option value="">— Tanlash —</option>
+                                {% for m in machines or [] %}
+                                <option value="{{ m.id }}">{{ m.name }} ({{ m.code }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Operator (xodim)</label>
+                            <select class="form-select" name="operator_id">
+                                <option value="">— Tanlash —</option>
+                                {% for emp in employees or [] %}
+                                <option value="{{ emp.id }}">{{ emp.full_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-6">
                             <label class="form-label">Ishlab chiqarish miqdori (kg) <span class="text-danger">*</span></label>
                             <input type="number" class="form-control form-control-lg" name="quantity" 
                                    id="quantityInput" value="10" step="0.1" min="0.1" required 
