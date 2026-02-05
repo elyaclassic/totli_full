@@ -85,7 +85,7 @@ async def info_warehouses_edit(
 
 
 @router.post("/warehouses/delete/{warehouse_id}")
-async def info_warehouses_delete(warehouse_id: int, db: Session = Depends(get_db)):
+async def info_warehouses_delete(warehouse_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     warehouse = db.query(Warehouse).filter(Warehouse.id == warehouse_id).first()
     if not warehouse:
         raise HTTPException(status_code=404, detail="Ombor topilmadi")
@@ -95,7 +95,7 @@ async def info_warehouses_delete(warehouse_id: int, db: Session = Depends(get_db
 
 
 @router.get("/warehouses/export")
-async def export_warehouses(db: Session = Depends(get_db)):
+async def export_warehouses(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     warehouses = db.query(Warehouse).all()
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -114,7 +114,7 @@ async def export_warehouses(db: Session = Depends(get_db)):
 
 
 @router.get("/warehouses/template")
-async def template_warehouses():
+async def template_warehouses(current_user: User = Depends(require_auth)):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Template"
@@ -131,7 +131,7 @@ async def template_warehouses():
 
 
 @router.post("/warehouses/import")
-async def import_warehouses(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def import_warehouses(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     contents = await file.read()
     wb = openpyxl.load_workbook(io.BytesIO(contents))
     ws = wb.active
@@ -1014,7 +1014,7 @@ async def region_edit(
 
 
 @router.post("/regions/delete/{region_id}")
-async def region_delete(region_id: int, db: Session = Depends(get_db)):
+async def region_delete(region_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     region = db.query(Region).filter(Region.id == region_id).first()
     if not region:
         raise HTTPException(status_code=404, detail="Hudud topilmadi")
