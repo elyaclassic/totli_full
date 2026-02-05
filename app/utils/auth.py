@@ -2,6 +2,7 @@
 Autentifikatsiya va xavfsizlik funksiyalari
 """
 import os
+import secrets
 from datetime import datetime
 from typing import Optional
 from itsdangerous import URLSafeTimedSerializer
@@ -65,3 +66,15 @@ def verify_session_token(token: str) -> Optional[dict]:
 def get_user_from_token(token: str) -> Optional[dict]:
     """Token dan foydalanuvchi ma'lumotlarini olish"""
     return verify_session_token(token)
+
+
+def generate_csrf_token() -> str:
+    """CSRF token yaratish (har sahifa yoki session uchun)"""
+    return secrets.token_hex(32)
+
+
+def verify_csrf_token(received: Optional[str], expected: Optional[str]) -> bool:
+    """CSRF token tekshirish (vaqtincha va xavfsiz taqqoslash)"""
+    if not expected or not received:
+        return False
+    return secrets.compare_digest(received.strip(), expected.strip())

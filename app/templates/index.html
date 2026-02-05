@@ -7,6 +7,12 @@
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 {% endif %}
+{% if error == "csrf" %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    Xavfsizlik xatosi: sahifa muddati tugagan. Sahifani yangilab (F5) qayta urinib ko'ring.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
 <!-- Statistika kartalar -->
 <div class="row row-cols-1 row-cols-md-4 g-4 mb-4">
     <div class="col">

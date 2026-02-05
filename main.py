@@ -28,8 +28,9 @@ from app.models.database import (
     PriceType, ProductPrice
 )
 from app.utils.auth import (
-    hash_password, verify_password, 
-    create_session_token, get_user_from_token
+    hash_password, verify_password,
+    create_session_token, get_user_from_token,
+    generate_csrf_token, verify_csrf_token,
 )
 from app.utils.dashboard_export import export_executive_dashboard
 from app.utils.live_data import executive_live_data, warehouse_live_data, delivery_live_data
@@ -38,6 +39,78 @@ from app.utils.notifications import check_low_stock_and_notify
 app = FastAPI(title="TOTLI HOLVA", description="Biznes boshqaruv tizimi", version="1.0")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
+
+
+# ==========================================
+# CSRF MIDDLEWARE - POST/PUT/DELETE so'rovlarni himoya qilish
+# ==========================================
+@app.middleware("http")
+async def csrf_middleware(request: Request, call_next):
+    from urllib.parse import parse_qs
+    from starlette.requests import Request as StarletteRequest
+
+    path = request.url.path
+    method = request.method.upper()
+    # GET, HEAD, OPTIONS da CSRF tekshiruvi yo'q
+    if method in ("GET", "HEAD", "OPTIONS"):
+        token = request.cookies.get("csrf_token")
+        if not token:
+            token = generate_csrf_token()
+            request.state.csrf_token = token
+        else:
+            request.state.csrf_token = token
+        response = await call_next(request)
+        if not request.cookies.get("csrf_token"):
+            response.set_cookie("csrf_token", token, path="/", httponly=False, samesite="lax", max_age=86400 * 7)
+        return response
+
+    # Himoyalanmaydigan yo'llar (API login, static, PWA location)
+    if path in ("/login", "/api/agent/login", "/api/driver/login") or path.startswith("/static"):
+        request.state.csrf_token = request.cookies.get("csrf_token") or generate_csrf_token()
+        return await call_next(request)
+
+    # Cookie dan yoki yangi token
+    token = request.cookies.get("csrf_token")
+    if not token:
+        token = generate_csrf_token()
+        request.state.csrf_token = token
+    else:
+        request.state.csrf_token = token
+
+    # POST/PUT/PATCH/DELETE da token tekshirish
+    received_token = request.headers.get("X-CSRF-Token")
+    content_type = request.headers.get("content-type", "")
+    if not received_token and "application/x-www-form-urlencoded" in content_type:
+        body = await request.body()
+        parsed = parse_qs(body.decode("utf-8", errors="replace"))
+        received_token = (parsed.get("csrf_token") or [None])[0]
+        async def receive():
+            return {"type": "http.request", "body": body}
+        request = StarletteRequest(request.scope, receive)
+        request.state.csrf_token = token  # yangi request ga state nusxalash
+    elif "multipart/form-data" in content_type and not received_token:
+        body = await request.body()
+        # multipart dan csrf_token ni qidirish (name="csrf_token" dan keyingi qiymat)
+        idx = body.find(b'name="csrf_token"')
+        if idx != -1:
+            start = body.find(b"\r\n\r\n", idx) + 4
+            end = body.find(b"\r\n", start)
+            if start != 3 and end != -1:
+                received_token = body[start:end].decode("utf-8", errors="replace")
+        async def receive():
+            return {"type": "http.request", "body": body}
+        request = StarletteRequest(request.scope, receive)
+        request.state.csrf_token = token  # multipart uchun ham state
+
+    if not verify_csrf_token(received_token, token):
+        if "text/html" in request.headers.get("accept", ""):
+            return RedirectResponse(url=f"/?error=csrf", status_code=303)
+        return JSONResponse(status_code=403, content={"detail": "CSRF token noto'g'ri yoki yo'q"})
+
+    response = await call_next(request)
+    if not request.cookies.get("csrf_token"):
+        response.set_cookie("csrf_token", token, path="/", httponly=False, samesite="lax", max_age=86400 * 7)
+    return response
 
 
 # ==========================================
