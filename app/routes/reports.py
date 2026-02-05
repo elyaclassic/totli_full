@@ -17,11 +17,14 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 
 
 @router.get("", response_class=HTMLResponse)
-async def reports_index(request: Request):
+async def reports_index(request: Request, current_user: User = Depends(require_auth)):
     """Hisobotlar bosh sahifasi"""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
     return templates.TemplateResponse("reports/index.html", {
         "request": request,
         "page_title": "Hisobotlar",
+        "current_user": current_user,
     })
 
 
@@ -31,7 +34,10 @@ async def report_sales(
     start_date: str = None,
     end_date: str = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
     if not start_date:
         start_date = datetime.now().replace(day=1).strftime("%Y-%m-%d")
     if not end_date:
@@ -49,6 +55,7 @@ async def report_sales(
         "start_date": start_date,
         "end_date": end_date,
         "page_title": "Savdo hisoboti",
+        "current_user": current_user,
     })
 
 
@@ -103,12 +110,15 @@ async def report_sales_export(
 
 
 @router.get("/stock", response_class=HTMLResponse)
-async def report_stock(request: Request, db: Session = Depends(get_db)):
+async def report_stock(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
     stocks = db.query(Stock).join(Product).all()
     return templates.TemplateResponse("reports/stock.html", {
         "request": request,
         "stocks": stocks,
         "page_title": "Qoldiq hisoboti",
+        "current_user": current_user,
     })
 
 
@@ -159,7 +169,9 @@ async def report_stock_export(db: Session = Depends(get_db), current_user: User 
 
 
 @router.get("/debts", response_class=HTMLResponse)
-async def report_debts(request: Request, db: Session = Depends(get_db)):
+async def report_debts(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
     debtors = db.query(Partner).filter(Partner.balance != 0).all()
     total_debt = sum(p.balance for p in debtors if p.balance > 0)
     total_credit = sum(abs(p.balance) for p in debtors if p.balance < 0)
@@ -169,6 +181,7 @@ async def report_debts(request: Request, db: Session = Depends(get_db)):
         "total_debt": total_debt,
         "total_credit": total_credit,
         "page_title": "Qarzdorlik hisoboti",
+        "current_user": current_user,
     })
 
 
