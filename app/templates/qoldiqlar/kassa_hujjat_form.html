@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="mb-3">
+        <a href="/qoldiqlar" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Qoldiqlar</a>
+    </div>
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                {% if doc %}
+                Kassa qoldiqlari {{ doc.number }} ({{ doc.date.strftime('%d.%m.%Y %H:%M') if doc.date else '-' }})
+                {% else %}
+                Yangi kassa qoldiq hujjati
+                {% endif %}
+            </h5>
+            {% if doc and doc.status == 'draft' %}
+            <form method="post" action="/qoldiqlar/kassa/hujjat/{{ doc.id }}/tasdiqlash" class="d-inline">
+                <button type="submit" class="btn btn-success"><i class="bi bi-check-circle"></i> Tasdiqlash</button>
+            </form>
+            {% if current_user and current_user.role == 'admin' %}
+            <form method="post" action="/qoldiqlar/kassa/hujjat/{{ doc.id }}/delete" class="d-inline" onsubmit="return confirm('Ushbu hujjatni o\'chirmoqchimisiz?');">
+                <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash"></i> O'chirish</button>
+            </form>
+            {% endif %}
+            {% elif doc and doc.status == 'confirmed' and current_user and current_user.role == 'admin' %}
+            <form method="post" action="/qoldiqlar/kassa/hujjat/{{ doc.id }}/revert" class="d-inline" onsubmit="return confirm('Tasdiqni bekor qilish — kassa balanslari oldingi qiymatga qaytadi. Davom etasizmi?');">
+                <button type="submit" class="btn btn-warning"><i class="bi bi-arrow-counterclockwise"></i> Tasdiqni bekor qilish</button>
+            </form>
+            {% endif %}
+        </div>
+        <div class="card-body">
+            {% if doc %}
+            <p class="text-muted small mb-3">Foydalanuvchi: {{ doc.user.full_name or doc.user.username if doc.user else '-' }}</p>
+            <h6 class="mb-2">Hujjat qatorlari</h6>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover">
+                    <thead class="table-light">
+                        <tr><th>N</th><th>Kassa</th><th>Yangi balans (so'm)</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for item in doc.items %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td>{{ item.cash_register.name if item.cash_register else '-' }}</td>
+                            <td><strong>{{ "{:,.0f}".format(item.balance or 0) }}</strong></td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="3" class="text-muted">Qatorlar yo'q.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            {% if cash_registers %}
+            <form method="post" action="/qoldiqlar/kassa/hujjat">
+                <p class="text-muted small mb-3">Har bir kassa uchun yangi balansni kiriting. Faqat o'zgartirilgan qatorlar hujjatga kiritiladi.</p>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead class="table-light">
+                            <tr><th>#</th><th>Kassa</th><th>Joriy balans (so'm)</th><th>Yangi balans (so'm) *</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for cash in cash_registers %}
+                            <tr>
+                                <td>{{ cash.id }}</td>
+                                <td><strong>{{ cash.name }}</strong></td>
+                                <td>{{ "{:,.0f}".format(cash.balance or 0) }}</td>
+                                <td>
+                                    <input type="hidden" name="cash_register_id" value="{{ cash.id }}">
+                                    <input type="number" name="balance" class="form-control form-control-sm" step="0.01" value="" placeholder="0">
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <button type="submit" class="btn btn-success mt-2"><i class="bi bi-check-circle"></i> Saqlash</button>
+            </form>
+            {% else %}
+            <p class="text-muted mb-0">Kassalar yo'q. <a href="/info/cash">Ma'lumotnomalar → Kassalar</a> da kassa qo'shing.</p>
+            {% endif %}
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

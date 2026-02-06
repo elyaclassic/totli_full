@@ -8,9 +8,12 @@
 </div>
 {% endif %}
 {% if error == "csrf" %}
-<div class="alert alert-danger alert-dismissible fade show" role="alert">
-    Xavfsizlik xatosi: sahifa muddati tugagan. Sahifani yangilab (F5) qayta urinib ko'ring.
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+<div class="alert alert-danger alert-dismissible fade show d-flex align-items-center flex-wrap gap-2" role="alert">
+    <span>Xavfsizlik xatosi: sahifa muddati tugagan.</span>
+    <span>Sahifani yangilang (F5) yoki qayta kiring:</span>
+    <a href="/" class="btn btn-sm btn-outline-danger">Sahifani yangilash</a>
+    <a href="/login" class="btn btn-sm btn-danger">Qayta kirish</a>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Yopish"></button>
 </div>
 {% endif %}
 {% if error and error != "admin_required" and error != "csrf" %}

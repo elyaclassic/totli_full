@@ -9,24 +9,7 @@
         margin-top: 2px;
         background: white;
     }
-
-    #partner_search_results .list-group-item {
-        border-left: none;
-        border-right: none;
-    }
-
-    #partner_search_results .list-group-item:first-child {
-        border-top: none;
-    }
-
-    #partner_search_results .list-group-item:last-child {
-        border-bottom: none;
-    }
-
-    #partner_search_results .list-group-item:hover {
-        background-color: #f8f9fa;
-        cursor: pointer;
-    }
+    #partner_search_results .list-group-item:hover { background-color: #f8f9fa; cursor: pointer; }
 </style>
 
 <div class="container-fluid">
@@ -44,24 +27,20 @@
         </div>
         <div class="card-body">
             <form method="POST" action="/purchases/create" id="purchaseCreateForm">
-                <div class="row">
+                <div class="row mb-4">
                     <div class="col-md-6">
                         <div class="mb-3 position-relative">
                             <label class="form-label">Ta'minotchi *</label>
                             <div class="input-group">
                                 <input type="text" class="form-control" id="partner_search_input"
-                                    placeholder="Tartib raqami, nomi yoki telefon kiriting..." autocomplete="off"
-                                    required>
+                                    placeholder="Nomi, telefon yoki kod bo'yicha qidiring..." autocomplete="off" required>
                                 <input type="hidden" name="partner_id" id="partner_id_hidden" required>
-                                <button type="button" class="btn btn-success" data-bs-toggle="modal"
-                                    data-bs-target="#addPartnerModal">
+                                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addPartnerModal">
                                     <i class="bi bi-plus-circle"></i>
                                 </button>
                             </div>
-                            <!-- Qidiruv natijalari dropdown -->
                             <div id="partner_search_results" class="list-group position-absolute"
-                                style="z-index: 1000; max-height: 300px; overflow-y: auto; display: none; left: 0; right: 0;">
-                            </div>
+                                style="z-index: 1000; max-height: 260px; overflow-y: auto; display: none; left: 0; right: 0;"></div>
                         </div>
                     </div>
                     <div class="col-md-6">
@@ -77,20 +56,76 @@
                     </div>
                 </div>
 
-                <!-- Hidden select for data storage -->
                 <select id="partner_select" style="display: none;">
                     <option value="">Tanlang...</option>
                     {% for partner in partners %}
                     <option value="{{ partner.id }}" data-name="{{ partner.name }}"
-                        data-phone="{{ partner.phone or '' }}">
-                        {{ partner.name }} (#{{ partner.id }})
+                        data-phone="{{ partner.phone or '' }}" data-code="{{ partner.code or '' }}">
+                        {{ partner.name }} (#{{ partner.id }}{% if partner.code %} — {{ partner.code }}{% endif %})
                     </option>
                     {% endfor %}
                 </select>
 
-                <div class="text-end">
-                    <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-check-circle"></i> Davom etish
+                <!-- Mahsulotlar jadvali -->
+                <h6 class="mb-2">Mahsulotlar</h6>
+                <div class="table-responsive mb-3">
+                    <table class="table table-sm" id="productsTable">
+                        <thead>
+                            <tr>
+                                <th>Mahsulot</th>
+                                <th style="width: 120px;">Miqdor</th>
+                                <th style="width: 140px;">Narx (so'm)</th>
+                                <th style="width: 100px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="productsTableBody">
+                            <tr class="product-row">
+                                <td>
+                                    <select name="product_id" class="form-select form-select-sm">
+                                        <option value="">Tanlang...</option>
+                                        {% for product in products %}
+                                        <option value="{{ product.id }}">{{ product.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td><input type="number" name="quantity" class="form-control form-control-sm" step="0.01" min="0" placeholder="0"></td>
+                                <td><input type="number" name="price" class="form-control form-control-sm" step="0.01" min="0" placeholder="0"></td>
+                                <td><button type="button" class="btn btn-sm btn-outline-danger remove-product-row" title="O'chirish"><i class="bi bi-trash"></i></button></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <button type="button" class="btn btn-outline-primary btn-sm mb-4" id="addProductRow">
+                    <i class="bi bi-plus-circle"></i> Qator qo'shish
+                </button>
+
+                <!-- Xarajatlar -->
+                <h6 class="mb-2">Xarajatlar</h6>
+                <div class="table-responsive mb-3">
+                    <table class="table table-sm" id="expensesTable">
+                        <thead>
+                            <tr>
+                                <th>Xarajat nomi</th>
+                                <th style="width: 160px;">Summa (so'm)</th>
+                                <th style="width: 100px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="expensesTableBody">
+                            <tr class="expense-row">
+                                <td><input type="text" name="expense_name" class="form-control form-control-sm" placeholder="masalan: Yo'l, Yuk, Boj"></td>
+                                <td><input type="number" name="expense_amount" class="form-control form-control-sm" step="0.01" min="0" placeholder="0"></td>
+                                <td><button type="button" class="btn btn-sm btn-outline-danger remove-expense-row" title="O'chirish"><i class="bi bi-trash"></i></button></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <button type="button" class="btn btn-outline-secondary btn-sm mb-4" id="addExpenseRow">
+                    <i class="bi bi-plus-circle"></i> Xarajat qo'shish
+                </button>
+
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-check-circle"></i> Saqlash
                     </button>
                 </div>
             </form>
@@ -108,15 +143,14 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <!-- Yangi kontragent qo'shish -->
                     <div class="row g-3">
                         <div class="col-md-9">
                             <label class="form-label">Nomi *</label>
-                            <input type="text" class="form-control" name="name" id="new_partner_name" required>
+                            <input type="text" class="form-control" name="name" required>
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Turi *</label>
-                            <select class="form-select" name="type" id="new_partner_type" required>
+                            <select class="form-select" name="type" required>
                                 <option value="supplier" selected>Yetkazib beruvchi</option>
                                 <option value="customer">Mijoz</option>
                                 <option value="both">Ikkalasi</option>
@@ -124,27 +158,17 @@
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Telefon</label>
-                            <input type="text" class="form-control" name="phone" id="new_partner_phone"
-                                placeholder="+998 XX XXX XX XX">
+                            <input type="text" class="form-control" name="phone" placeholder="+998 XX XXX XX XX">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Manzil</label>
-                            <input type="text" class="form-control" name="address" id="new_partner_address">
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Kredit limiti</label>
-                            <input type="number" class="form-control" name="credit_limit" value="0" step="100000">
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Chegirma %</label>
-                            <input type="number" class="form-control" name="discount_percent" value="0" step="0.5"
-                                max="100">
+                            <input type="text" class="form-control" name="address">
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor qilish</button>
-                    <button type="submit" class="btn btn-success"><i class="bi bi-check-lg"></i> Saqlash</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor</button>
+                    <button type="submit" class="btn btn-success">Saqlash</button>
                 </div>
             </form>
         </div>
@@ -152,174 +176,122 @@
 </div>
 
 <script>
-    // Live search for partner input
+(function() {
     const partnerInput = document.getElementById('partner_search_input');
     const partnerIdHidden = document.getElementById('partner_id_hidden');
     const searchResults = document.getElementById('partner_search_results');
     const partnerSelect = document.getElementById('partner_select');
 
-    partnerInput.addEventListener('input', function (e) {
-        const searchTerm = e.target.value.toLowerCase().trim();
-
-        if (searchTerm.length < 1) {
+    if (partnerInput && partnerSelect) {
+        partnerInput.addEventListener('input', function() {
+            const searchTerm = (this.value || '').trim().toLowerCase();
             searchResults.style.display = 'none';
             searchResults.innerHTML = '';
             partnerIdHidden.value = '';
-            return;
-        }
-
-        const options = Array.from(partnerSelect.options).slice(1);
-
-        const matches = options.filter(option => {
-            const name = option.dataset.name.toLowerCase();
-            const phone = (option.dataset.phone || '').toLowerCase();
-            const id = option.value;
-
-            return name.includes(searchTerm) ||
-                phone.includes(searchTerm) ||
-                id === searchTerm;
-        });
-
-        if (matches.length > 0) {
-            searchResults.innerHTML = '';
-            matches.forEach(option => {
-                const item = document.createElement('a');
-                item.href = '#';
-                item.className = 'list-group-item list-group-item-action';
-                item.innerHTML = `
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <strong>${option.dataset.name}</strong> <span class="badge bg-secondary">#${option.value}</span><br>
-                        <small class="text-muted">${option.dataset.phone || 'Telefon yo\'q'}</small>
-                    </div>
-                </div>
-            `;
-                item.addEventListener('click', function (e) {
-                    e.preventDefault();
-                    selectPartner(option.value, option.dataset.name);
+            if (!searchTerm) return;
+            const options = Array.from(partnerSelect.options).slice(1);
+            const matches = options.filter(function(opt) {
+                const name = (opt.dataset.name || '').toLowerCase();
+                const phone = (opt.dataset.phone || '').toLowerCase();
+                const code = (opt.dataset.code || '').toLowerCase();
+                const id = (opt.value || '').toString();
+                return name.indexOf(searchTerm) !== -1 || phone.indexOf(searchTerm) !== -1 ||
+                    code.indexOf(searchTerm) !== -1 || id === searchTerm;
+            });
+            if (matches.length > 0) {
+                matches.forEach(function(opt) {
+                    const item = document.createElement('a');
+                    item.href = '#'; item.className = 'list-group-item list-group-item-action';
+                    item.innerHTML = '<strong>' + (opt.dataset.name || '') + '</strong> <span class="badge bg-secondary">#' + opt.value + '</span>';
+                    item.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        partnerInput.value = opt.dataset.name || '';
+                        partnerIdHidden.value = opt.value;
+                        searchResults.style.display = 'none';
+                    });
+                    searchResults.appendChild(item);
                 });
-                searchResults.appendChild(item);
-            });
-            searchResults.style.display = 'block';
-        } else {
-            searchResults.innerHTML = '<div class="list-group-item text-muted">Topilmadi. "+" tugmasini bosing.</div>';
-            searchResults.style.display = 'block';
-        }
-    });
-
-    // Select partner from dropdown
-    function selectPartner(partnerId, partnerName) {
-        partnerInput.value = partnerName;
-        partnerIdHidden.value = partnerId;
-        searchResults.style.display = 'none';
+                searchResults.style.display = 'block';
+            } else {
+                searchResults.innerHTML = '<div class="list-group-item text-muted">Topilmadi. "+" tugmasini bosing.</div>';
+                searchResults.style.display = 'block';
+            }
+        });
+        document.addEventListener('click', function(e) {
+            if (!partnerInput.contains(e.target) && !searchResults.contains(e.target)) searchResults.style.display = 'none';
+        });
     }
 
-    // Hide dropdown when clicking outside
-    document.addEventListener('click', function (e) {
-        if (!partnerInput.contains(e.target) && !searchResults.contains(e.target)) {
-            searchResults.style.display = 'none';
-        }
-    });
-
-    // Form yuborishdan oldin ta'minotchi tanlanganligini tekshirish
-    document.getElementById('purchaseCreateForm').addEventListener('submit', function (e) {
-        const pid = (partnerIdHidden.value || '').trim();
-        if (!pid) {
+    document.getElementById('purchaseCreateForm').addEventListener('submit', function(e) {
+        if (!(partnerIdHidden && partnerIdHidden.value)) {
             e.preventDefault();
-            partnerInput.focus();
-            partnerInput.select();
-            showNotification('Ta\'minotchini ro\'yxatdan tanlang: qidiruv natijasidan bittasini bosing.', 'warning');
+            if (partnerInput) partnerInput.focus();
+            alert('Ta\'minotchini qidiruv orqali tanlang.');
+            return;
+        }
+        const productRows = document.querySelectorAll('#productsTableBody .product-row');
+        let hasProduct = false;
+        productRows.forEach(function(row) {
+            const sel = row.querySelector('select[name="product_id"]');
+            const qty = row.querySelector('input[name="quantity"]');
+            const price = row.querySelector('input[name="price"]');
+            if (sel && sel.value && parseFloat(qty && qty.value) > 0 && parseFloat(price && price.value) >= 0) hasProduct = true;
+        });
+        if (!hasProduct) {
+            e.preventDefault();
+            alert('Kamida bitta mahsulot qo\'shing (mahsulot, miqdor va narx kiriting).');
             return;
         }
     });
 
-    // Mavjud kontragentni tanlash (modal-dan)
-    function selectExistingPartner(partnerId, partnerName) {
-        partnerInput.value = partnerName;
-        partnerIdHidden.value = partnerId;
-        const modal = bootstrap.Modal.getInstance(document.getElementById('addPartnerModal'));
-        modal.hide();
-    }
-
-    // Yangi kontragent qo'shish
-    document.getElementById('addPartnerForm').addEventListener('submit', async function (e) {
-        e.preventDefault();
-
-        const formData = new FormData(this);
-
-        try {
-            const response = await fetch('/partners/add', {
-                method: 'POST',
-                body: formData
-            });
-
-            if (response.ok) {
-                // Muvaffaqiyatli saqlandi
-                showNotification('Kontragent muvaffaqiyatli saqlandi!', 'success');
-                setTimeout(() => {
-                    window.location.reload();
-                }, 1000);
-            } else {
-                // Xato yuz berdi
-                const errorText = await response.text();
-
-                // Xato matnidan faqat muhim qismni olish
-                let errorMessage = 'Xatolik yuz berdi!';
-                if (errorText.includes('allaqachon mavjud')) {
-                    // "detail":"..." qismini topish
-                    const match = errorText.match(/"detail":"([^"]+)"/);
-                    if (match) {
-                        errorMessage = match[1];
-                    }
-                }
-
-                showNotification(errorMessage, 'danger');
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            showNotification('Tarmoq xatosi yuz berdi!', 'danger');
-        }
+    document.querySelectorAll('#productsTableBody .remove-product-row').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var tbody = document.getElementById('productsTableBody');
+            if (tbody.querySelectorAll('.product-row').length > 1) btn.closest('tr').remove();
+        });
     });
 
-    // Notification ko'rsatish funksiyasi
-    function showNotification(message, type = 'info') {
-        // Toast container yaratish (agar yo'q bo'lsa)
-        let toastContainer = document.getElementById('toastContainer');
-        if (!toastContainer) {
-            toastContainer = document.createElement('div');
-            toastContainer.id = 'toastContainer';
-            toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
-            toastContainer.style.zIndex = '9999';
-            document.body.appendChild(toastContainer);
-        }
-
-        // Toast yaratish
-        const toastId = 'toast_' + Date.now();
-        const toastHtml = `
-        <div id="${toastId}" class="toast align-items-center text-white bg-${type} border-0" role="alert">
-            <div class="d-flex">
-                <div class="toast-body">
-                    <i class="bi bi-${type === 'success' ? 'check-circle' : 'exclamation-triangle'}"></i>
-                    ${message}
-                </div>
-                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-            </div>
-        </div>
-    `;
-
-        toastContainer.insertAdjacentHTML('beforeend', toastHtml);
-
-        const toastElement = document.getElementById(toastId);
-        const toast = new bootstrap.Toast(toastElement, {
-            autohide: true,
-            delay: 5000
+    document.getElementById('addProductRow').addEventListener('click', function() {
+        var tbody = document.getElementById('productsTableBody');
+        var firstRow = tbody.querySelector('.product-row');
+        if (!firstRow) return;
+        var newRow = firstRow.cloneNode(true);
+        newRow.querySelector('select[name="product_id"]').value = '';
+        newRow.querySelector('input[name="quantity"]').value = '';
+        newRow.querySelector('input[name="price"]').value = '';
+        tbody.appendChild(newRow);
+        newRow.querySelector('.remove-product-row').addEventListener('click', function() {
+            if (tbody.querySelectorAll('.product-row').length > 1) newRow.remove();
         });
-        toast.show();
+    });
 
-        // Toast yopilgandan keyin o'chirish
-        toastElement.addEventListener('hidden.bs.toast', function () {
-            toastElement.remove();
+    document.querySelectorAll('#expensesTableBody .remove-expense-row').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var tbody = document.getElementById('expensesTableBody');
+            if (tbody.querySelectorAll('.expense-row').length > 1) btn.closest('tr').remove();
         });
-    }
+    });
+
+    document.getElementById('addExpenseRow').addEventListener('click', function() {
+        var tbody = document.getElementById('expensesTableBody');
+        var firstRow = tbody.querySelector('.expense-row');
+        if (!firstRow) return;
+        var newRow = firstRow.cloneNode(true);
+        newRow.querySelector('input[name="expense_name"]').value = '';
+        newRow.querySelector('input[name="expense_amount"]').value = '';
+        tbody.appendChild(newRow);
+        newRow.querySelector('.remove-expense-row').addEventListener('click', function() {
+            if (tbody.querySelectorAll('.expense-row').length > 1) newRow.remove();
+        });
+    });
+
+    document.getElementById('addPartnerForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        var formData = new FormData(this);
+        fetch('/partners/add', { method: 'POST', body: formData })
+            .then(function(r) { if (r.ok) { window.location.reload(); } else { return r.text(); } })
+            .then(function(t) { if (t && typeof t === 'string') alert('Xatolik: ' + t.slice(0, 100)); });
+    });
+}());
 </script>
 {% endblock %}

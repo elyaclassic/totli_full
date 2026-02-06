@@ -36,6 +36,10 @@
                                 <i class="bi bi-arrow-counterclockwise"></i> Tasdiqni bekor qilish
                             </button>
                         </form>
+                        {% elif purchase.status == 'draft' and current_user and current_user.role == 'admin' %}
+                        <form method="POST" action="/purchases/{{ purchase.id }}/delete" style="display: inline;" onsubmit="return confirm('Ushbu kirimni o\'chirmoqchimisiz?');">
+                            <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> O'chirish</button>
+                        </form>
                         {% endif %}
                     </div>
                 </div>
@@ -89,8 +93,8 @@
                             </tbody>
                             <tfoot>
                                 <tr>
-                                    <th colspan="4" class="text-end">Jami:</th>
-                                    <th colspan="2"><strong>{{ "{:,.0f}".format(purchase.total) }} so'm</strong></th>
+                                    <th colspan="4" class="text-end">Tovarlar jami:</th>
+                                    <th colspan="2"><strong>{{ "{:,.0f}".format(purchase.total or 0) }} so'm</strong></th>
                                 </tr>
                             </tfoot>
                         </table>
@@ -100,13 +104,49 @@
                         Hozircha mahsulotlar qo'shilmagan
                     </div>
                     {% endif %}
+
+                    <h6 class="mb-2 mt-4">Xarajatlar</h6>
+                    {% if purchase.expenses %}
+                    <div class="table-responsive mb-2">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr><th>Nomi</th><th>Summa</th>{% if purchase.status == 'draft' %}<th></th>{% endif %}</tr>
+                            </thead>
+                            <tbody>
+                                {% for exp in purchase.expenses %}
+                                <tr>
+                                    <td>{{ exp.name }}</td>
+                                    <td>{{ "{:,.0f}".format(exp.amount) }} so'm</td>
+                                    {% if purchase.status == 'draft' %}
+                                    <td>
+                                        <form method="POST" action="/purchases/{{ purchase.id }}/delete-expense/{{ exp.id }}" style="display: inline;">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('O\'chirmoqchimisiz?')"><i class="bi bi-trash"></i></button>
+                                        </form>
+                                    </td>
+                                    {% endif %}
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <th class="text-end">Xarajatlar jami:</th>
+                                    <th colspan="2"><strong>{{ "{:,.0f}".format(purchase.total_expenses or 0) }} so'm</strong></th>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-light py-2 mb-2">Xarajatlar kiritilmagan</div>
+                    {% endif %}
+                    <p class="mb-0"><strong>Jami (tovarlar + xarajatlar):</strong> {{ "{:,.0f}".format((purchase.total or 0) + (purchase.total_expenses or 0)) }} so'm</p>
+
                 </div>
             </div>
         </div>
 
         <div class="col-md-4">
             {% if purchase.status == 'draft' %}
-            <div class="card">
+            <div class="card mb-3">
                 <div class="card-header">
                     <h6 class="mb-0">Mahsulot qo'shish</h6>
                 </div>
@@ -131,6 +171,26 @@
                         </div>
                         <button type="submit" class="btn btn-primary w-100">
                             <i class="bi bi-plus-circle"></i> Qo'shish
+                        </button>
+                    </form>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0">Xarajat qo'shish</h6>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="/purchases/{{ purchase.id }}/add-expense">
+                        <div class="mb-3">
+                            <label class="form-label">Xarajat nomi</label>
+                            <input type="text" name="name" class="form-control" placeholder="masalan: Yo'l, Yuk, Boj" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Summa (so'm)</label>
+                            <input type="number" name="amount" class="form-control" step="0.01" min="0" required>
+                        </div>
+                        <button type="submit" class="btn btn-outline-primary w-100">
+                            <i class="bi bi-plus-circle"></i> Xarajat qo'shish
                         </button>
                     </form>
                 </div>

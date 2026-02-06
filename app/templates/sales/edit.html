@@ -8,6 +8,12 @@
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
     {% endif %}
+    {% if error == "revert" and error_detail %}
+    <div class="alert alert-warning alert-dismissible fade show" role="alert">
+        <strong>Tasdiqni bekor qilish mumkin emas.</strong> {{ error_detail }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
     <div class="row mb-3">
         <div class="col-12">
             <a href="/sales" class="btn btn-outline-secondary mb-3"><i class="bi bi-arrow-left"></i> Orqaga</a>
@@ -26,8 +32,14 @@
                                 <i class="bi bi-check-circle"></i> Tasdiqlash
                             </button>
                         </form>
-                        <form method="POST" action="/sales/delete/{{ order.id }}" style="display: inline;" onsubmit="return confirm('Sotuvni bekor qilmoqchimisiz?');">
-                            <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> Bekor qilish</button>
+                        {% if current_user and current_user.role == 'admin' %}
+                        <form method="POST" action="/sales/delete/{{ order.id }}" style="display: inline;" onsubmit="return confirm('Sotuvni o\'chirmoqchimisiz?');">
+                            <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> O'chirish</button>
+                        </form>
+                        {% endif %}
+                        {% elif order.status == 'completed' and current_user and current_user.role == 'admin' %}
+                        <form method="POST" action="/sales/{{ order.id }}/revert" style="display: inline;" onsubmit="return confirm('Tasdiqni bekor qilish — ombor qoldig\'i qaytadi. Davom etasizmi?');">
+                            <button type="submit" class="btn btn-warning btn-sm"><i class="bi bi-arrow-counterclockwise"></i> Tasdiqni bekor qilish</button>
                         </form>
                         {% endif %}
                     </div>

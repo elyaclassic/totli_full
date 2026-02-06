@@ -2,29 +2,27 @@
 
 {% block content %}
 <div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2><i class="fas fa-users"></i> Foydalanuvchilar</h2>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addUserModal">
-            <i class="fas fa-plus"></i> Yangi foydalanuvchi
-        </button>
-    </div>
-
-    {% if users %}
-    <div class="table-responsive">
-        <table class="table table-striped table-hover">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Login</th>
-                    <th>To'liq ism</th>
-                    <th>Rol</th>
-                    <th>Holat</th>
-                    <th>Yaratilgan</th>
-                    <th>Amallar</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for user in users %}
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="bi bi-people"></i> Foydalanuvchilar</h5>
+            <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addUserModal"><i class="bi bi-plus-circle"></i> Yaratish</button>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>#</th>
+                            <th>Login</th>
+                            <th>To'liq ism</th>
+                            <th>Rol</th>
+                            <th>Holat</th>
+                            <th>Yaratilgan</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in users %}
                 <tr>
                     <td>{{ user.id }}</td>
                     <td>{{ user.username }}</td>
@@ -71,16 +69,16 @@
                         {% endif %}
                     </td>
                 </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+                        {% else %}
+                        <tr>
+                            <td colspan="7" class="text-muted text-center py-4">Hozircha foydalanuvchilar yo'q. Yangi qo'shish uchun yuqoridagi Yaratish tugmasini bosing.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
-    {% else %}
-    <div class="alert alert-info">
-        <i class="fas fa-info-circle"></i> Hozircha foydalanuvchilar yo'q. Yangi foydalanuvchi qo'shish uchun yuqoridagi
-        tugmani bosing.
-    </div>
-    {% endif %}
 </div>
 
 {% block modals %}
@@ -96,7 +94,7 @@
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label">Login *</label>
-                        <input type="text" class="form-control" name="username" required>
+                        <input type="text" class="form-control" name="username" required autocomplete="username">
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Parol *</label>
@@ -206,7 +204,7 @@
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label">Login *</label>
-                        <input type="text" class="form-control" name="username" id="edit_username" required>
+                        <input type="text" class="form-control" name="username" id="edit_username" required autocomplete="username">
                     </div>
                     <div class="mb-3">
                         <label class="form-label">To'liq ism *</label>
@@ -247,6 +245,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <form method="POST" id="changePasswordForm">
+                <input type="hidden" name="username" id="change_password_username" value="" autocomplete="username">
                 <div class="modal-body">
                     <p>Foydalanuvchi: <strong id="password_username"></strong></p>
                     <div class="mb-3">
@@ -302,6 +301,7 @@
     function changePassword(id, username) {
         document.getElementById('changePasswordForm').action = '/info/users/change-password/' + id;
         document.getElementById('password_username').textContent = username;
+        document.getElementById('change_password_username').value = username;
         new bootstrap.Modal(document.getElementById('changePasswordModal')).show();
     }
 
@@ -324,6 +324,12 @@
             const form = document.createElement('form');
             form.method = 'POST';
             form.action = '/info/users/delete/' + id;
+            var csrfInput = document.createElement('input');
+            csrfInput.type = 'hidden';
+            csrfInput.name = 'csrf_token';
+            var meta = document.querySelector('meta[name="csrf-token"]');
+            csrfInput.value = meta ? meta.getAttribute('content') : '';
+            form.appendChild(csrfInput);
             document.body.appendChild(form);
             form.submit();
         }

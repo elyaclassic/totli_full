@@ -24,8 +24,11 @@ from app.models.database import (
     Recipe, RecipeItem, Production, ProductionItem, ProductionStage, PRODUCTION_STAGE_NAMES, Machine, Employee, Salary,
     Agent, AgentLocation, Route, RoutePoint, Visit,
     Driver, DriverLocation, Delivery, PartnerLocation,
-    Purchase, PurchaseItem, Department, Direction, Region, Position,
-    PriceType, ProductPrice
+    Purchase, PurchaseItem, PurchaseExpense, Department, Direction, Region, Position,
+    PriceType, ProductPrice,
+    StockAdjustmentDoc, StockAdjustmentDocItem,
+    CashBalanceDoc, CashBalanceDocItem,
+    PartnerBalanceDoc, PartnerBalanceDocItem,
 )
 from app.utils.auth import (
     hash_password, get_user_from_token,
@@ -2071,6 +2074,709 @@ async def info_cash_delete(cash_id: int, db: Session = Depends(get_db), current_
     db.commit()
     return RedirectResponse(url="/info/cash", status_code=303)
 
+
+# ==========================================
+# QOLDİQLAR (bitta oyna: kassa, tovar, kontragent)
+# ==========================================
+
+@app.get("/qoldiqlar", response_class=HTMLResponse)
+async def qoldiqlar_page(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+    """Qoldiqlar sahifasi: kassa, tovar (forma spiska 1C), kontragent qoldiqlarini kiritish"""
+    cash_registers = db.query(CashRegister).filter(CashRegister.is_active == True).all()
+    warehouses = db.query(Warehouse).filter(Warehouse.is_active == True).all()
+    products = db.query(Product).filter(Product.is_active == True).order_by(Product.name).all()
+    stocks = db.query(Stock).join(Warehouse).join(Product).order_by(Stock.updated_at.desc()).limit(300).all()
+    partners = db.query(Partner).filter(Partner.is_active == True).order_by(Partner.name).all()
+    tovar_docs = (
+        db.query(StockAdjustmentDoc)
+        .order_by(StockAdjustmentDoc.created_at.desc())
+        .limit(200)
+        .all()
+    )
+    cash_docs = (
+        db.query(CashBalanceDoc)
+        .order_by(CashBalanceDoc.created_at.desc())
+        .limit(200)
+        .all()
+    )
+    kontragent_docs = (
+        db.query(PartnerBalanceDoc)
+        .order_by(PartnerBalanceDoc.created_at.desc())
+        .limit(200)
+        .all()
+    )
+    return templates.TemplateResponse("qoldiqlar/index.html", {
+        "request": request,
+        "cash_registers": cash_registers,
+        "warehouses": warehouses,
+        "products": products,
+        "stocks": stocks,
+        "partners": partners,
+        "tovar_docs": tovar_docs,
+        "cash_docs": cash_docs,
+        "kontragent_docs": kontragent_docs,
+        "current_user": current_user,
+        "page_title": "Qoldiqlar",
+    })
+
+
+@app.post("/qoldiqlar/kassa/{cash_id}")
+async def qoldiqlar_kassa_save(
+    cash_id: int,
+    balance: float = Form(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Kassa qoldig'ini yangilash (eski tezkor forma uchun qolgan)"""
+    cash = db.query(CashRegister).filter(CashRegister.id == cash_id).first()
+    if not cash:
+        raise HTTPException(status_code=404, detail="Kassa topilmadi")
+    cash.balance = balance
+    db.commit()
+    return RedirectResponse(url="/qoldiqlar#kassa", status_code=303)
+
+
+# --- Kassa qoldiq HUJJATLARI (1C uslubida) ---
+@app.get("/qoldiqlar/kassa/hujjat/new", response_class=HTMLResponse)
+async def qoldiqlar_kassa_hujjat_new(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Yangi kassa qoldiq hujjati"""
+    cash_registers = db.query(CashRegister).filter(CashRegister.is_active == True).all()
+    return templates.TemplateResponse("qoldiqlar/kassa_hujjat_form.html", {
+        "request": request,
+        "doc": None,
+        "cash_registers": cash_registers,
+        "current_user": current_user,
+        "page_title": "Kassa qoldiqlari — yangi hujjat",
+    })
+
+
+@app.post("/qoldiqlar/kassa/hujjat")
+async def qoldiqlar_kassa_hujjat_create(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Kassa qoldiq hujjatini yaratish (qoralama)"""
+    form = await request.form()
+    cash_ids = form.getlist("cash_register_id")
+    balances = form.getlist("balance")
+
+    items_data = []
+    for i, cid in enumerate(cash_ids):
+        if not cid:
+            continue
+        try:
+            bid = int(cid)
+            bal = float(balances[i]) if i < len(balances) and balances[i] != "" else None
+        except (TypeError, ValueError):
+            continue
+        if bal is not None:
+            items_data.append((bid, bal))
+
+    if not items_data:
+        return RedirectResponse(url="/qoldiqlar/kassa/hujjat/new", status_code=303)
+
+    today = datetime.now()
+    count = db.query(CashBalanceDoc).filter(
+        CashBalanceDoc.date >= today.replace(hour=0, minute=0, second=0)
+    ).count()
+    number = f"KLD-{today.strftime('%Y%m%d')}-{str(count + 1).zfill(4)}"
+
+    doc = CashBalanceDoc(
+        number=number,
+        date=today,
+        user_id=current_user.id if current_user else None,
+        status="draft",
+    )
+    db.add(doc)
+    db.flush()
+    for cid, bal in items_data:
+        db.add(CashBalanceDocItem(doc_id=doc.id, cash_register_id=cid, balance=bal))
+    db.commit()
+    return RedirectResponse(url=f"/qoldiqlar/kassa/hujjat/{doc.id}", status_code=303)
+
+
+@app.get("/qoldiqlar/kassa/hujjat/{doc_id}", response_class=HTMLResponse)
+async def qoldiqlar_kassa_hujjat_view(
+    request: Request,
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Kassa qoldiq hujjatini ko'rish"""
+    doc = db.query(CashBalanceDoc).filter(CashBalanceDoc.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Hujjat topilmadi")
+    cash_registers = db.query(CashRegister).filter(CashRegister.is_active == True).all()
+    return templates.TemplateResponse("qoldiqlar/kassa_hujjat_form.html", {
+        "request": request,
+        "doc": doc,
+        "cash_registers": cash_registers,
+        "current_user": current_user,
+        "page_title": f"Kassa qoldiqlari {doc.number}",
+    })
+
+
+@app.post("/qoldiqlar/kassa/hujjat/{doc_id}/tasdiqlash")
+async def qoldiqlar_kassa_hujjat_tasdiqlash(
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Kassa hujjatini tasdiqlash — kassa balanslarini yangilash"""
+    doc = db.query(CashBalanceDoc).filter(CashBalanceDoc.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Hujjat topilmadi")
+    if doc.status != "draft":
+        raise HTTPException(status_code=400, detail="Hujjat allaqachon tasdiqlangan")
+    if not doc.items:
+        raise HTTPException(status_code=400, detail="Kamida bitta kassa qatori bo'lishi kerak")
+    for item in doc.items:
+        cash = db.query(CashRegister).filter(CashRegister.id == item.cash_register_id).first()
+        if cash:
+            item.previous_balance = cash.balance
+            cash.balance = item.balance
+    doc.status = "confirmed"
+    db.commit()
+    return RedirectResponse(url=f"/qoldiqlar/kassa/hujjat/{doc_id}", status_code=303)
+
+
+@app.post("/qoldiqlar/kassa/hujjat/{doc_id}/revert")
+async def qoldiqlar_kassa_hujjat_revert(
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Kassa hujjati tasdiqini bekor qilish (faqat admin)"""
+    doc = db.query(CashBalanceDoc).filter(CashBalanceDoc.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Hujjat topilmadi")
+    if doc.status != "confirmed":
+        raise HTTPException(status_code=400, detail="Faqat tasdiqlangan hujjatning tasdiqini bekor qilish mumkin")
+    for item in doc.items:
+        cash = db.query(CashRegister).filter(CashRegister.id == item.cash_register_id).first()
+        if cash and item.previous_balance is not None:
+            cash.balance = item.previous_balance
+    doc.status = "draft"
+    db.commit()
+    return RedirectResponse(url=f"/qoldiqlar/kassa/hujjat/{doc_id}", status_code=303)
+
+
+@app.post("/qoldiqlar/kassa/hujjat/{doc_id}/delete")
+async def qoldiqlar_kassa_hujjat_delete(
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Kassa hujjatini o'chirish (faqat qoralama, faqat admin)"""
+    doc = db.query(CashBalanceDoc).filter(CashBalanceDoc.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Hujjat topilmadi")
+    if doc.status != "draft":
+        raise HTTPException(status_code=400, detail="Faqat qoralama holatidagi hujjatni o'chirish mumkin. Avval tasdiqni bekor qiling.")
+    db.delete(doc)
+    db.commit()
+    return RedirectResponse(url="/qoldiqlar#kassa", status_code=303)
+
+
+# --- Kontragent qoldiq HUJJATLARI (1C uslubida) ---
+@app.get("/qoldiqlar/kontragent/hujjat/new", response_class=HTMLResponse)
+async def qoldiqlar_kontragent_hujjat_new(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Yangi kontragent balans hujjati"""
+    partners = db.query(Partner).filter(Partner.is_active == True).order_by(Partner.name).all()
+    return templates.TemplateResponse("qoldiqlar/kontragent_hujjat_form.html", {
+        "request": request,
+        "doc": None,
+        "partners": partners,
+        "current_user": current_user,
+        "page_title": "Kontragent qoldiqlari — yangi hujjat",
+    })
+
+
+@app.post("/qoldiqlar/kontragent/hujjat")
+async def qoldiqlar_kontragent_hujjat_create(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Kontragent balans hujjatini yaratish (qoralama)"""
+    form = await request.form()
+    partner_ids = form.getlist("partner_id")
+    balances = form.getlist("balance")
+
+    items_data = []
+    for i, pid in enumerate(partner_ids):
+        if not pid:
+            continue
+        try:
+            pid_int = int(pid)
+            bal_str = (balances[i] if i < len(balances) else "").strip()
+            if not bal_str:
+                continue
+            bal = float(bal_str)
+        except (TypeError, ValueError):
+            continue
+        items_data.append((pid_int, bal))
+
+    if not items_data:
+        return RedirectResponse(url="/qoldiqlar/kontragent/hujjat/new", status_code=303)
+
+    today = datetime.now()
+    count = db.query(PartnerBalanceDoc).filter(
+        PartnerBalanceDoc.date >= today.replace(hour=0, minute=0, second=0)
+    ).count()
+    number = f"KNT-{today.strftime('%Y%m%d')}-{str(count + 1).zfill(4)}"
+
+    doc = PartnerBalanceDoc(
+        number=number,
+        date=today,
+        user_id=current_user.id if current_user else None,
+        status="draft",
+    )
+    db.add(doc)
+    db.flush()
+    for pid, bal in items_data:
+        db.add(PartnerBalanceDocItem(doc_id=doc.id, partner_id=pid, balance=bal))
+    db.commit()
+    return RedirectResponse(url=f"/qoldiqlar/kontragent/hujjat/{doc.id}", status_code=303)
+
+
+@app.get("/qoldiqlar/kontragent/hujjat/{doc_id}", response_class=HTMLResponse)
+async def qoldiqlar_kontragent_hujjat_view(
+    request: Request,
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Kontragent balans hujjatini ko'rish"""
+    doc = db.query(PartnerBalanceDoc).filter(PartnerBalanceDoc.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Hujjat topilmadi")
+    partners = db.query(Partner).filter(Partner.is_active == True).order_by(Partner.name).all()
+    return templates.TemplateResponse("qoldiqlar/kontragent_hujjat_form.html", {
+        "request": request,
+        "doc": doc,
+        "partners": partners,
+        "current_user": current_user,
+        "page_title": f"Kontragent qoldiqlari {doc.number}",
+    })
+
+
+@app.post("/qoldiqlar/kontragent/hujjat/{doc_id}/tasdiqlash")
+async def qoldiqlar_kontragent_hujjat_tasdiqlash(
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Kontragent hujjatini tasdiqlash — kontragent balanslarini yangilash"""
+    doc = db.query(PartnerBalanceDoc).filter(PartnerBalanceDoc.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Hujjat topilmadi")
+    if doc.status != "draft":
+        raise HTTPException(status_code=400, detail="Hujjat allaqachon tasdiqlangan")
+    if not doc.items:
+        raise HTTPException(status_code=400, detail="Kamida bitta kontragent qatori bo'lishi kerak")
+    for item in doc.items:
+        partner = db.query(Partner).filter(Partner.id == item.partner_id).first()
+        if partner:
+            item.previous_balance = partner.balance
+            partner.balance = item.balance
+    doc.status = "confirmed"
+    db.commit()
+    return RedirectResponse(url=f"/qoldiqlar/kontragent/hujjat/{doc_id}", status_code=303)
+
+
+@app.post("/qoldiqlar/kontragent/hujjat/{doc_id}/revert")
+async def qoldiqlar_kontragent_hujjat_revert(
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Kontragent hujjati tasdiqini bekor qilish (faqat admin)"""
+    doc = db.query(PartnerBalanceDoc).filter(PartnerBalanceDoc.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Hujjat topilmadi")
+    if doc.status != "confirmed":
+        raise HTTPException(status_code=400, detail="Faqat tasdiqlangan hujjatning tasdiqini bekor qilish mumkin")
+    for item in doc.items:
+        partner = db.query(Partner).filter(Partner.id == item.partner_id).first()
+        if partner and item.previous_balance is not None:
+            partner.balance = item.previous_balance
+    doc.status = "draft"
+    db.commit()
+    return RedirectResponse(url=f"/qoldiqlar/kontragent/hujjat/{doc_id}", status_code=303)
+
+
+@app.post("/qoldiqlar/kontragent/hujjat/{doc_id}/delete")
+async def qoldiqlar_kontragent_hujjat_delete(
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Kontragent hujjatini o'chirish (faqat qoralama, faqat admin)"""
+    doc = db.query(PartnerBalanceDoc).filter(PartnerBalanceDoc.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Hujjat topilmadi")
+    if doc.status != "draft":
+        raise HTTPException(status_code=400, detail="Faqat qoralama holatidagi hujjatni o'chirish mumkin. Avval tasdiqni bekor qiling.")
+    db.delete(doc)
+    db.commit()
+    return RedirectResponse(url="/qoldiqlar#kontragent", status_code=303)
+
+
+@app.post("/qoldiqlar/tovar")
+async def qoldiqlar_tovar_save(
+    warehouse_id: int = Form(...),
+    product_id: int = Form(...),
+    quantity: float = Form(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Tovar qoldig'ini kiritish yoki qo'shish (omborda mavjud bo'lsa qo'shiladi)"""
+    if quantity < 0:
+        return RedirectResponse(url="/qoldiqlar#tovar", status_code=303)
+    stock = db.query(Stock).filter(
+        Stock.warehouse_id == warehouse_id,
+        Stock.product_id == product_id,
+    ).first()
+    if stock:
+        stock.quantity = (stock.quantity or 0) + quantity
+        stock.updated_at = datetime.now()
+    else:
+        stock = Stock(warehouse_id=warehouse_id, product_id=product_id, quantity=quantity)
+        db.add(stock)
+    db.commit()
+    return RedirectResponse(url="/qoldiqlar#tovar", status_code=303)
+
+
+@app.post("/qoldiqlar/kontragent/{partner_id}")
+async def qoldiqlar_kontragent_save(
+    partner_id: int,
+    balance: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Kontragent balansini yangilash"""
+    partner = db.query(Partner).filter(Partner.id == partner_id).first()
+    if not partner:
+        raise HTTPException(status_code=404, detail="Kontragent topilmadi")
+    balance_str = (balance or "").strip()
+    if not balance_str:
+        return RedirectResponse(url="/qoldiqlar#kontragent", status_code=303)
+    try:
+        partner.balance = float(balance_str)
+    except (TypeError, ValueError):
+        return RedirectResponse(url="/qoldiqlar#kontragent", status_code=303)
+    db.commit()
+    return RedirectResponse(url="/qoldiqlar#kontragent", status_code=303)
+
+
+@app.get("/qoldiqlar/export")
+async def qoldiqlar_export(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+    """Tovar qoldiqlari hisoboti — Excel hujjat sifatida yuklab olish"""
+    stocks = (
+        db.query(Stock)
+        .join(Warehouse, Stock.warehouse_id == Warehouse.id)
+        .join(Product, Stock.product_id == Product.id)
+        .order_by(Warehouse.name, Product.name)
+        .all()
+    )
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Tovar qoldiqlari"
+    ws.append(["Ombor", "Mahsulot", "Kod", "Miqdor"])
+    for s in stocks:
+        ws.append([
+            s.warehouse.name if s.warehouse else "-",
+            s.product.name if s.product else "-",
+            (s.product.code or "") if s.product else "",
+            float(s.quantity) if s.quantity is not None else 0,
+        ])
+    stream = io.BytesIO()
+    wb.save(stream)
+    stream.seek(0)
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=tovar_qoldiqlari.xlsx"},
+    )
+
+
+# --- Tovar qoldiq HUJJATLARI (1C uslubida: ro'yxat + hujjat + qatorlar) ---
+@app.get("/qoldiqlar/tovar/hujjat", response_class=HTMLResponse)
+async def qoldiqlar_tovar_hujjat_list(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Tovar qoldiqlari hujjatlari ro'yxati"""
+    docs = (
+        db.query(StockAdjustmentDoc)
+        .order_by(StockAdjustmentDoc.created_at.desc())
+        .limit(200)
+        .all()
+    )
+    return templates.TemplateResponse("qoldiqlar/hujjat_list.html", {
+        "request": request,
+        "docs": docs,
+        "current_user": current_user,
+        "page_title": "Tovar qoldiqlari hujjatlari",
+    })
+
+
+@app.get("/qoldiqlar/tovar/hujjat/new", response_class=HTMLResponse)
+async def qoldiqlar_tovar_hujjat_new(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Yangi tovar qoldiq hujjati (qoralama)"""
+    warehouses = db.query(Warehouse).filter(Warehouse.is_active == True).all()
+    products = db.query(Product).filter(Product.is_active == True).order_by(Product.name).all()
+    return templates.TemplateResponse("qoldiqlar/hujjat_form.html", {
+        "request": request,
+        "doc": None,
+        "warehouses": warehouses,
+        "products": products,
+        "current_user": current_user,
+        "page_title": "Tovar qoldiqlari — yangi hujjat",
+    })
+
+
+@app.post("/qoldiqlar/tovar/hujjat")
+async def qoldiqlar_tovar_hujjat_create(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Tovar qoldiq hujjatini yaratish (qoralama)"""
+    form = await request.form()
+    product_ids = form.getlist("product_id")
+    warehouse_ids = form.getlist("warehouse_id")
+    quantities = form.getlist("quantity")
+    cost_prices = form.getlist("cost_price")
+    sale_prices = form.getlist("sale_price")
+
+    items_data = []
+    for i, pid in enumerate(product_ids):
+        if not pid or not str(pid).strip():
+            continue
+        try:
+            wid = int(warehouse_ids[i]) if i < len(warehouse_ids) and warehouse_ids[i] else None
+            qty = float(quantities[i]) if i < len(quantities) and str(quantities[i]).strip() else 0
+            _cp = cost_prices[i] if i < len(cost_prices) else ""
+            _sp = sale_prices[i] if i < len(sale_prices) else ""
+            cp = float(_cp) if str(_cp).strip() else 0
+            sp = float(_sp) if str(_sp).strip() else 0
+        except (TypeError, ValueError):
+            continue
+        if wid and qty > 0:
+            try:
+                items_data.append((int(pid), wid, qty, cp, sp))
+            except ValueError:
+                continue
+
+    today = datetime.now()
+    count = db.query(StockAdjustmentDoc).filter(
+        StockAdjustmentDoc.date >= today.replace(hour=0, minute=0, second=0)
+    ).count()
+    number = f"QLD-{today.strftime('%Y%m%d')}-{str(count + 1).zfill(4)}"
+
+    total_tannarx = sum(qty * cp for _, _, qty, cp, _ in items_data)
+    total_sotuv = sum(qty * sp for _, _, qty, _, sp in items_data)
+
+    doc = StockAdjustmentDoc(
+        number=number,
+        date=today,
+        user_id=current_user.id if current_user else None,
+        status="draft",
+        total_tannarx=total_tannarx,
+        total_sotuv=total_sotuv,
+    )
+    db.add(doc)
+    db.flush()
+
+    for pid, wid, qty, cp, sp in items_data:
+        db.add(StockAdjustmentDocItem(
+            doc_id=doc.id,
+            product_id=pid,
+            warehouse_id=wid,
+            quantity=qty,
+            cost_price=cp,
+            sale_price=sp,
+        ))
+    db.commit()
+    return RedirectResponse(url=f"/qoldiqlar/tovar/hujjat/{doc.id}", status_code=303)
+
+
+@app.get("/qoldiqlar/tovar/hujjat/{doc_id}", response_class=HTMLResponse)
+async def qoldiqlar_tovar_hujjat_view(
+    request: Request,
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Tovar qoldiq hujjatini ko'rish/tahrirlash"""
+    doc = db.query(StockAdjustmentDoc).filter(StockAdjustmentDoc.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Hujjat topilmadi")
+    warehouses = db.query(Warehouse).filter(Warehouse.is_active == True).all()
+    products = db.query(Product).filter(Product.is_active == True).order_by(Product.name).all()
+    return templates.TemplateResponse("qoldiqlar/hujjat_form.html", {
+        "request": request,
+        "doc": doc,
+        "warehouses": warehouses,
+        "products": products,
+        "current_user": current_user,
+        "page_title": f"Tovar qoldiqlari {doc.number}",
+    })
+
+
+@app.post("/qoldiqlar/tovar/hujjat/{doc_id}/add-row")
+async def qoldiqlar_tovar_hujjat_add_row(
+    doc_id: int,
+    product_id: int = Form(...),
+    warehouse_id: int = Form(...),
+    quantity: float = Form(...),
+    cost_price: float = Form(0),
+    sale_price: float = Form(0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Hujjatga qator qo'shish (faqat qoralama)"""
+    doc = db.query(StockAdjustmentDoc).filter(StockAdjustmentDoc.id == doc_id).first()
+    if not doc or doc.status != "draft":
+        raise HTTPException(status_code=400, detail="Faqat qoralamani tahrirlash mumkin")
+    if quantity <= 0:
+        return RedirectResponse(url=f"/qoldiqlar/tovar/hujjat/{doc_id}", status_code=303)
+    doc.total_tannarx = (doc.total_tannarx or 0) + quantity * (cost_price or 0)
+    doc.total_sotuv = (doc.total_sotuv or 0) + quantity * (sale_price or 0)
+    db.add(StockAdjustmentDocItem(
+        doc_id=doc_id,
+        product_id=product_id,
+        warehouse_id=warehouse_id,
+        quantity=quantity,
+        cost_price=cost_price or 0,
+        sale_price=sale_price or 0,
+    ))
+    db.commit()
+    return RedirectResponse(url=f"/qoldiqlar/tovar/hujjat/{doc_id}", status_code=303)
+
+
+@app.post("/qoldiqlar/tovar/hujjat/{doc_id}/delete-row/{item_id}")
+async def qoldiqlar_tovar_hujjat_delete_row(
+    doc_id: int,
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Hujjatdan qatorni o'chirish (faqat qoralama)"""
+    doc = db.query(StockAdjustmentDoc).filter(StockAdjustmentDoc.id == doc_id).first()
+    if not doc or doc.status != "draft":
+        raise HTTPException(status_code=400, detail="Faqat qoralamani tahrirlash mumkin")
+    item = db.query(StockAdjustmentDocItem).filter(
+        StockAdjustmentDocItem.id == item_id,
+        StockAdjustmentDocItem.doc_id == doc_id,
+    ).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Qator topilmadi")
+    doc.total_tannarx = (doc.total_tannarx or 0) - (item.quantity * (item.cost_price or 0))
+    doc.total_sotuv = (doc.total_sotuv or 0) - (item.quantity * (item.sale_price or 0))
+    if doc.total_tannarx < 0:
+        doc.total_tannarx = 0
+    if doc.total_sotuv < 0:
+        doc.total_sotuv = 0
+    db.delete(item)
+    db.commit()
+    return RedirectResponse(url=f"/qoldiqlar/tovar/hujjat/{doc_id}", status_code=303)
+
+
+@app.post("/qoldiqlar/tovar/hujjat/{doc_id}/tasdiqlash")
+async def qoldiqlar_tovar_hujjat_tasdiqlash(
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Hujjatni tasdiqlash — ombor qoldiqlariga qo'shiladi"""
+    doc = db.query(StockAdjustmentDoc).filter(StockAdjustmentDoc.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Hujjat topilmadi")
+    if doc.status != "draft":
+        raise HTTPException(status_code=400, detail="Hujjat allaqachon tasdiqlangan")
+    if not doc.items:
+        raise HTTPException(status_code=400, detail="Kamida bitta qator bo'lishi kerak")
+
+    for item in doc.items:
+        stock = db.query(Stock).filter(
+            Stock.warehouse_id == item.warehouse_id,
+            Stock.product_id == item.product_id,
+        ).first()
+        if stock:
+            stock.quantity = (stock.quantity or 0) + item.quantity
+            stock.updated_at = datetime.now()
+        else:
+            db.add(Stock(
+                warehouse_id=item.warehouse_id,
+                product_id=item.product_id,
+                quantity=item.quantity,
+            ))
+    doc.status = "confirmed"
+    db.commit()
+    return RedirectResponse(url=f"/qoldiqlar/tovar/hujjat/{doc_id}", status_code=303)
+
+
+@app.post("/qoldiqlar/tovar/hujjat/{doc_id}/revert")
+async def qoldiqlar_tovar_hujjat_revert(
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Tovar qoldiq hujjati tasdiqini bekor qilish (faqat admin) — ombor qoldig'ini kamaytirish"""
+    doc = db.query(StockAdjustmentDoc).filter(StockAdjustmentDoc.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Hujjat topilmadi")
+    if doc.status != "confirmed":
+        raise HTTPException(status_code=400, detail="Faqat tasdiqlangan hujjatning tasdiqini bekor qilish mumkin")
+    for item in doc.items:
+        stock = db.query(Stock).filter(
+            Stock.warehouse_id == item.warehouse_id,
+            Stock.product_id == item.product_id,
+        ).first()
+        if stock:
+            stock.quantity = (stock.quantity or 0) - item.quantity
+            if stock.quantity < 0:
+                stock.quantity = 0
+            stock.updated_at = datetime.now()
+    doc.status = "draft"
+    db.commit()
+    return RedirectResponse(url=f"/qoldiqlar/tovar/hujjat/{doc_id}", status_code=303)
+
+
+@app.post("/qoldiqlar/tovar/hujjat/{doc_id}/delete")
+async def qoldiqlar_tovar_hujjat_delete(
+    doc_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Tovar qoldiq hujjatini o'chirish (faqat qoralama, faqat admin)"""
+    doc = db.query(StockAdjustmentDoc).filter(StockAdjustmentDoc.id == doc_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Hujjat topilmadi")
+    if doc.status != "draft":
+        raise HTTPException(status_code=400, detail="Faqat qoralama holatidagi hujjatni o'chirish mumkin. Avval tasdiqni bekor qiling.")
+    db.delete(doc)
+    db.commit()
+    return RedirectResponse(url="/qoldiqlar#tovar", status_code=303)
+
+
 # Bo'limlar bo'limi
 @app.get("/info/departments", response_class=HTMLResponse)
 async def info_departments(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
@@ -2503,10 +3209,10 @@ async def product_import_template(current_user: User = Depends(require_auth)):
     # Headers (kategoriya yo'q)
     headers = ["ID", "Kod", "Nomi", "Turi", "O'lchov", "Sotish narxi", "Olish narxi"]
     ws.append(headers)
-    
-    # Example Row
-    example = ["", "P001", "Misol Mahsulot", "tayyor", "dona", 15000, 10000]
-    ws.append(example)
+    # Turi ustunida quyidagilardan biri bo'lishi kerak: tayyor, yarim_tayyor, hom_ashyo
+    ws.append(["", "P001", "Tayyor mahsulot", "tayyor", "dona", 15000, 10000])
+    ws.append(["", "P002", "Yarim tayyor mahsulot", "yarim_tayyor", "kg", 8000, 5000])
+    ws.append(["", "P003", "Xom ashyo", "hom_ashyo", "kg", 2000, 1500])
     
     # Column width adjustment
     for col in range(1, 8):
@@ -2542,6 +3248,7 @@ async def import_products(
 ):
     """Excel dan tovarlarni import. Andoza: ID, Kod, Nomi, Turi, O'lchov, Sotish narxi, Olish narxi (kategoriya yo'q)."""
     from urllib.parse import quote
+    from zipfile import BadZipFile
     form = await request.form()
     file = form.get("file") or form.get("excel_file")
     if not file or not getattr(file, "filename", None):
@@ -2550,69 +3257,96 @@ async def import_products(
         contents = await file.read()
         if not contents:
             return RedirectResponse(url="/products?error=import&detail=" + quote("Fayl bo'sh"), status_code=303)
+        # .xlsx fayllar ZIP formatida; boshqa format yoki buzilgan fayl xato beradi
+        if contents[:2] != b"PK":
+            return RedirectResponse(
+                url="/products?error=import&detail=" + quote("Fayl .xlsx formati bo'lishi kerak (Excel 2007+). Eski .xls yoki boshqa format qabul qilinmaydi."),
+                status_code=303,
+            )
         wb = openpyxl.load_workbook(io.BytesIO(contents), read_only=False, data_only=True)
         ws = wb.active
-        rows = list(ws.iter_rows(min_row=2, values_only=True))
+        if ws.max_row < 2:
+            return RedirectResponse(
+                url="/products?import_ok=0&detail=" + quote("Excelda ma'lumot qatorlari yo'q. 1-qator sarlavha, 2-qatordan Nomi/Kod to'ldiring."),
+                status_code=303,
+            )
+        # 2-qatordan boshlab har bir qatorni A,B,C,D,E,F,G ustunlari orqali aniq o'qish
         added = 0
-        for idx, row in enumerate(rows):
+        updated = 0
+        for row_num in range(2, ws.max_row + 1):
+            def cell(col):
+                v = ws.cell(row=row_num, column=col).value
+                return "" if v is None else str(v).strip()
+            code = cell(2) or cell(1)
+            name = cell(3) or cell(2)
+            if not code and not name:
+                continue
+            if code.lower() in ("id", "kod", "nomi", "turi", "o'lchov") and (not name or name.lower() in ("id", "kod", "nomi", "turi")):
+                continue
+            if not code:
+                code = f"P{row_num}"
+            if not name:
+                name = code
+            raw = (cell(4) or "tayyor").replace("\xa0", " ").strip().lower()
+            if raw in ("yarim tayyor", "yarim_tayyor", "yarimtayyor"):
+                type_ = "yarim_tayyor"
+            elif raw in ("xom ashyo", "hom_ashyo", "xom_ashyo", "xomashyo"):
+                type_ = "hom_ashyo"
+            else:
+                type_ = "tayyor"
+            unit_name = cell(5) or None
             try:
-                if not row:
-                    continue
-                row = list(row) if hasattr(row, "__iter__") else []
-                if len(row) < 3:
-                    continue
-                code = (row[1] if len(row) > 1 else None) or (row[0] if len(row) > 0 else None)
-                name = row[2] if len(row) > 2 else None
-                code = str(code).strip() if code else ""
-                name = str(name).strip() if name else ""
-                if not code and not name:
-                    continue
-                if not code:
-                    code = f"P{idx+2}"
-                if not name:
-                    name = str(code)
-                type_ = (str(row[3]).strip() if len(row) > 3 and row[3] else "tayyor") or "tayyor"
-                if len(row) >= 8:
-                    unit_name = str(row[5]).strip() if row[5] else None
-                    sale_idx, purchase_idx = 6, 7
-                else:
-                    unit_name = str(row[4]).strip() if len(row) > 4 and row[4] else None
-                    sale_idx, purchase_idx = 5, 6
-                try:
-                    sale_price = float(str(row[sale_idx]).replace(" ", "").replace(",", ".")) if len(row) > sale_idx and row[sale_idx] is not None else 0
-                except (ValueError, TypeError):
-                    sale_price = 0
-                try:
-                    purchase_price = float(str(row[purchase_idx]).replace(" ", "").replace(",", ".")) if len(row) > purchase_idx and row[purchase_idx] is not None else 0
-                except (ValueError, TypeError):
-                    purchase_price = 0
+                sale_price = float((cell(6) or "0").replace(" ", "").replace(",", "."))
+            except (ValueError, TypeError):
+                sale_price = 0
+            try:
+                purchase_price = float((cell(7) or "0").replace(" ", "").replace(",", "."))
+            except (ValueError, TypeError):
+                purchase_price = 0
+            try:
                 unit = db.query(Unit).filter(Unit.name == unit_name).first() if unit_name else None
                 if not unit and unit_name:
-                    unit_code = (unit_name or "").lower().replace(" ", "_")[:10]
-                    unit = Unit(name=unit_name, code=unit_code or "u")
+                    unit = Unit(name=unit_name, code=unit_name.lower().replace(" ", "_")[:10] or "u")
                     db.add(unit)
                     db.commit()
                     db.refresh(unit)
                 product = db.query(Product).filter(Product.code == code).first()
                 if not product:
-                    product = Product(code=code)
+                    product = Product(code=code, is_active=True)
                     db.add(product)
                     added += 1
+                else:
+                    updated += 1
                 product.name = name
                 product.type = type_
+                product.is_active = True
                 product.category_id = None
                 product.unit_id = unit.id if unit else None
                 product.sale_price = sale_price
                 product.purchase_price = purchase_price
                 db.commit()
-            except Exception as e:
+            except Exception:
                 db.rollback()
                 continue
-        return RedirectResponse(url="/products?import_ok=1&added=" + str(added), status_code=303)
-    except Exception as e:
+        if added == 0 and updated == 0:
+            detail = "Hech qanday qator import qilinmadi. Excelda 1-qator sarlavha, 2-qatordan: A yoki B=Kod, B yoki C=Nomi to'ldiring. Andoza tugmasidan fayl yuklab tekshiring."
+            return RedirectResponse(
+                url="/products?import_ok=0&detail=" + quote(detail),
+                status_code=303,
+            )
+        return RedirectResponse(url="/products?import_ok=1&added=" + str(added) + "&updated=" + str(updated), status_code=303)
+    except BadZipFile:
         return RedirectResponse(
-            url="/products?error=import&detail=" + quote(str(e)[:200]),
-            status_code=303
+            url="/products?error=import&detail=" + quote("Fayl .xlsx formati bo'lishi kerak. Boshqa format yoki buzilgan fayl yuborilgan."),
+            status_code=303,
+        )
+    except Exception as e:
+        err_msg = str(e)[:200]
+        if "zip" in err_msg.lower() or "not a zip" in err_msg.lower():
+            err_msg = "Fayl .xlsx formati bo'lishi kerak. Boshqa format yoki buzilgan fayl."
+        return RedirectResponse(
+            url="/products?error=import&detail=" + quote(err_msg),
+            status_code=303,
         )
 
 @app.get("/products", response_class=HTMLResponse)
@@ -2632,6 +3366,7 @@ async def products_list(request: Request, type: str = "all", db: Session = Depen
     from urllib.parse import unquote
     import_ok = request.query_params.get("import_ok")
     added = request.query_params.get("added")
+    updated = request.query_params.get("updated")
     import_error = request.query_params.get("error") == "import"
     import_detail = unquote(request.query_params.get("detail", "") or "")
     
@@ -2645,6 +3380,7 @@ async def products_list(request: Request, type: str = "all", db: Session = Depen
         "page_title": "Tovarlar",
         "import_ok": import_ok,
         "import_added": added,
+        "import_updated": updated,
         "import_error": import_error,
         "import_detail": import_detail,
     })
@@ -2661,10 +3397,11 @@ async def product_add(
     barcode: str = Form(None),
     sale_price: float = Form(0),
     purchase_price: float = Form(0),
+    image: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
-    """Tovar qo'shish"""
+    """Tovar qo'shish (rasm ixtiyoriy)"""
     product = Product(
         name=name,
         code=None,
@@ -2678,11 +3415,20 @@ async def product_add(
     )
     db.add(product)
     db.commit()
-    
-    # Kod generatsiya
     product.code = f"P{product.id:05d}"
     db.commit()
-    
+
+    if image and (image.filename or "").strip():
+        import shutil
+        ext = (image.filename or "").split(".")[-1] if "." in (image.filename or "") else "jpg"
+        image_filename = f"{product.code}.{ext}"
+        image_path = os.path.join("app", "static", "images", "products", image_filename)
+        os.makedirs(os.path.dirname(image_path), exist_ok=True)
+        with open(image_path, "wb") as buffer:
+            shutil.copyfileobj(image.file, buffer)
+        product.image = image_filename
+        db.commit()
+
     return RedirectResponse(url="/products", status_code=303)
 
 
@@ -2696,10 +3442,11 @@ async def product_edit(
     barcode: str = Form(None),
     sale_price: float = Form(0),
     purchase_price: float = Form(0),
+    image: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
-    """Tovar tahrirlash"""
+    """Tovar tahrirlash (rasm ixtiyoriy)"""
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Mahsulot topilmadi")
@@ -2710,6 +3457,17 @@ async def product_edit(
     product.barcode = barcode or None
     product.sale_price = sale_price
     product.purchase_price = purchase_price
+
+    if image and (image.filename or "").strip():
+        import shutil
+        ext = (image.filename or "").split(".")[-1] if "." in (image.filename or "") else "jpg"
+        image_filename = f"{product.code}.{ext}"
+        image_path = os.path.join("app", "static", "images", "products", image_filename)
+        os.makedirs(os.path.dirname(image_path), exist_ok=True)
+        with open(image_path, "wb") as buffer:
+            shutil.copyfileobj(image.file, buffer)
+        product.image = image_filename
+
     db.commit()
     return RedirectResponse(url="/products", status_code=303)
 
@@ -2817,14 +3575,19 @@ async def warehouse_movement(request: Request, db: Session = Depends(get_db), cu
 @app.get("/purchases", response_class=HTMLResponse)
 async def purchases_list(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Tovar kirimlari ro'yxati"""
+    from urllib.parse import unquote
     if not current_user:
         return RedirectResponse(url="/login", status_code=303)
     purchases = db.query(Purchase).order_by(Purchase.date.desc()).limit(100).all()
+    error = request.query_params.get("error")
+    error_detail = unquote(request.query_params.get("detail", "") or "")
     return templates.TemplateResponse("purchases/list.html", {
         "request": request,
         "purchases": purchases,
         "current_user": current_user,
-        "page_title": "Tovar kirimlari"
+        "page_title": "Tovar kirimlari",
+        "error": error,
+        "error_detail": error_detail,
     })
 
 
@@ -2832,7 +3595,8 @@ async def purchases_list(request: Request, db: Session = Depends(get_db), curren
 async def purchase_new(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Yangi tovar kirimi"""
     products = db.query(Product).filter(Product.is_active == True).all()
-    partners = db.query(Partner).filter(Partner.type.in_(["supplier", "both"])).all()
+    # Barcha faol kontragentlar (ta'minotchi qidiruvida topilsin)
+    partners = db.query(Partner).filter(Partner.is_active == True).order_by(Partner.name).all()
     warehouses = db.query(Warehouse).all()
     return templates.TemplateResponse("purchases/new.html", {
         "request": request,
@@ -2847,27 +3611,96 @@ async def purchase_new(request: Request, db: Session = Depends(get_db), current_
 @app.post("/purchases/create")
 async def purchase_create(
     request: Request,
-    partner_id: int = Form(...),
-    warehouse_id: int = Form(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
-    """Tovar kirimini yaratish"""
+    """Tovar kirimini yaratish — tovarlar va xarajatlar bilan bir sahifada"""
+    form = await request.form()
+    partner_id = form.get("partner_id")
+    warehouse_id = form.get("warehouse_id")
+    if not partner_id or not warehouse_id:
+        raise HTTPException(status_code=400, detail="Ta'minotchi va omborni tanlang")
+    try:
+        partner_id = int(partner_id)
+        warehouse_id = int(warehouse_id)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Noto'g'ri ma'lumot")
+
+    product_ids = form.getlist("product_id")
+    quantities = form.getlist("quantity")
+    prices = form.getlist("price")
+    expense_names = form.getlist("expense_name")
+    expense_amounts = form.getlist("expense_amount")
+
+    items_data = []
+    for i, pid in enumerate(product_ids):
+        if not pid or not pid.strip():
+            continue
+        try:
+            qty = float(quantities[i]) if i < len(quantities) else 0
+            pr = float(prices[i]) if i < len(prices) else 0
+        except (TypeError, ValueError):
+            continue
+        if qty <= 0:
+            continue
+        try:
+            items_data.append((int(pid), qty, pr))
+        except ValueError:
+            continue
+
+    if not items_data:
+        raise HTTPException(status_code=400, detail="Kamida bitta mahsulot qo'shing (mahsulot, miqdor va narx).")
+
     today = datetime.now()
     count = db.query(Purchase).filter(
         Purchase.date >= today.replace(hour=0, minute=0, second=0)
     ).count()
     number = f"P-{today.strftime('%Y%m%d')}-{str(count + 1).zfill(4)}"
-    
+
+    total = sum(qty * pr for _, qty, pr in items_data)
+    total_expenses = 0
+    for j, name in enumerate(expense_names):
+        if not (name and str(name).strip()):
+            continue
+        try:
+            amt = float(expense_amounts[j]) if j < len(expense_amounts) else 0
+        except (TypeError, ValueError):
+            amt = 0
+        if amt > 0:
+            total_expenses += amt
+
     purchase = Purchase(
         number=number,
         partner_id=partner_id,
         warehouse_id=warehouse_id,
-        status="draft"
+        total=total,
+        total_expenses=total_expenses,
+        status="draft",
     )
     db.add(purchase)
+    db.flush()
+
+    for pid, qty, pr in items_data:
+        item = PurchaseItem(
+            purchase_id=purchase.id,
+            product_id=pid,
+            quantity=qty,
+            price=pr,
+            total=qty * pr,
+        )
+        db.add(item)
+
+    for j, name in enumerate(expense_names):
+        if not (name and str(name).strip()):
+            continue
+        try:
+            amt = float(expense_amounts[j]) if j < len(expense_amounts) else 0
+        except (TypeError, ValueError):
+            amt = 0
+        if amt > 0:
+            db.add(PurchaseExpense(purchase_id=purchase.id, name=str(name).strip(), amount=amt))
+
     db.commit()
-    
     return RedirectResponse(url=f"/purchases/edit/{purchase.id}", status_code=303)
 
 
@@ -2928,6 +3761,76 @@ async def purchase_add_item(
     return RedirectResponse(url=f"/purchases/edit/{purchase_id}", status_code=303)
 
 
+@app.post("/purchases/{purchase_id}/delete-item/{item_id}")
+async def purchase_delete_item(
+    purchase_id: int,
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Tovar kirimidan mahsulot qatorini o'chirish (faqat qoralama)"""
+    purchase = db.query(Purchase).filter(Purchase.id == purchase_id).first()
+    if not purchase or purchase.status != "draft":
+        raise HTTPException(status_code=400, detail="Faqat qoralamani tahrirlash mumkin")
+    item = db.query(PurchaseItem).filter(PurchaseItem.id == item_id, PurchaseItem.purchase_id == purchase_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Qator topilmadi")
+    purchase.total = (purchase.total or 0) - (item.total or 0)
+    db.delete(item)
+    db.commit()
+    return RedirectResponse(url=f"/purchases/edit/{purchase_id}", status_code=303)
+
+
+@app.post("/purchases/{purchase_id}/add-expense")
+async def purchase_add_expense(
+    purchase_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Tovar kirimiga xarajat qo'shish"""
+    purchase = db.query(Purchase).filter(Purchase.id == purchase_id).first()
+    if not purchase or purchase.status != "draft":
+        raise HTTPException(status_code=400, detail="Faqat qoralamani tahrirlash mumkin")
+    form = await request.form()
+    name = (form.get("name") or "").strip()
+    try:
+        amount = float(form.get("amount") or 0)
+    except (TypeError, ValueError):
+        amount = 0
+    if not name or amount <= 0:
+        return RedirectResponse(url=f"/purchases/edit/{purchase_id}", status_code=303)
+    db.add(PurchaseExpense(purchase_id=purchase_id, name=name, amount=amount))
+    purchase.total_expenses = (purchase.total_expenses or 0) + amount
+    db.commit()
+    return RedirectResponse(url=f"/purchases/edit/{purchase_id}", status_code=303)
+
+
+@app.post("/purchases/{purchase_id}/delete-expense/{expense_id}")
+async def purchase_delete_expense(
+    purchase_id: int,
+    expense_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Tovar kirimidan xarajatni o'chirish (faqat qoralama)"""
+    purchase = db.query(Purchase).filter(Purchase.id == purchase_id).first()
+    if not purchase or purchase.status != "draft":
+        raise HTTPException(status_code=400, detail="Faqat qoralamani tahrirlash mumkin")
+    expense = db.query(PurchaseExpense).filter(
+        PurchaseExpense.id == expense_id,
+        PurchaseExpense.purchase_id == purchase_id,
+    ).first()
+    if not expense:
+        raise HTTPException(status_code=404, detail="Xarajat topilmadi")
+    purchase.total_expenses = (purchase.total_expenses or 0) - (expense.amount or 0)
+    if purchase.total_expenses < 0:
+        purchase.total_expenses = 0
+    db.delete(expense)
+    db.commit()
+    return RedirectResponse(url=f"/purchases/edit/{purchase_id}", status_code=303)
+
+
 @app.post("/purchases/{purchase_id}/confirm")
 async def purchase_confirm(purchase_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Tovar kirimini tasdiqlash va ombor qoldiqlarini yangilash"""
@@ -2938,6 +3841,11 @@ async def purchase_confirm(purchase_id: int, db: Session = Depends(get_db), curr
     if purchase.status != "draft":
         raise HTTPException(status_code=400, detail="Faqat qoralama holatidagi kirimlarni tasdiqlash mumkin")
     
+    if not purchase.items:
+        raise HTTPException(status_code=400, detail="Tasdiqlash uchun kamida bitta mahsulot qo'shing. Kirimda mahsulotlar bo'lishi kerak.")
+    
+    total_expenses = purchase.total_expenses or 0
+    items_total = purchase.total or 0
     for item in purchase.items:
         stock = db.query(Stock).filter(
             Stock.warehouse_id == purchase.warehouse_id,
@@ -2954,17 +3862,22 @@ async def purchase_confirm(purchase_id: int, db: Session = Depends(get_db), curr
             )
             db.add(stock)
         
+        # Tannarx = qator narxi + xarajat ulushi (tovar kirimi summasi + xarajat = tannarx)
         product = db.query(Product).filter(Product.id == item.product_id).first()
         if product:
-            product.purchase_price = item.price
+            cost_per_unit = item.price
+            if total_expenses > 0 and items_total > 0 and item.total and item.quantity:
+                expense_share = (item.total / items_total) * total_expenses
+                cost_per_unit = item.price + (expense_share / item.quantity)
+            product.purchase_price = cost_per_unit
     
     purchase.status = "confirmed"
-    
+    total_with_expenses = items_total + total_expenses
     if purchase.partner_id:
         partner = db.query(Partner).filter(Partner.id == purchase.partner_id).first()
         if partner:
-            partner.balance -= purchase.total
-    
+            partner.balance -= total_with_expenses
+
     db.commit()
     check_low_stock_and_notify(db)
     return RedirectResponse(url=f"/purchases", status_code=303)
@@ -3005,13 +3918,35 @@ async def purchase_revert(
                 url=f"/purchases/edit/{purchase_id}?error=revert&detail=" + quote("Ombor qoldig'i yetarli emas (qoldiq o'zgartirilgan). Tasdiqni bekor qilish mumkin emas."),
                 status_code=303
             )
+    total_with_expenses = purchase.total + (purchase.total_expenses or 0)
     if purchase.partner_id:
         partner = db.query(Partner).filter(Partner.id == purchase.partner_id).first()
         if partner:
-            partner.balance += purchase.total
+            partner.balance += total_with_expenses
     purchase.status = "draft"
     db.commit()
     return RedirectResponse(url=f"/purchases/edit/{purchase_id}", status_code=303)
+
+
+@app.post("/purchases/{purchase_id}/delete")
+async def purchase_delete(
+    purchase_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Tovar kirimini o'chirish — faqat qoralama, faqat admin"""
+    purchase = db.query(Purchase).filter(Purchase.id == purchase_id).first()
+    if not purchase:
+        raise HTTPException(status_code=404, detail="Tovar kirimi topilmadi")
+    if purchase.status != "draft":
+        from urllib.parse import quote
+        return RedirectResponse(
+            url=f"/purchases?error=delete&detail=" + quote("Faqat qoralama holatidagi kirimni o'chirish mumkin. Avval tasdiqni bekor qiling."),
+            status_code=303
+        )
+    db.delete(purchase)
+    db.commit()
+    return RedirectResponse(url="/purchases", status_code=303)
 
 
 # ==========================================
@@ -3027,12 +3962,18 @@ async def partners_list(request: Request, type: str = "all", db: Session = Depen
     
     partners = query.all()
     
+    try:
+        from app.config.maps_config import YANDEX_MAPS_API_KEY
+        yandex_apikey = YANDEX_MAPS_API_KEY or ""
+    except Exception:
+        yandex_apikey = ""
     return templates.TemplateResponse("partners/list.html", {
         "request": request,
         "partners": partners,
         "current_type": type,
         "current_user": current_user,
-        "page_title": "Kontragentlar"
+        "page_title": "Kontragentlar",
+        "yandex_maps_apikey": yandex_apikey,
     })
 
 
@@ -3216,6 +4157,7 @@ async def sales_list(request: Request, db: Session = Depends(get_db), current_us
         "request": request,
         "orders": orders,
         "page_title": "Sotuvlar",
+        "current_user": current_user,
         "error": error,
         "error_detail": error_detail,
     })
@@ -3228,11 +4170,12 @@ async def sales_new(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth)
 ):
-    """Yangi sotuv — narx turini tanlang, shu bo'yicha mahsulot narxlari ko'rsatiladi"""
-    products = db.query(Product).filter(Product.type.in_(["tayyor", "yarim_tayyor"]), Product.is_active == True).order_by(Product.name).all()
-    partners = db.query(Partner).filter(Partner.type.in_(["customer", "both"])).order_by(Partner.name).all()
-    if not partners:
-        partners = db.query(Partner).filter(Partner.is_active == True).order_by(Partner.name).all()
+    """Yangi sotuv — narx turini tanlang, shu bo'yicha mahsulot narxlari ko'rsatiladi. Barcha turlar (tayyor, yarim_tayyor, xom ashyo) ombor qoldig'ida ko'rinadi."""
+    products = db.query(Product).filter(
+        Product.type.in_(["tayyor", "yarim_tayyor", "hom_ashyo", "material"]),
+        Product.is_active == True
+    ).order_by(Product.name).all()
+    partners = db.query(Partner).filter(Partner.is_active == True).order_by(Partner.name).all()
     warehouses = db.query(Warehouse).all()
     price_types = db.query(PriceType).filter(PriceType.is_active == True).order_by(PriceType.name).all()
     current_pt_id = price_type_id or (price_types[0].id if price_types else None)
@@ -3240,6 +4183,14 @@ async def sales_new(
     if current_pt_id:
         pps = db.query(ProductPrice).filter(ProductPrice.price_type_id == current_pt_id).all()
         product_prices_by_type = {pp.product_id: pp.sale_price for pp in pps}
+    # Ombor bo'yicha qoldiq bor mahsulotlar: warehouse_id -> [product_id, ...]
+    warehouse_products = {}
+    for wh in warehouses:
+        rows = db.query(Stock.product_id).filter(
+            Stock.warehouse_id == wh.id,
+            Stock.quantity > 0
+        ).distinct().all()
+        warehouse_products[str(wh.id)] = [r[0] for r in rows]
     return templates.TemplateResponse("sales/new.html", {
         "request": request,
         "products": products,
@@ -3248,6 +4199,8 @@ async def sales_new(
         "price_types": price_types,
         "current_price_type_id": current_pt_id,
         "product_prices_by_type": product_prices_by_type,
+        "warehouse_products": warehouse_products,
+        "current_user": current_user,
         "page_title": "Yangi sotuv"
     })
 
@@ -3261,14 +4214,21 @@ async def sales_create(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth)
 ):
-    """Sotuv yaratish — narx turi saqlanadi; savatdagi mahsulotlar bo'lsa ular ham qo'shiladi"""
+    """Sotuv yaratish — narx turi saqlanadi; savatdagi mahsulotlar va narxlar (agar yuborilsa) qo'shiladi"""
     form = await request.form()
     product_ids = [int(x) for x in form.getlist("product_id") if str(x).strip().isdigit()]
     quantities_raw = form.getlist("quantity")
+    prices_raw = form.getlist("price")
     quantities = []
     for q in quantities_raw:
         try:
             quantities.append(float(q))
+        except (ValueError, TypeError):
+            pass
+    prices = []
+    for p in prices_raw:
+        try:
+            prices.append(float(p))
         except (ValueError, TypeError):
             pass
     last_order = db.query(Order).filter(Order.type == "sale").order_by(Order.id.desc()).first()
@@ -3287,13 +4247,14 @@ async def sales_create(
     for i in range(min(len(product_ids), len(quantities))):
         pid, qty = product_ids[i], float(quantities[i])
         if pid and qty > 0:
-            price = 0
-            pp = db.query(ProductPrice).filter(ProductPrice.product_id == pid, ProductPrice.price_type_id == order.price_type_id).first()
-            if pp:
-                price = pp.sale_price or 0
-            if not price:
-                prod = db.query(Product).filter(Product.id == pid).first()
-                price = (prod.sale_price or prod.purchase_price or 0) if prod else 0
+            price = prices[i] if i < len(prices) and prices[i] >= 0 else None
+            if price is None or price < 0:
+                pp = db.query(ProductPrice).filter(ProductPrice.product_id == pid, ProductPrice.price_type_id == order.price_type_id).first()
+                if pp:
+                    price = pp.sale_price or 0
+                else:
+                    prod = db.query(Product).filter(Product.id == pid).first()
+                    price = (prod.sale_price or prod.purchase_price or 0) if prod else 0
             total_row = qty * price
             item = OrderItem(order_id=order.id, product_id=pid, quantity=qty, price=price, total=total_row)
             db.add(item)
@@ -3463,20 +4424,48 @@ async def sales_delete_item(
     return RedirectResponse(url=f"/sales/edit/{order_id}", status_code=303)
 
 
+@app.post("/sales/{order_id}/revert")
+async def sales_revert(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Sotuv tasdiqini bekor qilish (faqat admin): ombor qoldig'ini qaytarish, holatni qoralamaga o'tkazish"""
+    from urllib.parse import quote
+    order = db.query(Order).filter(Order.id == order_id, Order.type == "sale").first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Sotuv topilmadi")
+    if order.status != "completed":
+        return RedirectResponse(
+            url=f"/sales/edit/{order_id}?error=revert&detail=" + quote("Faqat bajarilgan sotuvning tasdiqini bekor qilish mumkin."),
+            status_code=303
+        )
+    for item in order.items:
+        stock = db.query(Stock).filter(
+            Stock.warehouse_id == order.warehouse_id,
+            Stock.product_id == item.product_id
+        ).first()
+        if stock:
+            stock.quantity = (stock.quantity or 0) + item.quantity
+    order.status = "draft"
+    db.commit()
+    return RedirectResponse(url=f"/sales/edit/{order_id}", status_code=303)
+
+
 @app.post("/sales/delete/{order_id}")
 async def sales_delete(
     order_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_auth)
+    current_user: User = Depends(require_admin)
 ):
-    """Sotuvni bekor qilish (faqat qoralama holatida)"""
+    """Sotuvni o'chirish (faqat qoralama, faqat admin)"""
     order = db.query(Order).filter(Order.id == order_id, Order.type == "sale").first()
     if not order:
         raise HTTPException(status_code=404, detail="Sotuv topilmadi")
     if order.status != "draft":
         from urllib.parse import quote
         return RedirectResponse(
-            url="/sales?error=delete&detail=" + quote("Faqat qoralama holatidagi sotuvni bekor qilish mumkin."),
+            url="/sales?error=delete&detail=" + quote("Faqat qoralama holatidagi sotuvni o'chirish mumkin. Avval tasdiqni bekor qiling."),
             status_code=303
         )
     order.status = "cancelled"
@@ -4351,7 +5340,7 @@ async def driver_detail(request: Request, driver_id: int, db: Session = Depends(
 
 @app.get("/map", response_class=HTMLResponse)
 async def map_view(request: Request, db: Session = Depends(get_db)):
-    """Xarita - barcha joylashuvlar"""
+    """Xarita - agentlar, haydovchilar, mijozlar joylashuvi"""
     
     # Agentlar
     agents = db.query(Agent).filter(Agent.is_active == True).all()
@@ -4404,6 +5393,16 @@ async def map_view(request: Request, db: Session = Depends(get_db)):
                 "address": loc.address
             })
     
+    try:
+        from app.config.maps_config import MAP_PROVIDER
+        map_provider = MAP_PROVIDER
+    except Exception:
+        map_provider = "yandex"
+    try:
+        from app.config.maps_config import YANDEX_MAPS_API_KEY
+        yandex_apikey = YANDEX_MAPS_API_KEY or ""
+    except Exception:
+        yandex_apikey = ""
     return templates.TemplateResponse("map/index.html", {
         "request": request,
         "agents": agents,
@@ -4412,7 +5411,10 @@ async def map_view(request: Request, db: Session = Depends(get_db)):
         "agent_markers": agent_markers,
         "driver_markers": driver_markers,
         "partner_markers": partner_markers,
-        "page_title": "Xarita"
+        "region_markers": [],
+        "map_provider": map_provider,
+        "yandex_maps_apikey": yandex_apikey,
+        "page_title": "Xarita",
     })
 
 
@@ -4907,12 +5909,23 @@ async def info_regions(request: Request, db: Session = Depends(get_db), current_
     """Hududlar sahifasi"""
     if not current_user:
         return RedirectResponse(url="/login", status_code=303)
+    from urllib.parse import unquote
     regions = db.query(Region).filter(Region.is_active == True).all()
+    import_ok = request.query_params.get("import_ok")
+    import_added = request.query_params.get("added")
+    import_updated = request.query_params.get("updated")
+    import_error = request.query_params.get("error") == "import"
+    import_detail = unquote(request.query_params.get("detail", "") or "")
     return templates.TemplateResponse("info/regions.html", {
         "request": request,
         "current_user": current_user,
         "page_title": "Hududlar",
-        "regions": regions
+        "regions": regions,
+        "import_ok": import_ok,
+        "import_added": import_added,
+        "import_updated": import_updated,
+        "import_error": import_error,
+        "import_detail": import_detail,
     })
 
 
@@ -4971,6 +5984,123 @@ async def region_delete(region_id: int, db: Session = Depends(get_db)):
     db.delete(region)
     db.commit()
     return RedirectResponse(url="/info/regions", status_code=303)
+
+
+@app.get("/info/regions/export")
+async def export_regions(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+    """Hududlarni Excel ga eksport."""
+    regions = db.query(Region).filter(Region.is_active == True).all()
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Hududlar"
+    ws.append(["ID", "Kod", "Nomi", "Tavsif"])
+    for r in regions:
+        ws.append([r.id, r.code, r.name, r.description or ""])
+    stream = io.BytesIO()
+    wb.save(stream)
+    stream.seek(0)
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=hududlar.xlsx"},
+    )
+
+
+@app.get("/info/regions/template")
+async def template_regions(current_user: User = Depends(require_auth)):
+    """Hududlar import andozasi."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Hududlar"
+    ws.append(["Kod", "Nomi", "Tavsif"])
+    ws.append(["QOQON", "Qo'qon", "Markaziy hudud"])
+    ws.append(["RISHTON", "Rishton", "Janubiy hudud"])
+    stream = io.BytesIO()
+    wb.save(stream)
+    stream.seek(0)
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=hudud_andoza.xlsx"},
+    )
+
+
+@app.get("/info/regions/import")
+async def regions_import_get(current_user: User = Depends(require_auth)):
+    """Import sahifasi to'g'ridan-to'g'ri ochilsa hududlar ro'yxatiga yo'naltirish."""
+    return RedirectResponse(url="/info/regions", status_code=303)
+
+
+@app.post("/info/regions/import")
+async def import_regions(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Excel dan hududlarni import. Ustunlar: Kod, Nomi, Tavsif."""
+    from urllib.parse import quote
+    from zipfile import BadZipFile
+    form = await request.form()
+    file = form.get("file") or form.get("excel_file")
+    if not file or not getattr(file, "filename", None):
+        return RedirectResponse(url="/info/regions?error=import&detail=" + quote("Excel fayl tanlang"), status_code=303)
+    try:
+        contents = await file.read()
+        if not contents:
+            return RedirectResponse(url="/info/regions?error=import&detail=" + quote("Fayl bo'sh"), status_code=303)
+        if contents[:2] != b"PK":
+            return RedirectResponse(
+                url="/info/regions?error=import&detail=" + quote("Fayl .xlsx formati bo'lishi kerak."),
+                status_code=303,
+            )
+        wb = openpyxl.load_workbook(io.BytesIO(contents), read_only=False, data_only=True)
+        ws = wb.active
+        if ws.max_row < 2:
+            return RedirectResponse(
+                url="/info/regions?error=import&detail=" + quote("Excelda ma'lumot qatorlari yo'q."),
+                status_code=303,
+            )
+        added = 0
+        updated = 0
+        for row_num in range(2, ws.max_row + 1):
+            def cell(col):
+                v = ws.cell(row=row_num, column=col).value
+                return "" if v is None else str(v).strip()
+            code = cell(1) or cell(2)
+            name = cell(2) or cell(1)
+            desc = cell(3) or ""
+            if not code and not name:
+                continue
+            if (code or "").lower() in ("id", "kod", "nomi", "tavsif") and (not name or (name or "").lower() in ("id", "kod", "nomi")):
+                continue
+            if not code:
+                code = f"R{row_num}"
+            if not name:
+                name = code
+            region = db.query(Region).filter(Region.code == code).first()
+            if not region:
+                region = Region(code=code, name=name, description=desc or None)
+                db.add(region)
+                added += 1
+            else:
+                region.name = name
+                region.description = desc or None
+                updated += 1
+            db.commit()
+        return RedirectResponse(
+            url="/info/regions?import_ok=1&added=" + str(added) + "&updated=" + str(updated),
+            status_code=303,
+        )
+    except BadZipFile:
+        return RedirectResponse(
+            url="/info/regions?error=import&detail=" + quote("Fayl .xlsx formati bo'lishi kerak."),
+            status_code=303,
+        )
+    except Exception as e:
+        return RedirectResponse(
+            url="/info/regions?error=import&detail=" + quote(str(e)[:150]),
+            status_code=303,
+        )
 
 
 # ==========================================

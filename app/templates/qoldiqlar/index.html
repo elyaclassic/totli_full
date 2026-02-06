@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h4 class="mb-0"><i class="bi bi-wallet2"></i> Qoldiqlar</h4>
+            <p class="text-muted small mb-0">Kassa, tovar va kontragent qoldiqlarini bitta joyda kiritish va tahrirlash.</p>
+        </div>
+    </div>
+
+    <ul class="nav nav-tabs mb-3" id="qoldiqTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="kassa-tab" data-bs-toggle="tab" data-bs-target="#kassa" type="button" role="tab">Kassa qoldiqlari</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tovar-tab" data-bs-toggle="tab" data-bs-target="#tovar" type="button" role="tab">Tovar qoldiqlari</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="kontragent-tab" data-bs-toggle="tab" data-bs-target="#kontragent" type="button" role="tab">Kontragent qoldiqlari</button>
+        </li>
+    </ul>
+
+    <div class="tab-content" id="qoldiqTabContent">
+        <!-- Kassa qoldiqlari — forma spiska (1C uslubida) -->
+        <div class="tab-pane fade show active" id="kassa" role="tabpanel">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <a href="/qoldiqlar/kassa/hujjat/new" class="btn btn-success"><i class="bi bi-plus-circle"></i> Yaratish</a>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>№</th>
+                                    <th>Sana</th>
+                                    <th>Foydalanuvchi</th>
+                                    <th>Holat</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for d in cash_docs %}
+                                <tr>
+                                    <td><a href="/qoldiqlar/kassa/hujjat/{{ d.id }}">{{ d.number }}</a></td>
+                                    <td>{{ d.date.strftime('%d.%m.%Y %H:%M') if d.date else '-' }}</td>
+                                    <td>{{ d.user.full_name or d.user.username if d.user else '-' }}</td>
+                                    <td>
+                                        {% if d.status == 'draft' %}
+                                        <span class="badge bg-warning text-dark">Qoralama</span>
+                                        {% else %}
+                                        <span class="badge bg-success">Tasdiqlangan</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <a href="/qoldiqlar/kassa/hujjat/{{ d.id }}" class="btn btn-sm btn-outline-primary">Ochish</a>
+                                        {% if d.status == 'confirmed' and current_user and current_user.role == 'admin' %}
+                                        <form method="post" action="/qoldiqlar/kassa/hujjat/{{ d.id }}/revert" class="d-inline" onsubmit="return confirm('Tasdiqni bekor qilmoqchimisiz?');">
+                                            <button type="submit" class="btn btn-sm btn-outline-warning" title="Tasdiqni bekor qilish"><i class="bi bi-arrow-counterclockwise"></i></button>
+                                        </form>
+                                        {% elif d.status == 'draft' and current_user and current_user.role == 'admin' %}
+                                        <form method="post" action="/qoldiqlar/kassa/hujjat/{{ d.id }}/delete" class="d-inline" onsubmit="return confirm('Ushbu hujjatni o\'chirmoqchimisiz?');">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger" title="O'chirish"><i class="bi bi-trash"></i></button>
+                                        </form>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="5" class="text-muted text-center py-4">
+                                        Hujjatlar yo'q. <a href="/qoldiqlar/kassa/hujjat/new">Yangi hujjat yaratish</a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tovar qoldiqlari — forma spiska (1C uslubida) -->
+        <div class="tab-pane fade" id="tovar" role="tabpanel">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <a href="/qoldiqlar/tovar/hujjat/new" class="btn btn-success"><i class="bi bi-plus-circle"></i> Yaratish</a>
+                    <a href="/qoldiqlar/export" class="btn btn-outline-success btn-sm ms-2" target="_blank" rel="noopener"><i class="bi bi-file-earmark-excel"></i> Joriy qoldiqlar (Excel)</a>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>№</th>
+                                    <th>Sana</th>
+                                    <th>Foydalanuvchi</th>
+                                    <th>Jami summa tannarx (so'm)</th>
+                                    <th>Jami sotuv (so'm)</th>
+                                    <th>Holat</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for d in tovar_docs %}
+                                <tr>
+                                    <td><a href="/qoldiqlar/tovar/hujjat/{{ d.id }}">{{ d.number }}</a></td>
+                                    <td>{{ d.date.strftime('%d.%m.%Y %H:%M') if d.date else '-' }}</td>
+                                    <td>{{ d.user.full_name or d.user.username if d.user else '-' }}</td>
+                                    <td>{{ "{:,.0f}".format(d.total_tannarx or 0) }}</td>
+                                    <td>{{ "{:,.0f}".format(d.total_sotuv or 0) }}</td>
+                                    <td>
+                                        {% if d.status == 'draft' %}
+                                        <span class="badge bg-warning text-dark">Qoralama</span>
+                                        {% else %}
+                                        <span class="badge bg-success">Tasdiqlangan</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <a href="/qoldiqlar/tovar/hujjat/{{ d.id }}" class="btn btn-sm btn-outline-primary">Ochish</a>
+                                        {% if d.status == 'confirmed' and current_user and current_user.role == 'admin' %}
+                                        <form method="post" action="/qoldiqlar/tovar/hujjat/{{ d.id }}/revert" class="d-inline" onsubmit="return confirm('Tasdiqni bekor qilmoqchimisiz?');">
+                                            <button type="submit" class="btn btn-sm btn-outline-warning" title="Tasdiqni bekor qilish"><i class="bi bi-arrow-counterclockwise"></i></button>
+                                        </form>
+                                        {% elif d.status == 'draft' and current_user and current_user.role == 'admin' %}
+                                        <form method="post" action="/qoldiqlar/tovar/hujjat/{{ d.id }}/delete" class="d-inline" onsubmit="return confirm('Ushbu hujjatni o\'chirmoqchimisiz?');">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger" title="O'chirish"><i class="bi bi-trash"></i></button>
+                                        </form>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="7" class="text-muted text-center py-4">
+                                        Hujjatlar yo'q. <a href="/qoldiqlar/tovar/hujjat/new">Yangi hujjat yaratish</a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Kontragent qoldiqlari — forma spiska (1C uslubida) -->
+        <div class="tab-pane fade" id="kontragent" role="tabpanel">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <a href="/qoldiqlar/kontragent/hujjat/new" class="btn btn-success"><i class="bi bi-plus-circle"></i> Yaratish</a>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>№</th>
+                                    <th>Sana</th>
+                                    <th>Foydalanuvchi</th>
+                                    <th>Holat</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for d in kontragent_docs %}
+                                <tr>
+                                    <td><a href="/qoldiqlar/kontragent/hujjat/{{ d.id }}">{{ d.number }}</a></td>
+                                    <td>{{ d.date.strftime('%d.%m.%Y %H:%M') if d.date else '-' }}</td>
+                                    <td>{{ d.user.full_name or d.user.username if d.user else '-' }}</td>
+                                    <td>
+                                        {% if d.status == 'draft' %}
+                                        <span class="badge bg-warning text-dark">Qoralama</span>
+                                        {% else %}
+                                        <span class="badge bg-success">Tasdiqlangan</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <a href="/qoldiqlar/kontragent/hujjat/{{ d.id }}" class="btn btn-sm btn-outline-primary">Ochish</a>
+                                        {% if d.status == 'confirmed' and current_user and current_user.role == 'admin' %}
+                                        <form method="post" action="/qoldiqlar/kontragent/hujjat/{{ d.id }}/revert" class="d-inline" onsubmit="return confirm('Tasdiqni bekor qilmoqchimisiz?');">
+                                            <button type="submit" class="btn btn-sm btn-outline-warning" title="Tasdiqni bekor qilish"><i class="bi bi-arrow-counterclockwise"></i></button>
+                                        </form>
+                                        {% elif d.status == 'draft' and current_user and current_user.role == 'admin' %}
+                                        <form method="post" action="/qoldiqlar/kontragent/hujjat/{{ d.id }}/delete" class="d-inline" onsubmit="return confirm('Ushbu hujjatni o\'chirmoqchimisiz?');">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger" title="O'chirish"><i class="bi bi-trash"></i></button>
+                                        </form>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="5" class="text-muted text-center py-4">
+                                        Hujjatlar yo'q. <a href="/qoldiqlar/kontragent/hujjat/new">Yangi hujjat yaratish</a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

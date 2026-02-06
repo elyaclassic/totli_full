@@ -2,29 +2,28 @@
 
 {% block content %}
 <div class="container-fluid">
-    <div class="row mb-3">
-        <div class="col-12">
-            <div class="d-flex justify-content-between align-items-center">
-                <h4><i class="bi bi-signpost-split"></i> Yo'nalishlar</h4>
-                <div class="d-flex gap-2">
-                    <form action="/info/directions/export" method="get" style="display:inline;">
-                        <button type="submit" class="btn btn-outline-success btn-sm"><i
-                                class="bi bi-file-earmark-excel"></i> Export</button>
+    <div class="card mb-3">
+        <div class="card-body py-3">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <h5 class="mb-0"><i class="bi bi-signpost-split text-secondary"></i> Yo'nalishlar</h5>
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <form action="/info/directions/export" method="get" class="d-inline">
+                        <button type="submit" class="btn btn-outline-success btn-sm">
+                            <i class="bi bi-file-earmark-excel"></i> Export
+                        </button>
                     </form>
-                    <a href="/info/directions/template" class="btn btn-outline-secondary btn-sm"
-                        title="Import uchun andoza yuklab olish">
+                    <a href="/info/directions/template" class="btn btn-outline-secondary btn-sm" title="Import uchun andoza yuklab olish">
                         <i class="bi bi-download"></i> Andoza
                     </a>
-                    <form action="/info/directions/import" method="post" enctype="multipart/form-data"
-                        style="display:inline;">
+                    <form action="/info/directions/import" method="post" enctype="multipart/form-data" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ getattr(request.state, 'csrf_token', '') }}">
                         <label class="btn btn-outline-primary btn-sm mb-0">
                             <i class="bi bi-upload"></i> Import
-                            <input type="file" name="excel_file" accept=".xlsx" style="display:none;"
-                                onchange="this.form.submit()">
+                            <input type="file" name="excel_file" accept=".xlsx" class="d-none" onchange="this.form.submit()">
                         </label>
                     </form>
-                    <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addDirectionModal">
-                        <i class="bi bi-plus-circle"></i> Yangi yo'nalish
+                    <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addDirectionModal">
+                        <i class="bi bi-plus-circle"></i> Yaratish
                     </button>
                 </div>
             </div>
@@ -32,18 +31,19 @@
     </div>
 
     <div class="card">
-        <div class="card-body">
-            <table class="table table-hover">
-                <thead class="table-light">
-                    <tr>
-                        <th width="50">#</th>
-                        <th>Kod</th>
-                        <th>Nomi</th>
-                        <th>Tavsif</th>
-                        <th>Holati</th>
-                        <th width="100">Amallar</th>
-                    </tr>
-                </thead>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>#</th>
+                            <th>Kod</th>
+                            <th>Nomi</th>
+                            <th>Tavsif</th>
+                            <th>Holati</th>
+                            <th></th>
+                        </tr>
+                    </thead>
                 <tbody>
                     {% if directions %}
                     {% for dir in directions %}
@@ -77,12 +77,13 @@
                         <td colspan="6" class="text-center text-muted py-5">
                             <i class="bi bi-signpost-split fs-1 d-block mb-2"></i>
                             Hozircha yo'nalishlar yo'q<br>
-                            <small>Yuqoridagi "Yangi yo'nalish" tugmasini bosing</small>
+                            <small>Yuqoridagi Yaratish tugmasini bosing</small>
                         </td>
                     </tr>
                     {% endif %}
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 </div>
@@ -223,6 +224,12 @@
             var form = document.createElement('form');
             form.method = 'POST';
             form.action = '/info/directions/delete/' + id;
+            var csrfInput = document.createElement('input');
+            csrfInput.type = 'hidden';
+            csrfInput.name = 'csrf_token';
+            var meta = document.querySelector('meta[name="csrf-token"]');
+            csrfInput.value = meta ? meta.getAttribute('content') : '';
+            form.appendChild(csrfInput);
             document.body.appendChild(form);
             form.submit();
         }

@@ -1,9 +1,18 @@
 {% extends "base.html" %}
 
 {% block content %}
-{% if import_ok %}
-<div class="alert alert-success alert-dismissible fade show" role="alert">
-    <strong>Import muvaffaqiyatli.</strong> {% if import_added %}{{ import_added }} ta qator qo'shildi/yangilandi.{% endif %}
+{% if import_ok == '1' %}
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+    <strong>Import muvaffaqiyatli.</strong>
+    {% if import_added %}{{ import_added }} ta yangi qo'shildi.{% endif %}
+    {% if import_updated %}{{ import_updated }} ta yangilandi.{% endif %}
+    {% if not import_added and not import_updated %}Hech qanday qator qayta ishlanmadi — faylda ma'lumot qatorlari bo'lishi kerak.{% endif %}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if import_ok == '0' and import_detail %}
+<div class="alert alert-warning alert-dismissible fade show" role="alert">
+    <strong>Import: hech qanday qator qo'shilmadi.</strong> {{ import_detail }}
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 {% endif %}
@@ -13,66 +22,39 @@
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 {% endif %}
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <div class="d-flex gap-2 align-items-center">
-                    <a href="/products"
-                        class="btn btn-sm {% if current_type == 'all' %}btn-primary{% else %}btn-outline-primary{% endif %}">Hammasi</a>
-                    <a href="/products?type=tayyor"
-                        class="btn btn-sm {% if current_type == 'tayyor' %}btn-success{% else %}btn-outline-success{% endif %}">Tayyor</a>
-                    <a href="/products?type=yarim_tayyor"
-                        class="btn btn-sm {% if current_type == 'yarim_tayyor' %}btn-warning{% else %}btn-outline-warning{% endif %}">Yarim
-                        tayyor</a>
-                    <a href="/products?type=hom_ashyo"
-                        class="btn btn-sm {% if current_type == 'hom_ashyo' %}btn-info{% else %}btn-outline-info{% endif %}">Xom
-                        ashyo</a>
+<div class="container-fluid">
+    <div class="card">
+            <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2 py-3">
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <a href="/products" class="btn btn-sm {% if current_type == 'all' %}btn-success{% else %}btn-outline-success{% endif %}">Hammasi</a>
+                    <a href="/products?type=tayyor" class="btn btn-sm {% if current_type == 'tayyor' %}btn-success{% else %}btn-outline-success{% endif %}">Tayyor</a>
+                    <a href="/products?type=yarim_tayyor" class="btn btn-sm {% if current_type == 'yarim_tayyor' %}btn-warning{% else %}btn-outline-warning{% endif %}">Yarim tayyor</a>
+                    <a href="/products?type=hom_ashyo" class="btn btn-sm {% if current_type == 'hom_ashyo' %}btn-info{% else %}btn-outline-info{% endif %}">Xom ashyo</a>
                 </div>
-                <div class="d-flex gap-2">
-                    <form action="/products/export" method="get" style="display:inline;">
-                        <button type="submit" class="btn btn-outline-success btn-sm"><i
-                                class="bi bi-file-earmark-excel"></i> Export</button>
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <form action="/products/export" method="get" class="d-inline">
+                        <button type="submit" class="btn btn-outline-success btn-sm"><i class="bi bi-file-earmark-excel"></i> Export</button>
                     </form>
-                    <a href="/products/template" class="btn btn-outline-secondary btn-sm"
-                        title="Import uchun andoza yuklab olish">
-                        <i class="bi bi-download"></i> Andoza
-                    </a>
-                    <form id="productsImportForm" action="/products/import" method="post" enctype="multipart/form-data" style="display:inline;">
-                        <input type="file" id="products_excel_file" name="file" accept=".xlsx,.xls" required
-                            style="display:none;" aria-label="Excel fayl tanlash">
-                        <label class="btn btn-outline-primary btn-sm mb-0" for="products_excel_file">
-                            <i class="bi bi-upload"></i> Fayl tanlash
-                        </label>
-                        <button type="submit" class="btn btn-primary btn-sm" id="products_import_btn" disabled title="Avval Excel fayl tanlang">
-                            <i class="bi bi-check-lg"></i> Import qilish
-                        </button>
+                    <a href="/products/template" class="btn btn-outline-secondary btn-sm" title="Import uchun andoza yuklab olish"><i class="bi bi-download"></i> Andoza</a>
+                    <form id="productsImportForm" action="/products/import" method="post" enctype="multipart/form-data" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ getattr(request.state, 'csrf_token', '') }}">
+                        <input type="file" id="products_excel_file" name="file" accept=".xlsx,.xls" required class="d-none" aria-label="Excel fayl tanlash">
+                        <label class="btn btn-outline-primary btn-sm mb-0" for="products_excel_file"><i class="bi bi-upload"></i> Fayl tanlash</label>
+                        <button type="submit" class="btn btn-primary btn-sm" id="products_import_btn" disabled title="Avval Excel fayl tanlang"><i class="bi bi-check-lg"></i> Import qilish</button>
                     </form>
-                    <script>
-                    (function(){
-                        var inp = document.getElementById('products_excel_file');
-                        var btn = document.getElementById('products_import_btn');
-                        if (inp && btn) inp.addEventListener('change', function(){
-                            btn.disabled = !(this.files && this.files.length > 0);
-                            if (this.files && this.files.length > 0) btn.title = this.files[0].name;
-                        });
-                    })();
-                    </script>
-                    <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addProductModal">
-                        <i class="bi bi-plus-circle"></i> Yangi tovar
-                    </button>
+                    <script>(function(){var inp=document.getElementById('products_excel_file');var btn=document.getElementById('products_import_btn');if(inp&&btn)inp.addEventListener('change',function(){btn.disabled=!(this.files&&this.files.length>0);if(this.files&&this.files.length>0)btn.title=this.files[0].name;});})();</script>
+                    <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addProductModal"><i class="bi bi-plus-circle"></i> Yaratish</button>
                 </div>
             </div>
             <div class="card-body p-0">
-                <table class="table table-hover">
+                <table class="table table-hover mb-0">
                     <thead class="table-light">
                         <tr>
-                            <th width="50">#</th>
+                            <th>#</th>
                             <th>Shtrix kod</th>
                             <th>Nomi</th>
                             <th>Turi</th>
-                            <!-- <th>Kategoriya</th> -->
-                            <th width="100">Amallar</th>
+                            <th></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -102,7 +84,8 @@
                                     data-unit-id="{{ product.unit_id or 0 }}"
                                     data-barcode="{{ (product.barcode or '')|e }}"
                                     data-purchase-price="{{ product.purchase_price or 0 }}"
-                                    data-sale-price="{{ product.sale_price or 0 }}">
+                                    data-sale-price="{{ product.sale_price or 0 }}"
+                                    data-image="{{ product.image or '' }}">
                                     <i class="bi bi-pencil"></i>
                                 </button>
                                 <form method="POST" action="/products/delete/{{ product.id }}" style="display:inline;" onsubmit="return confirm('Haqiqatan ham \"{{ product.name|e }}\" ni o\'chirmoqchimisiz?');">
@@ -116,7 +99,7 @@
                             <td colspan="6" class="text-center text-muted py-5">
                                 <i class="bi bi-box-seam fs-1 d-block mb-2"></i>
                                 Hozircha tovarlar yo'q<br>
-                                <small>Yuqoridagi "Yangi tovar" tugmasini bosing</small>
+                                <small>Yuqoridagi Yaratish tugmasini bosing</small>
                             </td>
                         </tr>
                         {% endif %}
@@ -131,7 +114,7 @@
 <div class="modal fade" id="addProductModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
-            <form action="/products/add" method="POST">
+            <form action="/products/add" method="POST" enctype="multipart/form-data">
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-plus-circle"></i> Yangi tovar</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -165,7 +148,11 @@
                             <input type="text" id="add_product_barcode" class="form-control" name="barcode"
                                 autocomplete="off">
                         </div>
-                        <!-- Rasm keyinroq alohida yuklash mumkin -->
+                        <div class="col-12">
+                            <label class="form-label">Rasm</label>
+                            <input type="file" id="add_product_image" class="form-control" name="image" accept="image/*">
+                            <small class="text-muted">Rasm ixtiyoriy. JPG, PNG va boshqa rasmlar qo‘llab-quvvatlanadi.</small>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -181,7 +168,7 @@
 <div class="modal fade" id="editProductModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
-            <form id="editProductForm" method="POST" action="">
+            <form id="editProductForm" method="POST" action="" enctype="multipart/form-data">
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-pencil"></i> Tovarni tahrirlash</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -221,6 +208,14 @@
                             <label class="form-label" for="edit_product_sale_price">Sotuv narxi</label>
                             <input type="number" id="edit_product_sale_price" class="form-control" name="sale_price" step="0.01" min="0" value="0">
                         </div>
+                        <div class="col-12">
+                            <label class="form-label">Rasm</label>
+                            <div class="d-flex align-items-center gap-3 flex-wrap">
+                                <div id="edit_product_image_preview" class="mb-0" style="min-height: 50px;"></div>
+                                <input type="file" id="edit_product_image" class="form-control" name="image" accept="image/*" style="max-width: 280px;">
+                            </div>
+                            <small class="text-muted">Yangi rasm tanlasangiz, mavjud rasm almashtiriladi. Bo'sh qoldirsangiz — o'zgarmaydi.</small>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -249,6 +244,14 @@
         document.getElementById('edit_product_barcode').value = btn.getAttribute('data-barcode') || '';
         document.getElementById('edit_product_purchase_price').value = btn.getAttribute('data-purchase-price') || '0';
         document.getElementById('edit_product_sale_price').value = btn.getAttribute('data-sale-price') || '0';
+        var imgName = btn.getAttribute('data-image') || '';
+        var preview = document.getElementById('edit_product_image_preview');
+        var fileInp = document.getElementById('edit_product_image');
+        if (fileInp) fileInp.value = '';
+        if (preview) {
+            if (imgName) preview.innerHTML = '<img src="/static/images/products/' + imgName + '" alt="" class="rounded" style="max-height:60px;">';
+            else preview.innerHTML = '<span class="text-muted">Rasm yo\'q</span>';
+        }
     });
 })();
 </script>

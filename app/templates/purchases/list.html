@@ -1,24 +1,22 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% if error == "delete" and error_detail %}
+<div class="alert alert-warning alert-dismissible fade show" role="alert">
+    {{ error_detail }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
 <div class="container-fluid">
-    <div class="row mb-3">
-        <div class="col-12">
-            <div class="d-flex justify-content-between align-items-center">
-                <h4 class="mb-0">Tovar kirimlari ro'yxati</h4>
-                <a href="/purchases/new" class="btn btn-primary">
-                    <i class="bi bi-plus-circle"></i> Yangi kirimi
-                </a>
-            </div>
-        </div>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0"><i class="bi bi-box-seam"></i> Tovar kirimlari</h4>
+        <a href="/purchases/new" class="btn btn-success"><i class="bi bi-plus-circle"></i> Yaratish</a>
     </div>
-
     <div class="card">
-        <div class="card-body">
-            {% if purchases %}
+        <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover">
-                    <thead>
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
                         <tr>
                             <th>№</th>
                             <th>Raqam</th>
@@ -27,68 +25,50 @@
                             <th>Ombor</th>
                             <th>Summa</th>
                             <th>Holat</th>
-                            <th>Amallar</th>
+                            <th></th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for purchase in purchases %}
                         <tr>
                             <td>{{ loop.index }}</td>
-                            <td><strong>{{ purchase.number }}</strong></td>
-                            <td>{{ purchase.date.strftime('%d.%m.%Y %H:%M') }}</td>
-                            <td>
-                                {% if purchase.partner %}
-                                {{ purchase.partner.name }}
-                                {% else %}
-                                <span class="text-muted">-</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if purchase.warehouse %}
-                                {{ purchase.warehouse.name }}
-                                {% else %}
-                                <span class="text-muted">-</span>
-                                {% endif %}
-                            </td>
-                            <td><strong>{{ "{:,.0f}".format(purchase.total) }} so'm</strong></td>
+                            <td><a href="/purchases/edit/{{ purchase.id }}">{{ purchase.number }}</a></td>
+                            <td>{{ purchase.date.strftime('%d.%m.%Y %H:%M') if purchase.date else '-' }}</td>
+                            <td>{{ purchase.partner.name if purchase.partner else '-' }}</td>
+                            <td>{{ purchase.warehouse.name if purchase.warehouse else '-' }}</td>
+                            <td><strong>{{ "{:,.0f}".format((purchase.total or 0) + (purchase.total_expenses or 0)) }}</strong> so'm</td>
                             <td>
                                 {% if purchase.status == 'draft' %}
-                                <span class="badge badge-warning">Qoralama</span>
+                                <span class="badge bg-warning text-dark">Qoralama</span>
                                 {% elif purchase.status == 'confirmed' %}
-                                <span class="badge badge-success">Tasdiqlangan</span>
+                                <span class="badge bg-success">Tasdiqlangan</span>
                                 {% elif purchase.status == 'cancelled' %}
-                                <span class="badge badge-danger">Bekor qilingan</span>
+                                <span class="badge bg-danger">Bekor qilingan</span>
+                                {% else %}
+                                <span class="badge bg-secondary">{{ purchase.status }}</span>
                                 {% endif %}
                             </td>
                             <td>
-                                {% if purchase.status == 'draft' or (current_user and current_user.role == 'admin') %}
-                                <a href="/purchases/edit/{{ purchase.id }}" class="btn btn-sm btn-outline-primary" title="Tahrirlash">
-                                    <i class="bi bi-pencil"></i>
-                                </a>
-                                {% endif %}
+                                <a href="/purchases/edit/{{ purchase.id }}" class="btn btn-sm btn-outline-primary">Ochish</a>
                                 {% if purchase.status == 'confirmed' and current_user and current_user.role == 'admin' %}
-                                <form method="POST" action="/purchases/{{ purchase.id }}/revert" style="display: inline;" class="d-inline">
-                                    <button type="submit" class="btn btn-sm btn-outline-warning" title="Tasdiqni bekor qilish"
-                                        onclick="return confirm('Tasdiqni bekor qilish — ombor qoldig\'i kamayadi. Davom etasizmi?');">
-                                        <i class="bi bi-arrow-counterclockwise"></i>
-                                    </button>
+                                <form method="POST" action="/purchases/{{ purchase.id }}/revert" class="d-inline" onsubmit="return confirm('Tasdiqni bekor qilish — ombor qoldig\'i kamayadi. Davom etasizmi?');">
+                                    <button type="submit" class="btn btn-sm btn-outline-warning" title="Tasdiqni bekor qilish"><i class="bi bi-arrow-counterclockwise"></i></button>
+                                </form>
+                                {% elif purchase.status == 'draft' and current_user and current_user.role == 'admin' %}
+                                <form method="POST" action="/purchases/{{ purchase.id }}/delete" class="d-inline" onsubmit="return confirm('Ushbu kirimni o\'chirmoqchimisiz?');">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="O'chirish"><i class="bi bi-trash"></i></button>
                                 </form>
                                 {% endif %}
                             </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="8" class="text-muted text-center py-4">Hozircha tovar kirimlari yo'q. <a href="/purchases/new">Yangi kirim yaratish</a></td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
-            {% else %}
-            <div class="text-center py-5">
-                <i class="bi bi-inbox" style="font-size: 4rem; color: #ccc;"></i>
-                <p class="text-muted mt-3">Hozircha tovar kirimlari yo'q</p>
-                <a href="/purchases/new" class="btn btn-primary">
-                    <i class="bi bi-plus-circle"></i> Birinchi kirimni yaratish
-                </a>
-            </div>
-            {% endif %}
         </div>
     </div>
 </div>

@@ -36,11 +36,13 @@ class Purchase(Base):
     partner_id = Column(Integer, ForeignKey("partners.id"), nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     total = Column(Float, default=0)
+    total_expenses = Column(Float, default=0)  # Xarajatlar jami (so'm)
     status = Column(String(20), default="draft")
     note = Column(Text)
     created_at = Column(DateTime, default=datetime.now)
 
     items = relationship("PurchaseItem", back_populates="purchase")
+    expenses = relationship("PurchaseExpense", back_populates="purchase")
     partner = relationship("Partner")
     warehouse = relationship("Warehouse")
 
@@ -56,6 +58,17 @@ class PurchaseItem(Base):
     purchase = relationship("Purchase", back_populates="items")
     product = relationship("Product")
 
+
+class PurchaseExpense(Base):
+    """Tovar kirimi xarajatlari"""
+    __tablename__ = "purchase_expenses"
+    id = Column(Integer, primary_key=True, index=True)
+    purchase_id = Column(Integer, ForeignKey("purchases.id"))
+    name = Column(String(200))   # Xarajat turi/nomi (yo'l, yuk, boj, ...)
+    amount = Column(Float)       # Summa (so'm)
+    created_at = Column(DateTime, default=datetime.now)
+
+    purchase = relationship("Purchase", back_populates="expenses")
 
 
 # ==========================================
@@ -183,6 +196,104 @@ class Stock(Base):
     
     warehouse = relationship("Warehouse", back_populates="stocks")
     product = relationship("Product", back_populates="stock_items")
+
+
+# ==========================================
+# TOVAR QOLDIQ HUJJATI (1C uslubida)
+# ==========================================
+
+class StockAdjustmentDoc(Base):
+    """Tovar qoldiqlari hujjati (bitta hujjat — bir nechta qator)"""
+    __tablename__ = "stock_adjustment_docs"
+    id = Column(Integer, primary_key=True, index=True)
+    number = Column(String(50), unique=True, index=True)
+    date = Column(DateTime, default=datetime.now)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    status = Column(String(20), default="draft")  # draft, confirmed
+    total_tannarx = Column(Float, default=0)   # Jami summa tannarx (so'm)
+    total_sotuv = Column(Float, default=0)     # Jami sotuv summa (so'm)
+    created_at = Column(DateTime, default=datetime.now)
+
+    user = relationship("User")
+    items = relationship("StockAdjustmentDocItem", back_populates="doc", cascade="all, delete-orphan")
+
+
+class StockAdjustmentDocItem(Base):
+    """Tovar qoldiq hujjati qatori"""
+    __tablename__ = "stock_adjustment_doc_items"
+    id = Column(Integer, primary_key=True, index=True)
+    doc_id = Column(Integer, ForeignKey("stock_adjustment_docs.id"))
+    product_id = Column(Integer, ForeignKey("products.id"))
+    warehouse_id = Column(Integer, ForeignKey("warehouses.id"))
+    quantity = Column(Float)
+    cost_price = Column(Float, default=0)   # Tannarx (so'm)
+    sale_price = Column(Float, default=0)     # Sotuv narxi (so'm)
+
+    doc = relationship("StockAdjustmentDoc", back_populates="items")
+    product = relationship("Product")
+    warehouse = relationship("Warehouse")
+
+
+# ==========================================
+# KASSA QOLDIQ HUJJATI (1C uslubida)
+# ==========================================
+
+class CashBalanceDoc(Base):
+    """Kassa qoldiqlari hujjati"""
+    __tablename__ = "cash_balance_docs"
+    id = Column(Integer, primary_key=True, index=True)
+    number = Column(String(50), unique=True, index=True)
+    date = Column(DateTime, default=datetime.now)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    status = Column(String(20), default="draft")  # draft, confirmed
+    created_at = Column(DateTime, default=datetime.now)
+
+    user = relationship("User")
+    items = relationship("CashBalanceDocItem", back_populates="doc", cascade="all, delete-orphan")
+
+
+class CashBalanceDocItem(Base):
+    """Kassa qoldiq hujjati qatori — bitta kassa, yangi balans"""
+    __tablename__ = "cash_balance_doc_items"
+    id = Column(Integer, primary_key=True, index=True)
+    doc_id = Column(Integer, ForeignKey("cash_balance_docs.id"))
+    cash_register_id = Column(Integer, ForeignKey("cash_registers.id"))
+    balance = Column(Float, default=0)
+    previous_balance = Column(Float, default=None)  # Tasdiqdan oldingi balans (revert uchun)
+
+    doc = relationship("CashBalanceDoc", back_populates="items")
+    cash_register = relationship("CashRegister")
+
+
+# ==========================================
+# KONTRAGENT QOLDIQ HUJJATI (1C uslubida)
+# ==========================================
+
+class PartnerBalanceDoc(Base):
+    """Kontragent qoldiqlari (balans) hujjati"""
+    __tablename__ = "partner_balance_docs"
+    id = Column(Integer, primary_key=True, index=True)
+    number = Column(String(50), unique=True, index=True)
+    date = Column(DateTime, default=datetime.now)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    status = Column(String(20), default="draft")  # draft, confirmed
+    created_at = Column(DateTime, default=datetime.now)
+
+    user = relationship("User")
+    items = relationship("PartnerBalanceDocItem", back_populates="doc", cascade="all, delete-orphan")
+
+
+class PartnerBalanceDocItem(Base):
+    """Kontragent balans hujjati qatori"""
+    __tablename__ = "partner_balance_doc_items"
+    id = Column(Integer, primary_key=True, index=True)
+    doc_id = Column(Integer, ForeignKey("partner_balance_docs.id"))
+    partner_id = Column(Integer, ForeignKey("partners.id"))
+    balance = Column(Float, default=0)
+    previous_balance = Column(Float, default=None)  # Tasdiqdan oldingi balans (revert uchun)
+
+    doc = relationship("PartnerBalanceDoc", back_populates="items")
+    partner = relationship("Partner")
 
 
 # ==========================================

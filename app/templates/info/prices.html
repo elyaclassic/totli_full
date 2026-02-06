@@ -27,18 +27,19 @@
     {% endif %}
 
     <div class="card">
-        <div class="card-body">
-            <table class="table table-hover">
-                <thead class="table-light">
-                    <tr>
-                        <th width="50">#</th>
-                        <th>Mahsulot</th>
-                        <th>Turi</th>
-                        <th width="160">Tannarx (so'm)</th>
-                        <th width="180">Sotuv narxi (so'm) {% if current_price_type_id %}<small class="text-muted">— tanlangan narx turi</small>{% endif %}</th>
-                        <th width="100">Amallar</th>
-                    </tr>
-                </thead>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>#</th>
+                            <th>Mahsulot</th>
+                            <th>Turi</th>
+                            <th>Tannarx (so'm)</th>
+                            <th>Sotuv narxi (so'm) {% if current_price_type_id %}<small class="text-muted">— tanlangan narx turi</small>{% endif %}</th>
+                            <th></th>
+                        </tr>
+                    </thead>
                 <tbody>
                     {% if products %}
                     {% for product in products %}
@@ -77,6 +78,7 @@
                     {% endif %}
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 </div>
