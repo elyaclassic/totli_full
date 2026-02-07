@@ -20,6 +20,7 @@ import io
 from app.models.database import (
     get_db, init_db, SessionLocal,
     User, Product, Category, Unit, Warehouse, Stock,
+    WarehouseTransfer, WarehouseTransferItem,
     Partner, Order, OrderItem, Payment, CashRegister,
     Recipe, RecipeItem, Production, ProductionItem, ProductionStage, PRODUCTION_STAGE_NAMES, Machine, Employee, Salary,
     Agent, AgentLocation, Route, RoutePoint, Visit,
@@ -144,11 +145,8 @@ async def global_safe_middleware(request: Request, call_next):
             except Exception:
                 accept = ""
             if "text/html" in (accept or ""):
-                r = RedirectResponse(url="/login?error=please_retry", status_code=303)
-                try:
-                    r.delete_cookie("session_token", path="/")
-                except Exception:
-                    pass
+                # 500 sahifasini ko'rsatamiz, session o'chirilmaydi (logout hissi bermaslik)
+                r = HTMLResponse(content=_HTML_500, status_code=500)
             else:
                 r = JSONResponse(status_code=500, content={"detail": "Server xatosi"})
         try:
@@ -3527,45 +3525,470 @@ async def warehouse_list(request: Request, db: Session = Depends(get_db), curren
     if not current_user:
         return RedirectResponse(url="/login", status_code=303)
     warehouses = db.query(Warehouse).all()
-    stocks = db.query(Stock).join(Product).join(Warehouse).all()
+    # Faqat qoldiq > 0 bo'lgan yozuvlarni ko'rsatamiz (0 qoldiqlar ro'yxatda chiqmasin)
+    stocks = db.query(Stock).join(Product).join(Warehouse).filter(Stock.quantity > 0).all()
+    # Har bir qoldiq uchun shu ombor+mahsulot bo'yicha kirgan kirim hujjatlarini topamiz
+    stock_sources = {}
+    for s in stocks:
+        docs = (
+            db.query(Purchase)
+            .join(PurchaseItem, Purchase.id == PurchaseItem.purchase_id)
+            .filter(
+                Purchase.warehouse_id == s.warehouse_id,
+                PurchaseItem.product_id == s.product_id,
+                Purchase.status == "confirmed",
+            )
+            .order_by(Purchase.date.desc())
+            .limit(5)
+            .all()
+        )
+        stock_sources[s.id] = [(p.number, p.id, p.date.strftime("%d.%m.%Y") if p.date else "") for p in docs]
     return templates.TemplateResponse("warehouse/list.html", {
         "request": request,
         "warehouses": warehouses,
         "stocks": stocks,
+        "stock_sources": stock_sources,
         "current_user": current_user,
         "page_title": "Ombor qoldiqlari"
     })
 
 
-@app.get("/warehouse/movement", response_class=HTMLResponse)
-async def warehouse_movement(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
-    """Ombor harakatlari — so'nggi kirim, chiqim, ishlab chiqarish"""
-    if not current_user:
-        return RedirectResponse(url="/login", status_code=303)
-    products = []
-    warehouses = []
-    recent_purchases = []
-    recent_sales = []
-    recent_productions = []
+@app.post("/warehouse/stock/{stock_id}/zero")
+async def warehouse_stock_zero(
+    stock_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Qoldiqni nolga tushirish (faqat admin). Ro'yxatdan o'sha qator yo'qoladi."""
+    stock = db.query(Stock).filter(Stock.id == stock_id).first()
+    if not stock:
+        raise HTTPException(status_code=404, detail="Qoldiq topilmadi")
+    stock.quantity = 0
+    db.commit()
+    return RedirectResponse(url="/warehouse", status_code=303)
+
+
+@app.get("/warehouse/export")
+async def warehouse_export(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+    """Ombor qoldiqlarini Excelga eksport qilish."""
+    stocks = db.query(Stock).join(Product).join(Warehouse).filter(Stock.quantity > 0).all()
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Qoldiqlar"
+    ws.append(["Ombor nomi", "Ombor kodi", "Mahsulot kodi", "Mahsulot nomi", "Qoldiq", "Tannarx (so'm)", "Summa (so'm)"])
+    for s in stocks:
+        pr = s.product
+        wh = s.warehouse
+        tannarx = (pr.purchase_price or 0) if pr else 0
+        summa = s.quantity * tannarx
+        ws.append([
+            wh.name if wh else "",
+            wh.code if wh else "",
+            pr.code if pr else "",
+            pr.name if pr else "",
+            s.quantity,
+            tannarx,
+            summa,
+        ])
+    stream = io.BytesIO()
+    wb.save(stream)
+    stream.seek(0)
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=ombor_qoldiqlari.xlsx"},
+    )
+
+
+@app.get("/warehouse/template")
+async def warehouse_template(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+    """Qoldiqlar uchun Excel andoza (Tannarx va Sotuv narxi ixtiyoriy)."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Andoza"
+    ws.append(["Ombor nomi (yoki kodi)", "Mahsulot nomi (yoki kodi)", "Qoldiq", "Tannarx (so'm)", "Sotuv narxi (so'm)"])
+    ws.append(["Xom ashyo ombori", "Yong'oq", 30, "", ""])
+    ws.append(["Xom ashyo ombori", "Bodom", 100, "", ""])
+    for col in range(1, 6):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = 22
+    stream = io.BytesIO()
+    wb.save(stream)
+    stream.seek(0)
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=qoldiqlar_andoza.xlsx"},
+    )
+
+
+@app.post("/warehouse/import")
+async def warehouse_import(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Exceldan qoldiqlarni yuklash. Ustunlari: Ombor nomi (yoki kodi), Mahsulot nomi (yoki kodi), Qoldiq; ixtiyoriy: Tannarx, Sotuv narxi."""
+    from urllib.parse import quote
+    form = await request.form()
+    file = form.get("file") or form.get("excel_file")
+    if not file or not getattr(file, "filename", None):
+        return RedirectResponse(url="/warehouse?error=import&detail=" + quote("Excel fayl tanlang"), status_code=303)
     try:
-        products = db.query(Product).filter(Product.is_active == True).all()
-        warehouses = db.query(Warehouse).all()
-        recent_purchases = db.query(Purchase).order_by(Purchase.date.desc()).limit(30).all()
-        recent_sales = db.query(Order).filter(Order.type == "sale").order_by(Order.created_at.desc()).limit(30).all()
-        recent_productions = db.query(Production).order_by(Production.created_at.desc()).limit(30).all()
+        contents = await file.read()
+        if not contents:
+            return RedirectResponse(url="/warehouse?error=import&detail=" + quote("Fayl bo'sh"), status_code=303)
+        wb = openpyxl.load_workbook(io.BytesIO(contents), read_only=False, data_only=True)
+        ws = wb.active
+        rows = list(ws.iter_rows(min_row=2, values_only=True))
+        updated = 0
+        skipped = 0
+        errors = []
+        skip_no_wh = 0
+        skip_no_prod = 0
+        skip_empty = 0
+        missing_products = []
+        missing_warehouses = []
+        for idx, row in enumerate(rows):
+            if not row or (row[0] is None and row[1] is None):
+                skip_empty += 1
+                continue
+            wh_key = str(row[0] or "").strip() if len(row) > 0 else ""
+            raw_prod = row[1] if len(row) > 1 else None
+            if raw_prod is not None and isinstance(raw_prod, (int, float)) and float(raw_prod) == int(float(raw_prod)):
+                prod_key = str(int(float(raw_prod)))
+            else:
+                prod_key = str(raw_prod or "").strip()
+            try:
+                qty = float(row[2]) if len(row) > 2 and row[2] is not None else 0
+            except (TypeError, ValueError):
+                qty = 0
+            tannarx = None
+            sotuv_narxi = None
+            if len(row) > 3 and row[3] is not None and row[3] != "":
+                try:
+                    tannarx = float(row[3])
+                except (TypeError, ValueError):
+                    pass
+            if len(row) > 4 and row[4] is not None and row[4] != "":
+                try:
+                    sotuv_narxi = float(row[4])
+                except (TypeError, ValueError):
+                    pass
+            if not wh_key or not prod_key:
+                skipped += 1
+                skip_empty += 1
+                continue
+            warehouse = db.query(Warehouse).filter(
+                (func.lower(Warehouse.name) == wh_key.lower()) | (Warehouse.code == wh_key)
+            ).first()
+            product = db.query(Product).filter(
+                (Product.code == prod_key) | (Product.barcode == prod_key)
+            ).first()
+            if not product and prod_key:
+                product = db.query(Product).filter(
+                    Product.name.isnot(None),
+                    func.lower(Product.name) == prod_key.lower()
+                ).first()
+            if not warehouse:
+                if wh_key and wh_key not in missing_warehouses:
+                    missing_warehouses.append(wh_key)
+                skip_no_wh += 1
+                skipped += 1
+                continue
+            if not product:
+                if prod_key and prod_key not in missing_products:
+                    missing_products.append(prod_key)
+                skip_no_prod += 1
+                skipped += 1
+                continue
+            stock = db.query(Stock).filter(
+                Stock.warehouse_id == warehouse.id,
+                Stock.product_id == product.id,
+            ).first()
+            if stock:
+                stock.quantity = qty
+            else:
+                db.add(Stock(warehouse_id=warehouse.id, product_id=product.id, quantity=qty))
+            if tannarx is not None:
+                product.purchase_price = tannarx
+            if sotuv_narxi is not None:
+                product.sale_price = sotuv_narxi
+            updated += 1
+        db.commit()
+        detail = f"Yuklandi: {updated} ta"
+        if skipped:
+            detail += f", o'tkazib yuborildi: {skipped} ta"
+            if skip_no_prod:
+                sample = ", ".join(missing_products[:5])
+                if len(missing_products) > 5:
+                    sample += f" va yana {len(missing_products) - 5} ta"
+                detail += f". Mahsulot topilmadi ({skip_no_prod} ta): {sample}"
+            if skip_no_wh:
+                sample = ", ".join(missing_warehouses[:3])
+                if len(missing_warehouses) > 3:
+                    sample += f" va yana {len(missing_warehouses) - 3} ta"
+                detail += f". Ombor topilmadi ({skip_no_wh} ta): {sample}"
+        return RedirectResponse(url="/warehouse?success=import&detail=" + quote(detail), status_code=303)
     except Exception as e:
         traceback.print_exc()
-        # Xato bo'lsa ham bo'sh ro'yxatlar bilan sahifani ko'rsatamiz, 500 emas
-    return templates.TemplateResponse("warehouse/movement.html", {
+        return RedirectResponse(url="/warehouse?error=import&detail=" + quote(str(e)[:200]), status_code=303)
+
+
+@app.get("/warehouse/transfers", response_class=HTMLResponse)
+async def warehouse_transfers_list(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+    """Ombordan omborga o'tkazish hujjatlari ro'yxati (spiska)"""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    transfers = db.query(WarehouseTransfer).order_by(WarehouseTransfer.date.desc()).limit(200).all()
+    return templates.TemplateResponse("warehouse/transfers_list.html", {
         "request": request,
-        "products": products or [],
-        "warehouses": warehouses or [],
-        "recent_purchases": recent_purchases or [],
-        "recent_sales": recent_sales or [],
-        "recent_productions": recent_productions or [],
         "current_user": current_user,
-        "page_title": "Ombor harakati"
+        "transfers": transfers,
+        "page_title": "Ombordan omborga o'tkazish"
     })
+
+
+@app.get("/warehouse/transfers/new", response_class=HTMLResponse)
+async def warehouse_transfer_new(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+    """Yangi o'tkazish hujjati"""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    warehouses = db.query(Warehouse).filter(Warehouse.is_active == True).all()
+    products = db.query(Product).filter(Product.is_active == True).order_by(Product.name).all()
+    stocks = db.query(Stock).filter(Stock.quantity > 0).all()
+    stock_by_warehouse_product = {}
+    for s in stocks:
+        wid, pid = str(s.warehouse_id), str(s.product_id)
+        if wid not in stock_by_warehouse_product:
+            stock_by_warehouse_product[wid] = {}
+        stock_by_warehouse_product[wid][pid] = s.quantity
+    products_list = [{"id": p.id, "name": (p.name or ""), "code": (p.code or "")} for p in products]
+    return templates.TemplateResponse("warehouse/transfer_form.html", {
+        "request": request,
+        "current_user": current_user,
+        "transfer": None,
+        "warehouses": warehouses,
+        "products": products,
+        "products_list": products_list,
+        "stock_by_warehouse_product": stock_by_warehouse_product,
+        "now": datetime.now(),
+        "page_title": "Ombordan omborga o'tkazish (yaratish)"
+    })
+
+
+@app.get("/warehouse/transfers/{transfer_id}", response_class=HTMLResponse)
+async def warehouse_transfer_edit(request: Request, transfer_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+    """O'tkazish hujjatini tahrirlash"""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    transfer = db.query(WarehouseTransfer).filter(WarehouseTransfer.id == transfer_id).first()
+    if not transfer:
+        raise HTTPException(status_code=404, detail="Hujjat topilmadi")
+    warehouses = db.query(Warehouse).filter(Warehouse.is_active == True).all()
+    products = db.query(Product).filter(Product.is_active == True).order_by(Product.name).all()
+    stocks = db.query(Stock).filter(Stock.quantity > 0).all()
+    stock_by_warehouse_product = {}
+    for s in stocks:
+        wid, pid = str(s.warehouse_id), str(s.product_id)
+        if wid not in stock_by_warehouse_product:
+            stock_by_warehouse_product[wid] = {}
+        stock_by_warehouse_product[wid][pid] = s.quantity
+    products_list = [{"id": p.id, "name": (p.name or ""), "code": (p.code or "")} for p in products]
+    return templates.TemplateResponse("warehouse/transfer_form.html", {
+        "request": request,
+        "current_user": current_user,
+        "transfer": transfer,
+        "warehouses": warehouses,
+        "products": products,
+        "products_list": products_list,
+        "stock_by_warehouse_product": stock_by_warehouse_product,
+        "now": transfer.date or datetime.now(),
+        "page_title": f"O'tkazish {transfer.number}"
+    })
+
+
+@app.post("/warehouse/transfers/create")
+async def warehouse_transfer_create(
+    request: Request,
+    from_warehouse_id: int = Form(...),
+    to_warehouse_id: int = Form(...),
+    note: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Yangi o'tkazish hujjatini saqlash (draft)"""
+    from urllib.parse import quote
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    if from_warehouse_id == to_warehouse_id:
+        return RedirectResponse(url="/warehouse/transfers/new?error=" + quote("Qayerdan va qayerga bir xil bo'lmasin."), status_code=303)
+    form = await request.form()
+    today = datetime.now()
+    count = db.query(WarehouseTransfer).filter(
+        WarehouseTransfer.date >= today.replace(hour=0, minute=0, second=0)
+    ).count()
+    number = f"OT-{today.strftime('%Y%m%d')}-{str(count + 1).zfill(4)}"
+    transfer = WarehouseTransfer(
+        number=number,
+        from_warehouse_id=from_warehouse_id,
+        to_warehouse_id=to_warehouse_id,
+        status="draft",
+        user_id=current_user.id,
+        note=note or None
+    )
+    db.add(transfer)
+    db.commit()
+    db.refresh(transfer)
+    for key, value in form.items():
+        if key.startswith("product_id_") and value:
+            try:
+                pid = int(value)
+                qkey = "quantity_" + key.replace("product_id_", "")
+                qty = float(form.get(qkey, "0").replace(",", "."))
+                if pid and qty > 0:
+                    db.add(WarehouseTransferItem(transfer_id=transfer.id, product_id=pid, quantity=qty))
+            except (ValueError, TypeError):
+                pass
+    db.commit()
+    return RedirectResponse(url=f"/warehouse/transfers/{transfer.id}", status_code=303)
+
+
+@app.post("/warehouse/transfers/{transfer_id}/save")
+async def warehouse_transfer_save(
+    request: Request,
+    transfer_id: int,
+    from_warehouse_id: int = Form(...),
+    to_warehouse_id: int = Form(...),
+    note: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """O'tkazish hujjatini saqlash"""
+    from urllib.parse import quote
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    transfer = db.query(WarehouseTransfer).filter(WarehouseTransfer.id == transfer_id).first()
+    if not transfer or transfer.status != "draft":
+        raise HTTPException(status_code=404, detail="Hujjat topilmadi yoki tahrirlab bo'lmaydi")
+    if from_warehouse_id == to_warehouse_id:
+        return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Qayerdan va qayerga bir xil bo'lmasin."), status_code=303)
+    transfer.from_warehouse_id = from_warehouse_id
+    transfer.to_warehouse_id = to_warehouse_id
+    transfer.note = note or None
+    form = await request.form()
+    db.query(WarehouseTransferItem).filter(WarehouseTransferItem.transfer_id == transfer_id).delete()
+    for key, value in form.items():
+        if key.startswith("product_id_") and value:
+            try:
+                pid = int(value)
+                qkey = "quantity_" + key.replace("product_id_", "")
+                qty = float(form.get(qkey, "0").replace(",", "."))
+                if pid and qty > 0:
+                    db.add(WarehouseTransferItem(transfer_id=transfer_id, product_id=pid, quantity=qty))
+            except (ValueError, TypeError):
+                pass
+    db.commit()
+    return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?saved=1", status_code=303)
+
+
+@app.post("/warehouse/transfers/{transfer_id}/confirm")
+async def warehouse_transfer_confirm(
+    transfer_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """O'tkazish hujjatini tasdiqlash"""
+    from urllib.parse import quote
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    transfer = db.query(WarehouseTransfer).filter(WarehouseTransfer.id == transfer_id).first()
+    if not transfer:
+        raise HTTPException(status_code=404, detail="Hujjat topilmadi")
+    if transfer.status == "confirmed":
+        return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Hujjat allaqachon tasdiqlangan."), status_code=303)
+    items = db.query(WarehouseTransferItem).filter(WarehouseTransferItem.transfer_id == transfer_id).all()
+    if not items:
+        return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Kamida bitta mahsulot qo'shing."), status_code=303)
+    for item in items:
+        src = db.query(Stock).filter(
+            Stock.warehouse_id == transfer.from_warehouse_id,
+            Stock.product_id == item.product_id
+        ).first()
+        if not src or src.quantity < item.quantity:
+            prod = db.query(Product).filter(Product.id == item.product_id).first()
+            name = prod.name if prod else f"#{item.product_id}"
+            avail = src.quantity if src else 0
+            return RedirectResponse(
+                url=f"/warehouse/transfers/{transfer_id}?error=" + quote(f"Qayerdan omborda «{name}» yetarli emas (kerak: {item.quantity}, mavjud: {avail})"),
+                status_code=303
+            )
+    for item in items:
+        src = db.query(Stock).filter(
+            Stock.warehouse_id == transfer.from_warehouse_id,
+            Stock.product_id == item.product_id
+        ).first()
+        src.quantity -= item.quantity
+        if src.quantity <= 0:
+            src.quantity = 0
+        dest = db.query(Stock).filter(
+            Stock.warehouse_id == transfer.to_warehouse_id,
+            Stock.product_id == item.product_id
+        ).first()
+        if dest:
+            dest.quantity += item.quantity
+        else:
+            db.add(Stock(warehouse_id=transfer.to_warehouse_id, product_id=item.product_id, quantity=item.quantity))
+    transfer.status = "confirmed"
+    db.commit()
+    return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?confirmed=1", status_code=303)
+
+
+@app.get("/warehouse/movement", response_class=HTMLResponse)
+async def warehouse_movement(request: Request, current_user: User = Depends(require_auth)):
+    """Spiskaga yo'naltirish"""
+    return RedirectResponse(url="/warehouse/transfers", status_code=302)
+
+
+@app.post("/warehouse/transfer")
+async def warehouse_transfer(
+    request: Request,
+    from_warehouse_id: int = Form(...),
+    to_warehouse_id: int = Form(...),
+    product_id: int = Form(...),
+    quantity: float = Form(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth)
+):
+    """Ombordan omborga o'tkazish: bir ombordan ayirib, ikkinchisiga qo'shish"""
+    from urllib.parse import quote
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    if from_warehouse_id == to_warehouse_id:
+        return RedirectResponse(url="/warehouse/movement?error=1&detail=" + quote("Qayerdan va qayerga ombor bir xil bo'lmasin."), status_code=303)
+    if quantity <= 0:
+        return RedirectResponse(url="/warehouse/movement?error=1&detail=" + quote("Miqdor 0 dan katta bo'lishi kerak."), status_code=303)
+    source = db.query(Stock).filter(
+        Stock.warehouse_id == from_warehouse_id,
+        Stock.product_id == product_id
+    ).first()
+    if not source or source.quantity < quantity:
+        product = db.query(Product).filter(Product.id == product_id).first()
+        name = product.name if product else f"#{product_id}"
+        avail = source.quantity if source else 0
+        return RedirectResponse(url="/warehouse/movement?error=1&detail=" + quote(f"Qayerdan omborda «{name}» yetarli emas (kerak: {quantity}, mavjud: {avail})"), status_code=303)
+    source.quantity -= quantity
+    if source.quantity <= 0:
+        source.quantity = 0
+    dest = db.query(Stock).filter(
+        Stock.warehouse_id == to_warehouse_id,
+        Stock.product_id == product_id
+    ).first()
+    if dest:
+        dest.quantity += quantity
+    else:
+        db.add(Stock(warehouse_id=to_warehouse_id, product_id=product_id, quantity=quantity))
+    db.commit()
+    return RedirectResponse(url="/warehouse/movement?success=1", status_code=303)
 
 
 # ==========================================

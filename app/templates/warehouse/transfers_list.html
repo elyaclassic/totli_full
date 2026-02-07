@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+.form-1c-list { max-width: 100%; }
+.form-1c-list .toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.form-1c-list .table-1c { font-size: 13px; }
+.form-1c-list .table-1c th { background: #e9ecef; font-weight: 600; white-space: nowrap; }
+.form-1c-list .table-1c td, .form-1c-list .table-1c th { padding: 6px 10px; vertical-align: middle; }
+.form-1c-list .badge-draft { background: #ffc107; color: #000; }
+.form-1c-list .badge-confirmed { background: #198754; color: #fff; }
+</style>
+
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0">Ombordan omborga o'tkazish</h5>
+        <a href="/warehouse/transfers/new" class="btn btn-success btn-sm">
+            <i class="bi bi-plus-lg"></i> Yaratish
+        </a>
+    </div>
+
+    <div class="form-1c-list bg-white border rounded p-2">
+        <div class="toolbar">
+            <a href="/warehouse/transfers/new" class="btn btn-success btn-sm"><i class="bi bi-plus"></i> Yaratish</a>
+            <a href="/warehouse" class="btn btn-outline-secondary btn-sm">Orqaga</a>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-1c table-hover table-bordered mb-0">
+                <thead>
+                    <tr>
+                        <th>№</th>
+                        <th>Sana</th>
+                        <th>Hujjat holati</th>
+                        <th>Ombordan</th>
+                        <th>Omborga</th>
+                        <th>Qatorlar</th>
+                        <th>Foydalanuvchi</th>
+                        <th>Amal</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for t in transfers %}
+                    <tr>
+                        <td><a href="/warehouse/transfers/{{ t.id }}">{{ t.number }}</a></td>
+                        <td>{{ t.date.strftime('%d.%m.%Y %H:%M') if t.date else '—' }}</td>
+                        <td>
+                            {% if t.status == 'draft' %}
+                            <span class="badge badge-draft">Qoralama</span>
+                            {% else %}
+                            <span class="badge badge-confirmed">Tasdiqlangan</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ t.from_warehouse.name if t.from_warehouse else '—' }}</td>
+                        <td>{{ t.to_warehouse.name if t.to_warehouse else '—' }}</td>
+                        <td>{{ t.items|length }} ta</td>
+                        <td>{{ t.user.full_name if t.user else t.user_id }}</td>
+                        <td>
+                            <a href="/warehouse/transfers/{{ t.id }}" class="btn btn-outline-primary btn-sm">Ochish</a>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="text-center text-muted py-4">Hujjatlar yo'q. «Yaratish» tugmasini bosing.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

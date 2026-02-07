@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+.form-1c { max-width: 900px; }
+.form-1c .form-row { display: flex; align-items: center; border-bottom: 1px solid #dee2e6; min-height: 32px; }
+.form-1c .form-row .label { width: 140px; flex-shrink: 0; padding: 4px 8px; font-size: 13px; color: #495057; }
+.form-1c .form-row .field { flex: 1; padding: 2px 4px; }
+.form-1c .form-row .field input, .form-1c .form-row .field select { border: 1px solid #ced4da; border-radius: 2px; padding: 4px 6px; font-size: 13px; height: 28px; }
+.combo-wrap { position: relative; }
+.combo-drop { position: absolute; left: 0; right: 0; top: 100%; z-index: 1000; max-height: 200px; overflow-y: auto; background: #fff; border: 1px solid #ced4da; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+.combo-drop .combo-item { padding: 5px 8px; font-size: 12px; cursor: pointer; border-bottom: 1px solid #f0f0f0; }
+.combo-drop .combo-item:hover { background: #e7f1ff; }
+.table-items { font-size: 13px; }
+.table-items th { background: #e9ecef; }
+.table-items td, .table-items th { padding: 4px 8px; vertical-align: middle; }
+.table-items input.form-control { height: 28px; padding: 2px 6px; }
+</style>
+
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <h5 class="mb-0">Ombordan omborga o'tkazish {% if transfer %}({{ transfer.number }}){% else %}(yaratish){% endif %}</h5>
+        <a href="/warehouse/transfers" class="btn btn-outline-secondary btn-sm">Ro'yxat</a>
+    </div>
+    {% if request.query_params.get('saved') %}
+    <div class="alert alert-success py-2 small">Saqlandi.</div>
+    {% endif %}
+    {% if request.query_params.get('confirmed') %}
+    <div class="alert alert-success py-2 small">Hujjat tasdiqlandi. Omborda harakat bajarildi.</div>
+    {% endif %}
+    {% if request.query_params.get('error') %}
+    <div class="alert alert-danger py-2 small">{{ request.query_params.get('error') }}</div>
+    {% endif %}
+
+    <div class="form-1c bg-white border rounded p-0 mb-3">
+        <form method="post" action="{% if transfer %}/warehouse/transfers/{{ transfer.id }}/save{% else %}/warehouse/transfers/create{% endif %}" id="docForm">
+            <div class="form-row">
+                <div class="label">№</div>
+                <div class="field">
+                    {% if transfer %}{{ transfer.number }}{% else %}— (saqlanganda beriladi){% endif %}
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="label">Sana</div>
+                <div class="field">
+                    {% if transfer %}{{ transfer.date.strftime('%d.%m.%Y %H:%M') if transfer.date else '—' }}{% else %}{{ now.strftime('%d.%m.%Y %H:%M') if now else '' }}{% endif %}
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="label">Ombordan *</div>
+                <div class="field">
+                    <select name="from_warehouse_id" class="form-select w-100" required id="fromWh">
+                        <option value="">— Tanlang —</option>
+                        {% for wh in warehouses %}
+                        <option value="{{ wh.id }}" {% if transfer and transfer.from_warehouse_id == wh.id %}selected{% endif %}>{{ wh.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="label">Omborga *</div>
+                <div class="field">
+                    <select name="to_warehouse_id" class="form-select w-100" required id="toWh">
+                        <option value="">— Tanlang —</option>
+                        {% for wh in warehouses %}
+                        <option value="{{ wh.id }}" {% if transfer and transfer.to_warehouse_id == wh.id %}selected{% endif %}>{{ wh.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="label">Izoh</div>
+                <div class="field">
+                    <input type="text" name="note" class="form-control w-100" value="{{ transfer.note or '' }}" placeholder="Izoh">
+                </div>
+            </div>
+            <div class="p-2 border-top">
+                <strong class="small">Mahsulotlar</strong>
+                <table class="table table-items table-bordered mt-1" id="itemsTable">
+                    <thead>
+                        <tr>
+                            <th style="width:40px">#</th>
+                            <th>Mahsulot</th>
+                            <th style="width:120px">Miqdor</th>
+                            <th style="width:50px"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="itemsBody">
+                        {% if transfer and transfer.items %}
+                        {% for row in transfer.items %}
+                        <tr class="item-row">
+                            <td class="row-num">{{ loop.index }}</td>
+                            <td class="combo-wrap">
+                                <input type="text" class="form-control combo-input" placeholder="Nom yoki kod (F4)" data-row="{{ loop.index }}" value="{{ row.product.name if row.product else '' }}{% if row.product and row.product.code %} ({{ row.product.code }}){% endif %}" autocomplete="off">
+                                <input type="hidden" name="product_id_{{ loop.index }}" value="{{ row.product_id }}">
+                                <div class="combo-drop" id="comboDrop{{ loop.index }}" style="display:none;"></div>
+                            </td>
+                            <td><input type="text" name="quantity_{{ loop.index }}" class="form-control qty-input" value="{{ row.quantity }}" inputmode="decimal"></td>
+                            <td><button type="button" class="btn btn-outline-danger btn-sm rm-row">&times;</button></td>
+                        </tr>
+                        {% endfor %}
+                        {% else %}
+                        <tr class="item-row">
+                            <td class="row-num">1</td>
+                            <td class="combo-wrap">
+                                <input type="text" class="form-control combo-input" placeholder="Nom yoki kod (F4)" data-row="1" autocomplete="off">
+                                <input type="hidden" name="product_id_1" value="">
+                                <div class="combo-drop" id="comboDrop1" style="display:none;"></div>
+                            </td>
+                            <td><input type="text" name="quantity_1" class="form-control qty-input" value="" inputmode="decimal"></td>
+                            <td><button type="button" class="btn btn-outline-danger btn-sm rm-row">&times;</button></td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+                <button type="button" class="btn btn-success btn-sm mt-1" id="addRow"><i class="bi bi-plus"></i> Qator qo'shish</button>
+            </div>
+            <div class="form-row border-0 p-2">
+                <div class="label"></div>
+                <div class="field d-flex gap-1 flex-wrap">
+                    <button type="submit" class="btn btn-primary btn-sm">Saqlash</button>
+                    {% if transfer and transfer.status == 'draft' %}
+                    <button type="button" class="btn btn-success btn-sm" id="btnConfirm" data-confirm-url="/warehouse/transfers/{{ transfer.id }}/confirm">Tasdiqlash</button>
+                    {% endif %}
+                    <a href="/warehouse/transfers" class="btn btn-outline-secondary btn-sm">Chiqish</a>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+(function() {
+    var stockByWhProduct = {{ stock_by_warehouse_product | tojson | safe }};
+    var products = {{ products_list | tojson | safe }};
+    var fromWh = document.getElementById('fromWh');
+    var toWh = document.getElementById('toWh');
+    var itemsBody = document.getElementById('itemsBody');
+    var rowIndex = itemsBody.querySelectorAll('.item-row').length || 1;
+
+    function addRow(pid, pname, qty) {
+        rowIndex++;
+        var tr = document.createElement('tr');
+        tr.className = 'item-row';
+        tr.innerHTML = '<td class="row-num">' + rowIndex + '</td>' +
+            '<td class="combo-wrap"><input type="text" class="form-control combo-input" placeholder="Nom yoki kod (F4)" data-row="' + rowIndex + '" autocomplete="off">' +
+            '<input type="hidden" name="product_id_' + rowIndex + '" value="' + (pid || '') + '">' +
+            '<div class="combo-drop" id="comboDrop' + rowIndex + '" style="display:none;"></div></td>' +
+            '<td><input type="text" name="quantity_' + rowIndex + '" class="form-control qty-input" value="' + (qty || '') + '" inputmode="decimal"></td>' +
+            '<td><button type="button" class="btn btn-outline-danger btn-sm rm-row">&times;</button></td>';
+        itemsBody.appendChild(tr);
+        tr.querySelector('.rm-row').onclick = function() { tr.remove(); renum(); };
+        bindCombo(tr.querySelector('.combo-input'), rowIndex);
+    }
+
+    function renum() {
+        itemsBody.querySelectorAll('.item-row').forEach(function(r, i) {
+            r.querySelector('.row-num').textContent = i + 1;
+        });
+    }
+
+    function bindCombo(input, idx) {
+        if (!input || input._bound) return;
+        input._bound = true;
+        var hid = input.parentNode.querySelector('input[type=hidden]');
+        var drop = document.getElementById('comboDrop' + idx);
+        if (!drop) return;
+        function showList() {
+            var q = (input.value || '').trim().toLowerCase();
+            var fromId = fromWh.value;
+            var avail = fromId && stockByWhProduct[fromId] ? stockByWhProduct[fromId] : {};
+            var html = '';
+            products.forEach(function(p) {
+                if (avail[p.id] === undefined) return;
+                var name = (p.name + (p.code ? ' (' + p.code + ')' : '')).toLowerCase();
+                if (q && name.indexOf(q) === -1) return;
+                html += '<div class="combo-item" data-id="' + p.id + '" data-name="' + (p.name + (p.code ? ' (' + p.code + ')' : '')) + '">' + (p.name + (p.code ? ' (' + p.code + ')' : '')) + '</div>';
+            });
+            drop.innerHTML = html || '<div class="combo-item text-muted">Yo\'q</div>';
+            drop.style.display = 'block';
+            drop.querySelectorAll('.combo-item[data-id]').forEach(function(el) {
+                el.onclick = function() {
+                    hid.value = this.dataset.id;
+                    input.value = this.dataset.name;
+                    var fromId = fromWh.value;
+                    var qty = (fromId && stockByWhProduct[fromId] && stockByWhProduct[fromId][this.dataset.id] != null)
+                        ? stockByWhProduct[fromId][this.dataset.id] : '';
+                    var row = input.closest('tr');
+                    if (row) {
+                        var qtyInput = row.querySelector('.qty-input');
+                        if (qtyInput) qtyInput.value = qty === '' ? '' : String(qty);
+                    }
+                    drop.style.display = 'none';
+                };
+            });
+        }
+        input.addEventListener('focus', function() { if (fromWh.value) showList(); });
+        input.addEventListener('input', showList);
+        input.addEventListener('keydown', function(e) { if (e.key === 'F4') { e.preventDefault(); showList(); } if (e.key === 'Escape') drop.style.display = 'none'; });
+        document.addEventListener('click', function(e) {
+            if (!input.contains(e.target) && !drop.contains(e.target)) drop.style.display = 'none';
+        });
+    }
+
+    document.getElementById('addRow').onclick = function() { addRow('', '', ''); };
+    itemsBody.querySelectorAll('.item-row').forEach(function(tr) {
+        tr.querySelector('.rm-row').onclick = function() { tr.remove(); renum(); };
+        var inp = tr.querySelector('.combo-input');
+        if (inp) bindCombo(inp, inp.dataset.row);
+    });
+
+    fromWh.addEventListener('change', function() { if (toWh.value === fromWh.value) toWh.value = ''; });
+    toWh.addEventListener('change', function() { if (toWh.value === fromWh.value) toWh.value = ''; });
+
+    var btnConfirm = document.getElementById('btnConfirm');
+    if (btnConfirm) {
+        var confirmUrl = btnConfirm.getAttribute('data-confirm-url');
+        if (confirmUrl) {
+            btnConfirm.onclick = function() {
+                if (!confirm('Tasdiqlash — ombordan chiqarib, omborga yoziladi. Davom etasizmi?')) return;
+                var f = document.createElement('form');
+                f.method = 'post';
+                f.action = confirmUrl;
+                document.body.appendChild(f);
+                f.submit();
+            };
+        }
+    }
+})();
+</script>
+{% endblock %}
