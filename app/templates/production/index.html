@@ -77,10 +77,10 @@
                 <form method="POST" action="/production/create">
                     <div class="mb-3">
                         <label class="form-label">Retsept</label>
-                        <select class="form-select" name="recipe_id" required>
+                        <select class="form-select" name="recipe_id" id="quickRecipeSelect" required>
                             <option value="">Tanlang...</option>
                             {% for recipe in recipes %}
-                            <option value="{{ recipe.id }}">{{ recipe.name }}</option>
+                            <option value="{{ recipe.id }}" data-unit="{{ recipe.product.unit.name if recipe.product and recipe.product.unit else 'kg' }}">{{ recipe.name }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -109,8 +109,8 @@
                         </select>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Miqdori (kg)</label>
-                        <input type="number" class="form-control" name="quantity" step="0.1" min="0.1" value="10" required>
+                        <label class="form-label">Miqdori (<span id="quickQuantityUnit">kg</span>)</label>
+                        <input type="number" class="form-control" name="quantity" id="quickQuantityInput" step="0.01" min="0.01" value="10" required title="F4 — kalkulyator">
                     </div>
                     <button type="submit" class="btn btn-success w-100">
                         <i class="bi bi-play-fill"></i> Boshlash
@@ -169,7 +169,10 @@
                                 -
                                 {% endif %}
                             </td>
-                            <td>{{ "%.1f"|format(prod.quantity) }} kg</td>
+                            <td>
+                                {% set _unit = (prod.recipe.product.unit.name if prod.recipe and prod.recipe.product and prod.recipe.product.unit else 'kg') %}
+                                {{ "%.1f"|format(prod.quantity) }} {{ _unit }}{% if _unit|lower != 'kg' and prod.recipe and prod.recipe.output_quantity %} <span class="text-muted small">({{ "%.1f"|format(prod.quantity * (prod.recipe.output_quantity or 1)) }} kg)</span>{% endif %}
+                            </td>
                             <td>{{ prod.date.strftime('%d.%m.%Y %H:%M') if prod.date else '-' }}</td>
                             <td>
                                 {% if prod.status == 'completed' %}
@@ -195,4 +198,172 @@
         </div>
     </div>
 </div>
+
+<!-- F4 kalkulyator (tezkor ishlab chiqarish) -->
+<div class="modal fade" id="calcModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title"><i class="bi bi-calculator"></i> Kalkulyator (F4)</h6>
+                <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-3">
+                <input type="text" class="form-control form-control-lg mb-2 text-end font-monospace" id="calcDisplay" value="0" style="font-size:1.25rem;" placeholder="Klaviaturada yozing yoki tugmalardan foydalaning" autocomplete="off" inputmode="decimal">
+                <div class="row g-1 mb-2">
+                    <div class="col-3"><button type="button" class="btn btn-outline-danger w-100 btn-sm" id="calcBtnC">C</button></div>
+                    <div class="col-3"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" id="calcBtnCE">CE</button></div>
+                    <div class="col-3"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" id="calcBtnBack">&larr;</button></div>
+                    <div class="col-3"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" disabled>/</button></div>
+                </div>
+                <div class="row g-1 mb-2">
+                    <div class="col-3"><button type="button" class="btn btn-outline-dark w-100 calcDigit" data-digit="7">7</button></div>
+                    <div class="col-3"><button type="button" class="btn btn-outline-dark w-100 calcDigit" data-digit="8">8</button></div>
+                    <div class="col-3"><button type="button" class="btn btn-outline-dark w-100 calcDigit" data-digit="9">9</button></div>
+                    <div class="col-3"><button type="button" class="btn btn-outline-secondary w-100 btn-sm" disabled>*</button></div>
+                </div>
+                <div class="row g-1 mb-2">
+                    <div class="col-3"><button type="button" class="btn btn-outline-dark w-100 calcDigit" data-digit="4">4</button></div>
+                    <div class="col-3"><button type="button" class="btn btn-outline-dark w-100 calcDigit" data-digit="5">5</button></div>
+                    <div class="col-3"><button type="button" class="btn btn-outline-dark w-100 calcDigit" data-digit="6">6</button></div>
+                    <div class="col-3"><button type="button" class="btn btn-outline-primary w-100 btn-sm" id="calcBtnMinus">−</button></div>
+                </div>
+                <div class="row g-1 mb-2">
+                    <div class="col-3"><button type="button" class="btn btn-outline-dark w-100 calcDigit" data-digit="1">1</button></div>
+                    <div class="col-3"><button type="button" class="btn btn-outline-dark w-100 calcDigit" data-digit="2">2</button></div>
+                    <div class="col-3"><button type="button" class="btn btn-outline-dark w-100 calcDigit" data-digit="3">3</button></div>
+                    <div class="col-3"><button type="button" class="btn btn-outline-primary w-100 btn-sm" id="calcBtnPlus">+</button></div>
+                </div>
+                <div class="row g-1 mb-2">
+                    <div class="col-3"><button type="button" class="btn btn-outline-dark w-100 calcDigit" data-digit="0">0</button></div>
+                    <div class="col-3"><button type="button" class="btn btn-outline-dark w-100" id="calcBtn00">00</button></div>
+                    <div class="col-3"><button type="button" class="btn btn-outline-dark w-100" id="calcBtnComma">,</button></div>
+                    <div class="col-3"><button type="button" class="btn btn-outline-primary w-100 btn-sm" id="calcBtnEq">=</button></div>
+                </div>
+                <div class="row g-1">
+                    <div class="col-12"><button type="button" class="btn btn-success w-100" id="calcOK">OK — qiymatni qo'yish</button></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var calcTargetInput = null;
+    var calcAcc = 0;
+    var calcDisplayStr = '0';
+    var calcNewEntry = false;
+    var calcDisplayEl = null;
+    function calcParse(s) {
+        if (!s) return 0;
+        var n = parseFloat(String(s).replace(',', '.')) || 0;
+        return isNaN(n) ? 0 : n;
+    }
+    function calcFormat(n) {
+        var r = Math.round(parseFloat(n) * 1e6) / 1e6;
+        return String(r).replace('.', ',');
+    }
+    function calcNorm(s) {
+        s = String(s || '0').replace(',', '.').replace(/[^\d.]/g, '');
+        var parts = s.split('.');
+        if (parts.length > 2) s = parts[0] + '.' + parts.slice(1).join('');
+        if (s === '' || s === '.') s = '0';
+        if (s.indexOf('.') === 0) s = '0' + s;
+        s = s.replace(/^0+(\d)/, '$1').replace(/^0+$/, '0');
+        return s.replace('.', ',');
+    }
+    function calcUpdateDisplay() { if (calcDisplayEl) calcDisplayEl.value = calcDisplayStr; }
+    function calcInput(ch) {
+        if (ch === 'C') { calcAcc = 0; calcDisplayStr = '0'; calcNewEntry = false; calcUpdateDisplay(); return; }
+        if (ch === 'CE') { calcDisplayStr = '0'; calcNewEntry = false; calcUpdateDisplay(); return; }
+        if (ch === '+') { calcAcc = Math.round((calcAcc + calcParse(calcDisplayStr)) * 1e6) / 1e6; calcDisplayStr = calcFormat(calcAcc); calcNewEntry = true; calcUpdateDisplay(); return; }
+        if (ch === '-') { calcAcc = Math.round((calcAcc - calcParse(calcDisplayStr)) * 1e6) / 1e6; calcDisplayStr = calcFormat(calcAcc); calcNewEntry = true; calcUpdateDisplay(); return; }
+        if (ch === '=') { calcAcc = Math.round((calcAcc + calcParse(calcDisplayStr)) * 1e6) / 1e6; calcDisplayStr = calcFormat(calcAcc); calcNewEntry = true; calcUpdateDisplay(); return; }
+        if (ch === '\u2190' || ch === 'Back') { calcDisplayStr = calcDisplayStr.slice(0, -1) || '0'; calcNewEntry = false; calcUpdateDisplay(); return; }
+        if (ch === '00') {
+            if (calcNewEntry) { calcDisplayStr = '0'; calcNewEntry = false; } else if (calcDisplayStr !== '0') calcDisplayStr += '00';
+            calcUpdateDisplay(); return;
+        }
+        if (ch === '.' || ch === ',') {
+            if (calcNewEntry) { calcDisplayStr = '0,'; calcNewEntry = false; } else if (calcDisplayStr.indexOf(',') === -1) calcDisplayStr += ',';
+            calcUpdateDisplay(); return;
+        }
+        if (/^\d$/.test(ch)) {
+            if (calcNewEntry) { calcDisplayStr = ch === '0' ? '0' : ch; calcNewEntry = false; }
+            else { if (calcDisplayStr === '0' && ch !== '0') calcDisplayStr = ch; else calcDisplayStr += ch; }
+            calcUpdateDisplay();
+        }
+    }
+    window.openCalcForInput = function(inputEl) {
+        if (!inputEl || (inputEl.type !== 'number' && inputEl.type !== 'text')) return;
+        calcTargetInput = inputEl;
+        calcDisplayStr = calcNorm((inputEl.value || '0').toString());
+        calcAcc = 0;
+        calcNewEntry = false;
+        calcDisplayEl = document.getElementById('calcDisplay');
+        calcUpdateDisplay();
+        var modal = new bootstrap.Modal(document.getElementById('calcModal'));
+        modal.show();
+    };
+    document.addEventListener('DOMContentLoaded', function() {
+        calcDisplayEl = document.getElementById('calcDisplay');
+        document.getElementById('calcBtnC').onclick = function() { calcInput('C'); };
+        document.getElementById('calcBtnCE').onclick = function() { calcInput('CE'); };
+        document.getElementById('calcBtnBack').onclick = function() { calcInput('Back'); };
+        document.getElementById('calcBtnPlus').onclick = function() { calcInput('+'); };
+        document.getElementById('calcBtnMinus').onclick = function() { calcInput('-'); };
+        document.getElementById('calcBtnEq').onclick = function() { calcInput('='); };
+        document.getElementById('calcBtn00').onclick = function() { calcInput('00'); };
+        document.getElementById('calcBtnComma').onclick = function() { calcInput(','); };
+        document.querySelectorAll('.calcDigit').forEach(function(btn) { btn.onclick = function() { calcInput(btn.getAttribute('data-digit')); }; });
+        calcDisplayEl.addEventListener('input', function() {
+            calcDisplayStr = calcNorm(this.value);
+            calcNewEntry = false;
+            this.value = calcDisplayStr;
+        });
+        calcDisplayEl.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); document.getElementById('calcOK').click(); return; }
+            if (e.key === 'Escape') { e.preventDefault(); bootstrap.Modal.getInstance(document.getElementById('calcModal')).hide(); return; }
+            if (e.key >= '0' && e.key <= '9') { e.preventDefault(); calcInput(e.key); return; }
+            if (e.key === ',' || e.key === '.') { e.preventDefault(); calcInput(','); return; }
+            if (e.key === '+') { e.preventDefault(); calcInput('+'); return; }
+            if (e.key === '-') { e.preventDefault(); calcInput('-'); return; }
+            if (e.key === '=') { e.preventDefault(); calcInput('='); return; }
+            if (e.key === 'Backspace') { e.preventDefault(); calcInput('Back'); }
+        });
+        document.getElementById('calcModal').addEventListener('shown.bs.modal', function() {
+            calcDisplayEl.value = calcDisplayStr;
+            calcDisplayEl.select();
+            setTimeout(function() { calcDisplayEl.focus(); calcDisplayEl.select(); }, 50);
+        });
+        document.getElementById('calcOK').addEventListener('click', function() {
+            calcDisplayStr = calcNorm(calcDisplayEl.value);
+            var num;
+            if (!calcNewEntry && calcDisplayStr !== '' && calcDisplayStr !== '0') {
+                calcAcc = Math.round((calcAcc + calcParse(calcDisplayStr)) * 1e6) / 1e6;
+                num = calcAcc;
+            } else {
+                num = calcParse(calcDisplayStr);
+            }
+            if (calcTargetInput) { calcTargetInput.value = num; calcTargetInput.focus(); }
+            bootstrap.Modal.getInstance(document.getElementById('calcModal')).hide();
+            calcTargetInput = null;
+        });
+        var qtyInput = document.getElementById('quickQuantityInput');
+        if (qtyInput) qtyInput.addEventListener('keydown', function(e) {
+            if (e.key === 'F4') { e.preventDefault(); openCalcForInput(this); }
+        });
+        var quickRecipeSelect = document.getElementById('quickRecipeSelect');
+        var quickQuantityUnit = document.getElementById('quickQuantityUnit');
+        if (quickRecipeSelect && quickQuantityUnit) {
+            quickRecipeSelect.addEventListener('change', function() {
+                var opt = this.options[this.selectedIndex];
+                quickQuantityUnit.textContent = (opt && opt.getAttribute('data-unit')) ? opt.getAttribute('data-unit') : 'kg';
+            });
+            var opt = quickRecipeSelect.options[quickRecipeSelect.selectedIndex];
+            if (opt && opt.getAttribute('data-unit')) quickQuantityUnit.textContent = opt.getAttribute('data-unit');
+        }
+    });
+})();
+</script>
 {% endblock %}

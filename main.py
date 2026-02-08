@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, Response, StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_, and_
 from datetime import datetime, timedelta
 import uvicorn
 import barcode
@@ -22,7 +22,7 @@ from app.models.database import (
     User, Product, Category, Unit, Warehouse, Stock,
     WarehouseTransfer, WarehouseTransferItem,
     Partner, Order, OrderItem, Payment, CashRegister,
-    Recipe, RecipeItem, Production, ProductionItem, ProductionStage, PRODUCTION_STAGE_NAMES, Machine, Employee, Salary,
+    Recipe, RecipeItem, RecipeStage, Production, ProductionItem, ProductionStage, PRODUCTION_STAGE_NAMES, Machine, Employee, Salary,
     Agent, AgentLocation, Route, RoutePoint, Visit,
     Driver, DriverLocation, Delivery, PartnerLocation,
     Purchase, PurchaseItem, PurchaseExpense, Department, Direction, Region, Position,
@@ -2087,8 +2087,8 @@ async def qoldiqlar_page(request: Request, db: Session = Depends(get_db), curren
     partners = db.query(Partner).filter(Partner.is_active == True).order_by(Partner.name).all()
     tovar_docs = (
         db.query(StockAdjustmentDoc)
-        .order_by(StockAdjustmentDoc.created_at.desc())
-        .limit(200)
+        .order_by(StockAdjustmentDoc.id.desc())
+        .limit(500)
         .all()
     )
     cash_docs = (
@@ -2613,6 +2613,111 @@ async def qoldiqlar_tovar_hujjat_create(
         ))
     db.commit()
     return RedirectResponse(url=f"/qoldiqlar/tovar/hujjat/{doc.id}", status_code=303)
+
+
+@app.post("/qoldiqlar/tovar/import-excel")
+async def qoldiqlar_tovar_import_excel(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Exceldan tovar qoldiqlarini yuklash — hujjat (QLD-...) yaratiladi, jadvalda ko'rinadi."""
+    from urllib.parse import quote
+    form = await request.form()
+    file = form.get("file") or form.get("excel_file")
+    if not file or not getattr(file, "filename", None):
+        return RedirectResponse(url="/qoldiqlar?error=import&detail=" + quote("Excel fayl tanlang") + "#tovar", status_code=303)
+    try:
+        contents = await file.read()
+        if not contents:
+            return RedirectResponse(url="/qoldiqlar?error=import&detail=" + quote("Fayl bo'sh") + "#tovar", status_code=303)
+        wb = openpyxl.load_workbook(io.BytesIO(contents), read_only=False, data_only=True)
+        ws = wb.active
+        rows = list(ws.iter_rows(min_row=2, values_only=True))
+        items_data = []
+        for row in rows:
+            if not row or (row[0] is None and (len(row) < 2 or row[1] is None)):
+                continue
+            wh_key = str(row[0] or "").strip() if len(row) > 0 else ""
+            raw_prod = row[1] if len(row) > 1 else None
+            if raw_prod is not None and isinstance(raw_prod, (int, float)) and float(raw_prod) == int(float(raw_prod)):
+                prod_key = str(int(float(raw_prod)))
+            else:
+                prod_key = str(raw_prod or "").strip()
+            try:
+                qty = float(row[2]) if len(row) > 2 and row[2] is not None else 0
+            except (TypeError, ValueError):
+                qty = 0
+            cp = 0.0
+            sp = 0.0
+            if len(row) > 3 and row[3] is not None and row[3] != "":
+                try:
+                    cp = float(row[3])
+                except (TypeError, ValueError):
+                    pass
+            if len(row) > 4 and row[4] is not None and row[4] != "":
+                try:
+                    sp = float(row[4])
+                except (TypeError, ValueError):
+                    pass
+            if not wh_key or not prod_key or qty <= 0:
+                continue
+            warehouse = db.query(Warehouse).filter(
+                (func.lower(Warehouse.name) == wh_key.lower()) | (Warehouse.code == wh_key)
+            ).first()
+            product = db.query(Product).filter(
+                (Product.code == prod_key) | (Product.barcode == prod_key)
+            ).first()
+            if not product and prod_key:
+                product = db.query(Product).filter(
+                    Product.name.isnot(None),
+                    func.lower(Product.name) == prod_key.lower()
+                ).first()
+            if not warehouse or not product:
+                continue
+            items_data.append((product.id, warehouse.id, qty, cp, sp))
+        if not items_data:
+            return RedirectResponse(
+                url="/qoldiqlar?error=import&detail=" + quote("Hech qanday to'g'ri qator topilmadi. Ombor va mahsulot nomi/kodi to'g'ri ekanligini tekshiring.") + "#tovar",
+                status_code=303,
+            )
+        today = datetime.now()
+        count = db.query(StockAdjustmentDoc).filter(
+            StockAdjustmentDoc.date >= today.replace(hour=0, minute=0, second=0)
+        ).count()
+        number = f"QLD-{today.strftime('%Y%m%d')}-{str(count + 1).zfill(4)}"
+        total_tannarx = sum(qty * cp for _, _, qty, cp, _ in items_data)
+        total_sotuv = sum(qty * sp for _, _, qty, _, sp in items_data)
+        doc = StockAdjustmentDoc(
+            number=number,
+            date=today,
+            user_id=current_user.id if current_user else None,
+            status="draft",
+            total_tannarx=total_tannarx,
+            total_sotuv=total_sotuv,
+        )
+        db.add(doc)
+        db.flush()
+        for pid, wid, qty, cp, sp in items_data:
+            db.add(StockAdjustmentDocItem(
+                doc_id=doc.id,
+                product_id=pid,
+                warehouse_id=wid,
+                quantity=qty,
+                cost_price=cp,
+                sale_price=sp,
+            ))
+        db.commit()
+        return RedirectResponse(
+            url="/qoldiqlar?success=import&doc_number=" + quote(doc.number) + "#tovar",
+            status_code=303,
+        )
+    except Exception as e:
+        traceback.print_exc()
+        return RedirectResponse(
+            url="/qoldiqlar?error=import&detail=" + quote(str(e)[:180]) + "#tovar",
+            status_code=303,
+        )
 
 
 @app.get("/qoldiqlar/tovar/hujjat/{doc_id}", response_class=HTMLResponse)
@@ -3527,10 +3632,12 @@ async def warehouse_list(request: Request, db: Session = Depends(get_db), curren
     warehouses = db.query(Warehouse).all()
     # Faqat qoldiq > 0 bo'lgan yozuvlarni ko'rsatamiz (0 qoldiqlar ro'yxatda chiqmasin)
     stocks = db.query(Stock).join(Product).join(Warehouse).filter(Stock.quantity > 0).all()
-    # Har bir qoldiq uchun shu ombor+mahsulot bo'yicha kirgan kirim hujjatlarini topamiz
+    # Har bir qoldiq uchun manba hujjatlar: tovar kirim (Purchase), ishlab chiqarish (Production), qoldiq hujjati (StockAdjustmentDoc)
     stock_sources = {}
     for s in stocks:
-        docs = (
+        items = []
+        # 1) Tovar kirim (sotib olingan) — tasdiqlangan kirimlar
+        purchases = (
             db.query(Purchase)
             .join(PurchaseItem, Purchase.id == PurchaseItem.purchase_id)
             .filter(
@@ -3539,10 +3646,49 @@ async def warehouse_list(request: Request, db: Session = Depends(get_db), curren
                 Purchase.status == "confirmed",
             )
             .order_by(Purchase.date.desc())
-            .limit(5)
+            .limit(3)
             .all()
         )
-        stock_sources[s.id] = [(p.number, p.id, p.date.strftime("%d.%m.%Y") if p.date else "") for p in docs]
+        for p in purchases:
+            items.append((p.number, f"/purchases/edit/{p.id}", p.date.strftime("%d.%m.%Y") if p.date else ""))
+        # 2) Ishlab chiqarish — tayyor mahsulot shu omborga yozilgan (PR-...)
+        out_wh_id = s.warehouse_id
+        productions = (
+            db.query(Production)
+            .join(Recipe, Production.recipe_id == Recipe.id)
+            .filter(
+                Production.status == "completed",
+                Recipe.product_id == s.product_id,
+                or_(
+                    Production.output_warehouse_id == out_wh_id,
+                    and_(Production.output_warehouse_id.is_(None), Production.warehouse_id == out_wh_id),
+                ),
+            )
+            .order_by(Production.date.desc())
+            .limit(3)
+            .all()
+        )
+        for pr in productions:
+            items.append((pr.number, f"/production/orders", pr.date.strftime("%d.%m.%Y") if pr.date else ""))
+        # 3) Qoldiq hujjati (tovar qoldiqlari tasdiqlangan)
+        adj_docs = (
+            db.query(StockAdjustmentDoc)
+            .join(StockAdjustmentDocItem, StockAdjustmentDoc.id == StockAdjustmentDocItem.doc_id)
+            .filter(
+                StockAdjustmentDoc.status == "confirmed",
+                StockAdjustmentDocItem.warehouse_id == s.warehouse_id,
+                StockAdjustmentDocItem.product_id == s.product_id,
+            )
+            .order_by(StockAdjustmentDoc.date.desc())
+            .limit(3)
+            .distinct()
+            .all()
+        )
+        for doc in adj_docs:
+            items.append((doc.number, f"/qoldiqlar/tovar/hujjat/{doc.id}", doc.date.strftime("%d.%m.%Y") if doc.date else ""))
+        # Sana bo'yicha oxirgi 5 ta
+        items.sort(key=lambda x: x[2] or "", reverse=True)
+        stock_sources[s.id] = items[:8]
     return templates.TemplateResponse("warehouse/list.html", {
         "request": request,
         "warehouses": warehouses,
@@ -3739,12 +3885,15 @@ async def warehouse_transfers_list(request: Request, db: Session = Depends(get_d
     """Ombordan omborga o'tkazish hujjatlari ro'yxati (spiska)"""
     if not current_user:
         return RedirectResponse(url="/login", status_code=303)
+    from urllib.parse import unquote
     transfers = db.query(WarehouseTransfer).order_by(WarehouseTransfer.date.desc()).limit(200).all()
+    error = request.query_params.get("error")
     return templates.TemplateResponse("warehouse/transfers_list.html", {
         "request": request,
         "current_user": current_user,
         "transfers": transfers,
-        "page_title": "Ombordan omborga o'tkazish"
+        "page_title": "Ombordan omborga o'tkazish",
+        "error_message": unquote(error) if error else None,
     })
 
 
@@ -3888,7 +4037,7 @@ async def warehouse_transfer_save(
             except (ValueError, TypeError):
                 pass
     db.commit()
-    return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?saved=1", status_code=303)
+    return RedirectResponse(url="/warehouse/transfers?saved=1", status_code=303)
 
 
 @app.post("/warehouse/transfers/{transfer_id}/confirm")
@@ -3941,6 +4090,63 @@ async def warehouse_transfer_confirm(
     transfer.status = "confirmed"
     db.commit()
     return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?confirmed=1", status_code=303)
+
+
+@app.post("/warehouse/transfers/{transfer_id}/revert")
+async def warehouse_transfer_revert(
+    transfer_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Tasdiqlashni bekor qilish: ombor harakatini teskari qilish, hujjat qoralamaga o'tadi (faqat admin)."""
+    from urllib.parse import quote
+    transfer = db.query(WarehouseTransfer).filter(WarehouseTransfer.id == transfer_id).first()
+    if not transfer:
+        raise HTTPException(status_code=404, detail="Hujjat topilmadi")
+    if transfer.status != "confirmed":
+        return RedirectResponse(url=f"/warehouse/transfers?error=" + quote("Faqat tasdiqlangan hujjatning tasdiqini bekor qilish mumkin."), status_code=303)
+    items = db.query(WarehouseTransferItem).filter(WarehouseTransferItem.transfer_id == transfer_id).all()
+    for item in items:
+        dest = db.query(Stock).filter(
+            Stock.warehouse_id == transfer.to_warehouse_id,
+            Stock.product_id == item.product_id,
+        ).first()
+        if dest:
+            dest.quantity -= item.quantity
+            if dest.quantity < 0:
+                dest.quantity = 0
+        src = db.query(Stock).filter(
+            Stock.warehouse_id == transfer.from_warehouse_id,
+            Stock.product_id == item.product_id,
+        ).first()
+        if src:
+            src.quantity += item.quantity
+        else:
+            db.add(Stock(warehouse_id=transfer.from_warehouse_id, product_id=item.product_id, quantity=item.quantity))
+    transfer.status = "draft"
+    db.commit()
+    return RedirectResponse(url="/warehouse/transfers?reverted=1", status_code=303)
+
+
+@app.post("/warehouse/transfers/{transfer_id}/delete")
+async def warehouse_transfer_delete(
+    transfer_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """O'tkazish hujjatini o'chirish (faqat admin). Faqat qoralama holatida o'chirish mumkin; tasdiqlangan bo'lsa avval tasdiqni bekor qilish kerak."""
+    from urllib.parse import quote
+    transfer = db.query(WarehouseTransfer).filter(WarehouseTransfer.id == transfer_id).first()
+    if not transfer:
+        raise HTTPException(status_code=404, detail="Hujjat topilmadi")
+    if transfer.status == "confirmed":
+        return RedirectResponse(
+            url="/warehouse/transfers?error=" + quote("Tasdiqlangan hujjatni to'g'ridan-to'g'ri o'chirib bo'lmaydi. Avval tasdiqni bekor qiling."),
+            status_code=303
+        )
+    db.delete(transfer)
+    db.commit()
+    return RedirectResponse(url="/warehouse/transfers?deleted=1", status_code=303)
 
 
 @app.get("/warehouse/movement", response_class=HTMLResponse)
@@ -5078,16 +5284,22 @@ async def production_index_page(request: Request, db: Session = Depends(get_db),
 @app.get("/production/recipes", response_class=HTMLResponse)
 async def production_recipes(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Retseptlar ro'yxati"""
+    import json
     warehouses = db.query(Warehouse).all()
     recipes = db.query(Recipe).all()
     products = db.query(Product).filter(Product.type.in_(["tayyor", "yarim_tayyor"])).all()
     materials = db.query(Product).filter(Product.type == "hom_ashyo").all()
+    recipe_products_json = json.dumps([
+        {"id": p.id, "name": (p.name or ""), "unit": (p.unit.name if p.unit else "kg")}
+        for p in products
+    ]).replace("<", "\\u003c")
 
     return templates.TemplateResponse("production/recipes.html", {
         "request": request,
         "current_user": current_user,
         "recipes": recipes,
         "products": products,
+        "recipe_products_json": recipe_products_json,
         "materials": materials,
         "warehouses": warehouses,
         "page_title": "Retseptlar"
@@ -5102,12 +5314,17 @@ async def production_recipe_detail(request: Request, recipe_id: int, db: Session
         raise HTTPException(status_code=404, detail="Retsept topilmadi")
     
     materials = db.query(Product).filter(Product.type.in_(["hom_ashyo", "yarim_tayyor", "tayyor"])).all()
+    try:
+        recipe_stages = sorted(recipe.stages, key=lambda s: s.stage_number) if recipe.stages else []
+    except Exception:
+        recipe_stages = []
     
     return templates.TemplateResponse("production/recipe_detail.html", {
         "request": request,
         "current_user": current_user,
         "recipe": recipe,
         "materials": materials,
+        "recipe_stages": recipe_stages,
         "page_title": f"Retsept: {recipe.name}"
     })
 
@@ -5174,6 +5391,43 @@ async def edit_recipe_item(
         raise HTTPException(status_code=404, detail="Tarkib qatori topilmadi")
     item.product_id = product_id
     item.quantity = quantity
+    db.commit()
+    return RedirectResponse(url=f"/production/recipes/{recipe_id}", status_code=303)
+
+
+@app.post("/production/recipes/{recipe_id}/add-stage")
+async def add_recipe_stage(
+    recipe_id: int,
+    stage_number: int = Form(...),
+    name: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Retseptga bosqich qo'shish"""
+    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Retsept topilmadi")
+    stage = RecipeStage(recipe_id=recipe_id, stage_number=stage_number, name=(name or "").strip())
+    db.add(stage)
+    db.commit()
+    return RedirectResponse(url=f"/production/recipes/{recipe_id}", status_code=303)
+
+
+@app.post("/production/recipes/{recipe_id}/delete-stage/{stage_id}")
+async def delete_recipe_stage(
+    recipe_id: int,
+    stage_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Retsept bosqichini o'chirish"""
+    stage = db.query(RecipeStage).filter(
+        RecipeStage.id == stage_id,
+        RecipeStage.recipe_id == recipe_id,
+    ).first()
+    if not stage:
+        raise HTTPException(status_code=404, detail="Bosqich topilmadi")
+    db.delete(stage)
     db.commit()
     return RedirectResponse(url=f"/production/recipes/{recipe_id}", status_code=303)
 
@@ -5271,7 +5525,13 @@ async def production_save_materials(
 @app.get("/production/orders", response_class=HTMLResponse)
 async def production_orders(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Ishlab chiqarish buyurtmalari"""
-    productions = db.query(Production).order_by(Production.date.desc()).all()
+    from sqlalchemy.orm import joinedload
+    productions = (
+        db.query(Production)
+        .options(joinedload(Production.recipe).joinedload(Recipe.stages))
+        .order_by(Production.date.desc())
+        .all()
+    )
     machines = db.query(Machine).filter(Machine.is_active == True).all()
     employees = db.query(Employee).filter(Employee.is_active == True).all()
     from urllib.parse import unquote
@@ -5317,7 +5577,7 @@ async def create_production(
     request: Request,
     recipe_id: int = Form(...),
     warehouse_id: int = Form(...),
-    output_warehouse_id: int = Form(...),
+    output_warehouse_id: Optional[int] = Form(None),
     quantity: float = Form(...),
     note: str = Form(""),
     machine_id: Optional[int] = Form(None),
@@ -5325,7 +5585,14 @@ async def create_production(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Ishlab chiqarish yaratish: 1-ombor (xom ashyo) dan oladi, 2-ombor (yarim tayyor) ga yozadi"""
+    """Ishlab chiqarish yaratish: 1-ombor (xom ashyo) dan oladi, 2-ombor (yarim tayyor) ga yozadi."""
+    if output_warehouse_id is None:
+        output_warehouse_id = warehouse_id
+    from sqlalchemy.orm import joinedload
+    recipe = db.query(Recipe).options(joinedload(Recipe.stages)).filter(Recipe.id == recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Retsept topilmadi")
+    max_stage = _recipe_max_stage(recipe)
     today = datetime.now()
     count = db.query(Production).filter(
         Production.date >= today.replace(hour=0, minute=0, second=0)
@@ -5341,6 +5608,7 @@ async def create_production(
         note=note,
         status="draft",
         current_stage=1,
+        max_stage=max_stage,
         user_id=current_user.id if current_user else None,
         machine_id=int(machine_id) if machine_id else None,
         operator_id=int(operator_id) if operator_id else None,
@@ -5348,8 +5616,8 @@ async def create_production(
     db.add(production)
     db.commit()
     db.refresh(production)
-    # 4 ta bosqich yozuvi: qiyom, hamir, sovutish/kesish, qadoqlash
-    for stage_num in range(1, 5):
+    # Faqat retseptdagi bosqichlar sonicha yozuv (1..max_stage)
+    for stage_num in range(1, max_stage + 1):
         stage = ProductionStage(production_id=production.id, stage_number=stage_num)
         db.add(stage)
     db.commit()
@@ -5419,6 +5687,13 @@ def _do_complete_production_stock(db, production, recipe):
     return None
 
 
+def _recipe_max_stage(recipe) -> int:
+    """Retseptdagi oxirgi bosqich raqami; bo'lmasa 2 (tezkor ishlab chiqarish uchun)."""
+    if not recipe or not recipe.stages:
+        return 2
+    return max(s.stage_number for s in recipe.stages)
+
+
 @app.post("/production/{prod_id}/complete-stage")
 async def complete_production_stage(
     prod_id: int,
@@ -5428,15 +5703,36 @@ async def complete_production_stage(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
-    """Bosqichni yakunlash: 1–4. 4-bosqichda ombor harakati qiladi va buyurtma yakunlanadi."""
-    if stage_number < 1 or stage_number > 4:
-        raise HTTPException(status_code=400, detail="Bosqich 1–4 oralig'ida bo'lishi kerak")
+    """Bosqichni yakunlash. Oxirgi bosqichda ombor harakati qiladi va buyurtma yakunlanadi (retseptdagi bosqichlar soniga qarab)."""
     production = db.query(Production).filter(Production.id == prod_id).first()
     if not production:
         raise HTTPException(status_code=404, detail="Topilmadi")
+    from sqlalchemy.orm import joinedload
+    recipe = (
+        db.query(Recipe)
+        .options(joinedload(Recipe.stages))
+        .filter(Recipe.id == production.recipe_id)
+        .first()
+    )
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Retsept topilmadi")
+    # Har doim retseptdagi bosqichlar soniga qarab (eski buyurtmalarda max_stage=4 qolgan bo'lsa ham)
+    max_stage = _recipe_max_stage(recipe)
+    if stage_number < 1 or stage_number > max_stage:
+        raise HTTPException(status_code=400, detail=f"Bosqich 1–{max_stage} oralig'ida bo'lishi kerak")
     if production.status == "completed":
         return RedirectResponse(url="/production/orders", status_code=303)
     current = getattr(production, "current_stage", None) or 1
+    # Eski buyurtma 4 bosqichda qolgan, retsept endi 2 bosqich — bosqichni bosganda darhol yakunlash
+    if current > max_stage:
+        err = _do_complete_production_stock(db, production, recipe)
+        if err:
+            return err
+        production.status = "completed"
+        production.current_stage = max_stage
+        db.commit()
+        check_low_stock_and_notify(db)
+        return RedirectResponse(url="/production/orders", status_code=303)
     if stage_number != current:
         return RedirectResponse(
             url=f"/production/orders?error=stage&detail=Keyingi bosqich {current}",
@@ -5453,19 +5749,16 @@ async def complete_production_stage(
         stage_row.completed_at = now
         stage_row.machine_id = int(machine_id) if machine_id else None
         stage_row.operator_id = int(operator_id) if operator_id else None
-    if stage_number < 4:
+    if stage_number < max_stage:
         production.current_stage = stage_number + 1
         production.status = "in_progress"
         db.commit()
         return RedirectResponse(url="/production/orders", status_code=303)
-    recipe = db.query(Recipe).filter(Recipe.id == production.recipe_id).first()
-    if not recipe:
-        raise HTTPException(status_code=404, detail="Retsept topilmadi")
     err = _do_complete_production_stock(db, production, recipe)
     if err:
         return err
     production.status = "completed"
-    production.current_stage = 4
+    production.current_stage = max_stage
     db.commit()
     check_low_stock_and_notify(db)
     return RedirectResponse(url="/production/orders", status_code=303)
@@ -5473,7 +5766,7 @@ async def complete_production_stage(
 
 @app.post("/production/{prod_id}/complete")
 async def complete_production(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
-    """Ishlab chiqarishni bir martada yakunlash (4 bosqichsiz, eski usul)"""
+    """Ishlab chiqarishni bir martada yakunlash (barcha bosqichlarsiz)"""
     production = db.query(Production).filter(Production.id == prod_id).first()
     if not production:
         raise HTTPException(status_code=404, detail="Topilmadi")
@@ -5484,7 +5777,7 @@ async def complete_production(prod_id: int, db: Session = Depends(get_db), curre
     if err:
         return err
     production.status = "completed"
-    production.current_stage = 4
+    production.current_stage = _recipe_max_stage(recipe)
     db.commit()
     check_low_stock_and_notify(db)
     return RedirectResponse(url="/production/orders", status_code=303)
@@ -5549,6 +5842,21 @@ async def cancel_production(prod_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Topilmadi")
     
     production.status = "cancelled"
+    db.commit()
+    return RedirectResponse(url="/production/orders", status_code=303)
+
+
+@app.post("/production/{prod_id}/delete")
+async def delete_production(
+    prod_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Ishlab chiqarish buyurtmasini o'chirish — faqat admin."""
+    production = db.query(Production).filter(Production.id == prod_id).first()
+    if not production:
+        raise HTTPException(status_code=404, detail="Buyurtma topilmadi")
+    db.delete(production)
     db.commit()
     return RedirectResponse(url="/production/orders", status_code=303)
 

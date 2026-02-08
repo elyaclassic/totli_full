@@ -12,6 +12,30 @@
 </style>
 
 <div class="container-fluid">
+    {% if request.query_params.get('reverted') == '1' %}
+    <div class="alert alert-success alert-dismissible fade show py-2 small" role="alert">
+        <i class="bi bi-check-circle"></i> Tasdiq bekor qilindi.
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+    {% if request.query_params.get('deleted') == '1' %}
+    <div class="alert alert-success alert-dismissible fade show py-2 small" role="alert">
+        <i class="bi bi-check-circle"></i> Hujjat o'chirildi.
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+    {% if request.query_params.get('saved') == '1' %}
+    <div class="alert alert-success alert-dismissible fade show py-2 small" role="alert">
+        <i class="bi bi-check-circle"></i> Hujjat saqlandi.
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+    {% if error_message %}
+    <div class="alert alert-danger alert-dismissible fade show py-2 small" role="alert">
+        {{ error_message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h5 class="mb-0">Ombordan omborga o'tkazish</h5>
         <a href="/warehouse/transfers/new" class="btn btn-success btn-sm">
@@ -56,6 +80,18 @@
                         <td>{{ t.user.full_name if t.user else t.user_id }}</td>
                         <td>
                             <a href="/warehouse/transfers/{{ t.id }}" class="btn btn-outline-primary btn-sm">Ochish</a>
+                            {% if t.status == 'confirmed' and current_user and current_user.role == 'admin' %}
+                            <form method="post" action="/warehouse/transfers/{{ t.id }}/revert" class="d-inline" onsubmit="return confirm('Tasdiqni bekor qilish — ombordagi harakat teskari qilinadi. Davom etasizmi?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
+                                <button type="submit" class="btn btn-outline-warning btn-sm" title="Tasdiqlashni bekor qilish"><i class="bi bi-arrow-counterclockwise"></i></button>
+                            </form>
+                            {% endif %}
+                            {% if current_user and current_user.role == 'admin' and t.status != 'confirmed' %}
+                            <form method="post" action="/warehouse/transfers/{{ t.id }}/delete" class="d-inline" onsubmit="return confirm('Hujjatni butunlay o\'chirishni xohlaysizmi?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
+                                <button type="submit" class="btn btn-outline-danger btn-sm" title="O'chirish"><i class="bi bi-trash"></i></button>
+                            </form>
+                            {% endif %}
                         </td>
                     </tr>
                     {% else %}
@@ -68,4 +104,18 @@
         </div>
     </div>
 </div>
+<script>
+(function() {
+    var u = new URL(window.location.href);
+    if (u.searchParams.get('deleted') === '1' || u.searchParams.get('reverted') === '1' || u.searchParams.get('saved') === '1') {
+        u.searchParams.delete('deleted');
+        u.searchParams.delete('reverted');
+        u.searchParams.delete('saved');
+        var cleanUrl = u.pathname + (u.search ? u.search : '');
+        if (history.replaceState) {
+            history.replaceState(null, '', cleanUrl);
+        }
+    }
+})();
+</script>
 {% endblock %}

@@ -34,6 +34,6 @@ echo.
 echo Chiqish uchun Ctrl+C bosing
 echo.
 
-python -m uvicorn main:app --host 0.0.0.0 --port 8080 --reload
+python -m uvicorn main:app --host 10.243.49.144 --port 8080 --reload
 
 pause

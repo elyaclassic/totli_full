@@ -34,6 +34,7 @@
 
     <div class="form-1c bg-white border rounded p-0 mb-3">
         <form method="post" action="{% if transfer %}/warehouse/transfers/{{ transfer.id }}/save{% else %}/warehouse/transfers/create{% endif %}" id="docForm">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
             <div class="form-row">
                 <div class="label">№</div>
                 <div class="field">
@@ -75,7 +76,12 @@
                 </div>
             </div>
             <div class="p-2 border-top">
-                <strong class="small">Mahsulotlar</strong>
+                <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                    <strong class="small">Mahsulotlar</strong>
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="btnLoadAllStock" style="display:none;" title="Ombordan tanlang">
+                        <i class="bi bi-box-arrow-in-down"></i> Barcha qoldiqlarni yuklash
+                    </button>
+                </div>
                 <table class="table table-items table-bordered mt-1" id="itemsTable">
                     <thead>
                         <tr>
@@ -149,8 +155,10 @@
             '<td><input type="text" name="quantity_' + rowIndex + '" class="form-control qty-input" value="' + (qty || '') + '" inputmode="decimal"></td>' +
             '<td><button type="button" class="btn btn-outline-danger btn-sm rm-row">&times;</button></td>';
         itemsBody.appendChild(tr);
+        var comboInput = tr.querySelector('.combo-input');
+        if (comboInput && pname) comboInput.value = pname;
         tr.querySelector('.rm-row').onclick = function() { tr.remove(); renum(); };
-        bindCombo(tr.querySelector('.combo-input'), rowIndex);
+        bindCombo(comboInput, rowIndex);
     }
 
     function renum() {
@@ -209,8 +217,36 @@
         if (inp) bindCombo(inp, inp.dataset.row);
     });
 
-    fromWh.addEventListener('change', function() { if (toWh.value === fromWh.value) toWh.value = ''; });
+    fromWh.addEventListener('change', function() {
+        if (toWh.value === fromWh.value) toWh.value = '';
+        document.getElementById('btnLoadAllStock').style.display = fromWh.value ? 'inline-block' : 'none';
+    });
     toWh.addEventListener('change', function() { if (toWh.value === fromWh.value) toWh.value = ''; });
+
+    if (fromWh.value) document.getElementById('btnLoadAllStock').style.display = 'inline-block';
+
+    document.getElementById('btnLoadAllStock').onclick = function() {
+        var fromId = fromWh.value;
+        if (!fromId) return;
+        var avail = stockByWhProduct[fromId];
+        if (!avail || Object.keys(avail).length === 0) {
+            alert('Tanlangan omborda qoldiq yo\'q.');
+            return;
+        }
+        itemsBody.querySelectorAll('.item-row').forEach(function(r) { r.remove(); });
+        rowIndex = 0;
+        var entries = [];
+        for (var pid in avail) {
+            if (!avail[pid] || avail[pid] <= 0) continue;
+            var p = products.find(function(x) { return String(x.id) === String(pid); });
+            var pname = p ? (p.name + (p.code ? ' (' + p.code + ')' : '')) : '';
+            entries.push({ id: pid, name: pname, qty: avail[pid] });
+        }
+        entries.sort(function(a, b) { return (a.name || '').localeCompare(b.name || ''); });
+        entries.forEach(function(e) { addRow(e.id, e.name, e.qty); });
+        if (entries.length === 0) addRow('', '', '');
+        renum();
+    };
 
     var btnConfirm = document.getElementById('btnConfirm');
     if (btnConfirm) {
@@ -221,6 +257,14 @@
                 var f = document.createElement('form');
                 f.method = 'post';
                 f.action = confirmUrl;
+                var meta = document.querySelector('meta[name="csrf-token"]');
+                if (meta && meta.getAttribute('content')) {
+                    var inp = document.createElement('input');
+                    inp.type = 'hidden';
+                    inp.name = 'csrf_token';
+                    inp.value = meta.getAttribute('content');
+                    f.appendChild(inp);
+                }
                 document.body.appendChild(f);
                 f.submit();
             };
