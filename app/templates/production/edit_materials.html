@@ -83,4 +83,24 @@
         </form>
     </div>
 </div>
+{% if not read_only and production.production_items %}
+<script>
+(function() {
+    var inputs = document.querySelectorAll('input[name^="qty_"]');
+    inputs.forEach(function(inp, i) {
+        inp.addEventListener('keydown', function(e) {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            if (i + 1 < inputs.length) {
+                inputs[i + 1].focus();
+                inputs[i + 1].select();
+            } else {
+                var btn = document.querySelector('form button[type="submit"]');
+                if (btn) btn.focus();
+            }
+        });
+    });
+})();
+</script>
+{% endif %}
 {% endblock %}

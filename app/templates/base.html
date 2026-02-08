@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ page_title }} - TOTLI HOLVA</title>
     <link rel="icon" href="/static/images/logo.png" type="image/png">
-    <meta name="csrf-token" content="{{ getattr(request.state, 'csrf_token', '') }}">
+    <meta name="csrf-token" content="{{ csrf_token_from_request(request) }}">
 
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -441,6 +441,11 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link {% if page_title == 'Qoldiqlar' %}active{% endif %}" href="/qoldiqlar">
+                                <i class="bi bi-wallet2"></i> Qoldiqlar
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link {% if 'Bo\'limlar' in page_title %}active{% endif %}"
                                 href="/info/departments">
                                 <i class="bi bi-diagram-3"></i> Bo'limlar
@@ -522,6 +527,11 @@
                 <div class="collapse" id="asosiyModullarMenu">
                     <ul class="nav flex-column ms-3">
                         <li class="nav-item">
+                            <a class="nav-link {% if page_title and 'tkazish' in page_title %}active{% endif %}" href="/warehouse/movement">
+                                <i class="bi bi-arrow-left-right"></i> Ombordan omborga
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link {% if 'Ishlab chiqarish' in page_title %}active{% endif %}"
                                 href="/production">
                                 <i class="bi bi-gear-fill"></i> Ishlab chiqarish
@@ -538,7 +548,7 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link {% if 'Ombor' in page_title and 'Omborlar' not in page_title %}active{% endif %}"
+                            <a class="nav-link {% if 'Ombor' in page_title and 'Omborlar' not in page_title and 'tkazish' not in page_title %}active{% endif %}"
                                 href="/warehouse">
                                 <i class="bi bi-box"></i> Ombor qoldiqlari
                             </a>

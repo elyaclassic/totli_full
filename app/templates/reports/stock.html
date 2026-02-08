@@ -4,7 +4,11 @@
 <div class="card">
     <div class="card-header d-flex justify-content-between align-items-center">
         <span><i class="bi bi-boxes"></i> Qoldiq hisoboti</span>
-        <a href="/reports/stock/export" class="btn btn-success btn-sm"><i class="bi bi-file-earmark-excel"></i> Excel</a>
+        <div class="btn-group btn-group-sm">
+            <a href="/reports/stock/andoza" class="btn btn-outline-secondary" title="Import uchun andoza yuklab olish"><i class="bi bi-file-earmark-arrow-down"></i> Andoza</a>
+            <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#importStockModal" title="Exceldan qoldiqlarni yuklash"><i class="bi bi-upload"></i> Import</button>
+            <a href="/reports/stock/export" class="btn btn-success"><i class="bi bi-file-earmark-excel"></i> Excel</a>
+        </div>
     </div>
     <div class="card-body p-0">
         <table class="table table-hover">
@@ -35,8 +39,8 @@
                         <td>{{ stock.warehouse.name }}</td>
                         <td class="fw-bold">{{ "{:,.2f}".format(stock.quantity) }}</td>
                         <td>{{ stock.product.unit.code if stock.product.unit else '-' }}</td>
-                        <td>{{ "{:,.0f}".format(stock.avg_cost) }}</td>
-                        <td class="text-success">{{ "{:,.0f}".format(stock.quantity * stock.avg_cost) }}</td>
+                        <td>{{ "{:,.0f}".format(stock.product.purchase_price or 0) }}</td>
+                        <td class="text-success">{{ "{:,.0f}".format(stock.quantity * (stock.product.purchase_price or 0)) }}</td>
                     </tr>
                     {% endfor %}
                 {% else %}
@@ -49,6 +53,28 @@
                 {% endif %}
             </tbody>
         </table>
+    </div>
+</div>
+
+<!-- Exceldan qoldiqlarni yuklash -->
+<div class="modal fade" id="importStockModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="/reports/stock/import" enctype="multipart/form-data">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-upload"></i> Qoldiqlarni Exceldan yuklash</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">Andoza ustunlari: <strong>Ombor nomi (yoki kodi)</strong>, <strong>Mahsulot nomi (yoki kodi)</strong>, <strong>Qoldiq</strong>. Ixtiyoriy: <strong>Tannarx (so'm)</strong>, <strong>Sotuv narxi (so'm)</strong>. Birinchi qator sarlavha bo'lsin.</p>
+                    <input type="file" name="file" class="form-control" accept=".xlsx,.xls" required>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor</button>
+                    <button type="submit" class="btn btn-primary">Yuklash</button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
 {% endblock %}

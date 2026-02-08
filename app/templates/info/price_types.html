@@ -2,40 +2,40 @@
 
 {% block content %}
 <div class="container-fluid">
-    <div class="row mb-3">
-        <div class="col-12">
-            <div class="d-flex justify-content-between align-items-center">
-                <h4><i class="bi bi-tag"></i> Narx turlari</h4>
-                <a href="/info" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Ma'lumotnomalar</a>
-            </div>
-            <p class="text-muted mb-0 small">Har bir mijoz turi uchun narx (Chakana, Ulgurji, VIP va h.k.). Savdo vaqtida shu turdagi narx tanlanadi.</p>
-        </div>
-    </div>
     <div class="card">
-        <div class="card-body">
-            <div class="d-flex justify-content-end mb-3">
-                <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addModal"><i class="bi bi-plus-circle"></i> Yangi narx turi</button>
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+                <h5 class="mb-0"><i class="bi bi-tag"></i> Narx turlari</h5>
+                <p class="text-muted mb-0 small">Har bir mijoz turi uchun narx (Chakana, Ulgurji, VIP va h.k.).</p>
             </div>
-            <table class="table table-hover">
-                <thead class="table-light">
-                    <tr><th width="50">#</th><th>Kod</th><th>Nomi</th><th width="100">Amallar</th></tr>
-                </thead>
-                <tbody>
-                    {% for pt in price_types %}
-                    <tr>
-                        <td>{{ loop.index }}</td>
-                        <td><code>{{ pt.code or '-' }}</code></td>
-                        <td><strong>{{ pt.name }}</strong></td>
-                        <td>
-                            <button type="button" class="btn btn-sm btn-outline-primary btn-edit-pt" data-id="{{ pt.id }}" data-name="{{ pt.name|e }}" data-code="{{ (pt.code or '')|e }}"><i class="bi bi-pencil"></i></button>
-                            <button type="button" class="btn btn-sm btn-outline-danger btn-delete-pt" data-id="{{ pt.id }}" data-name="{{ pt.name|e }}"><i class="bi bi-trash"></i></button>
-                        </td>
-                    </tr>
-                    {% else %}
-                    <tr><td colspan="4" class="text-center text-muted py-4">Narx turlari yo'q. &quot;Yangi narx turi&quot; tugmasini bosing.</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+            <div class="d-flex gap-2 align-items-center">
+                <a href="/info" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Ma'lumotnomalar</a>
+                <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addModal"><i class="bi bi-plus-circle"></i> Yaratish</button>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr><th>#</th><th>Kod</th><th>Nomi</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        {% for pt in price_types %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td><code>{{ pt.code or '-' }}</code></td>
+                            <td><strong>{{ pt.name }}</strong></td>
+                            <td>
+                                <button type="button" class="btn btn-sm btn-outline-primary btn-edit-pt" data-id="{{ pt.id }}" data-name="{{ pt.name|e }}" data-code="{{ (pt.code or '')|e }}"><i class="bi bi-pencil"></i></button>
+                                <button type="button" class="btn btn-sm btn-outline-danger btn-delete-pt" data-id="{{ pt.id }}" data-name="{{ pt.name|e }}"><i class="bi bi-trash"></i></button>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4" class="text-muted text-center py-4">Narx turlari yo'q. Yangi qo'shish uchun yuqoridagi Yaratish tugmasini bosing.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
@@ -90,6 +90,12 @@
                 var f = document.createElement('form');
                 f.method = 'POST';
                 f.action = '/info/price-types/delete/' + id;
+                var csrfInput = document.createElement('input');
+                csrfInput.type = 'hidden';
+                csrfInput.name = 'csrf_token';
+                var meta = document.querySelector('meta[name="csrf-token"]');
+                csrfInput.value = meta ? meta.getAttribute('content') : '';
+                f.appendChild(csrfInput);
                 document.body.appendChild(f);
                 f.submit();
             }

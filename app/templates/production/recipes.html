@@ -1,11 +1,10 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="d-flex justify-content-between mb-4">
-    <h4><i class="bi bi-journal-text"></i> Retseptlar</h4>
-    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addRecipeModal">
-        <i class="bi bi-plus"></i> Yangi retsept
-    </button>
+<div class="container-fluid">
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0"><i class="bi bi-journal-text"></i> Retseptlar</h4>
+    <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addRecipeModal"><i class="bi bi-plus-circle"></i> Yaratish</button>
 </div>
 
 <div class="row g-3">
@@ -79,13 +78,12 @@
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label">Mahsulot (chiqish)</label>
-                        <select class="form-select" name="product_id" id="productSelect" required
-                            onchange="updateRecipeName()">
-                            <option value="">Tanlang...</option>
-                            {% for p in products %}
-                            <option value="{{ p.id }}">{{ p.name }}</option>
-                            {% endfor %}
-                        </select>
+                        <div class="position-relative" style="overflow: visible;">
+                            <input type="text" class="form-control" id="productSelectInput" placeholder="Nom yoki kod yozib qidiring (F4)" autocomplete="off">
+                            <input type="hidden" name="product_id" id="productSelectHidden" value="">
+                            <div id="productSelectDrop" class="border rounded shadow-sm bg-white overflow-auto" style="max-height: 220px; z-index: 9999; display: none; position: fixed;"></div>
+                        </div>
+                        <small class="text-muted">Yozing yoki F4 bosing — ro'yxatdan tanlang</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Retsept nomi</label>
@@ -93,7 +91,7 @@
                             placeholder="Masalan: Halva oddiy" required>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Chiqish miqdori (kg)</label>
+                        <label class="form-label">Chiqish miqdori (<span id="outputQuantityUnit">kg</span>)</label>
                         <input type="number" class="form-control" name="output_quantity" value="1" step="0.1" min="0.1"
                             required>
                     </div>
@@ -165,7 +163,14 @@
     </div>
 </div>
 
+<div id="recipe-products-data" data-json="{{ recipe_products_json | default('[]') | e }}" style="display:none"></div>
 <script>
+    var recipeProducts = [];
+    try {
+        var el = document.getElementById('recipe-products-data');
+        if (el && el.getAttribute('data-json')) recipeProducts = JSON.parse(el.getAttribute('data-json'));
+    } catch (e) { console.warn('recipeProducts parse:', e); }
+
     function quickProduce(recipeId, recipeName) {
         document.getElementById('recipeIdInput').value = recipeId;
         document.getElementById('recipeName').textContent = recipeName;
@@ -174,15 +179,84 @@
     }
 
     function updateRecipeName() {
-        var select = document.getElementById("productSelect");
-        var input = document.getElementById("recipeNameInput");
-        var selectedText = select.options[select.selectedIndex].text;
-
-        if (select.value) {
-            input.value = selectedText;
+        var inp = document.getElementById("productSelectInput");
+        var hid = document.getElementById("productSelectHidden");
+        var nameInput = document.getElementById("recipeNameInput");
+        if (hid && hid.value && inp) {
+            nameInput.value = inp.value;
         } else {
-            input.value = "";
+            nameInput.value = "";
         }
     }
+
+    (function() {
+        var inp = document.getElementById("productSelectInput");
+        var hid = document.getElementById("productSelectHidden");
+        var drop = document.getElementById("productSelectDrop");
+        var nameInput = document.getElementById("recipeNameInput");
+        if (!inp || !drop) return;
+
+        function showList() {
+            var q = (inp.value || "").trim().toLowerCase();
+            var html = "";
+            (recipeProducts || []).forEach(function(p) {
+                var name = (String(p.name || "")).toLowerCase();
+                if (q && name.indexOf(q) === -1) return;
+                var esc = (p.name || '').replace(/"/g, '&quot;');
+                var text = (p.name || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                var unit = (p.unit || 'kg').replace(/"/g, '&quot;');
+                html += '<div class="dropdown-item py-2" style="cursor:pointer" data-id="' + p.id + '" data-name="' + esc + '" data-unit="' + unit + '">' + text + '</div>';
+            });
+            drop.innerHTML = html || '<div class="dropdown-item text-muted">Topilmadi</div>';
+            var rect = inp.getBoundingClientRect();
+            drop.style.display = "block";
+            drop.style.position = "fixed";
+            drop.style.top = rect.bottom + "px";
+            drop.style.left = rect.left + "px";
+            drop.style.width = Math.max(rect.width, 200) + "px";
+            drop.style.minHeight = "40px";
+            drop.querySelectorAll("[data-id]").forEach(function(el) {
+                el.onclick = function() {
+                    hid.value = this.dataset.id;
+                    inp.value = this.dataset.name;
+                    if (nameInput) nameInput.value = this.dataset.name;
+                    var unitSpan = document.getElementById("outputQuantityUnit");
+                    if (unitSpan) unitSpan.textContent = this.dataset.unit || "kg";
+                    drop.style.display = "none";
+                };
+            });
+        }
+
+        inp.addEventListener("focus", function() { showList(); });
+        inp.addEventListener("input", showList);
+        inp.addEventListener("keydown", function(e) {
+            if (e.key === "F4") { e.preventDefault(); showList(); }
+            if (e.key === "Escape") drop.style.display = "none";
+        });
+        document.addEventListener("click", function(e) {
+            if (!inp.contains(e.target) && !drop.contains(e.target)) drop.style.display = "none";
+        });
+
+        document.getElementById("addRecipeModal").addEventListener("show.bs.modal", function() {
+            inp.value = "";
+            hid.value = "";
+            if (nameInput) nameInput.value = "";
+            var unitSpan = document.getElementById("outputQuantityUnit");
+            if (unitSpan) unitSpan.textContent = "kg";
+            drop.style.display = "none";
+        });
+
+        var form = inp.closest("form");
+        if (form) {
+            form.addEventListener("submit", function(e) {
+                if (!hid.value) {
+                    e.preventDefault();
+                    alert("Mahsulot (chiqish)ni tanlang yoki yozib qidiring.");
+                    inp.focus();
+                }
+            });
+        }
+    })();
 </script>
+</div>
 {% endblock %}

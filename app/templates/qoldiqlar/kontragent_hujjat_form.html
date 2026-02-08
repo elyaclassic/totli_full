@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .partner-results { box-shadow: 0 4px 6px rgba(0,0,0,0.1); border: 1px solid #dee2e6; border-radius: 0.25rem; margin-top: 2px; background: white; }
+    .partner-results .list-group-item:hover { background-color: #f8f9fa; cursor: pointer; }
+</style>
+<div class="container-fluid">
+    <div class="mb-3">
+        <a href="/qoldiqlar" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Qoldiqlar</a>
+    </div>
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                {% if doc %}
+                Kontragent qoldiqlari {{ doc.number }} ({{ doc.date.strftime('%d.%m.%Y %H:%M') if doc.date else '-' }})
+                {% else %}
+                Yangi kontragent balans hujjati
+                {% endif %}
+            </h5>
+            {% if doc and doc.status == 'draft' %}
+            <form method="post" action="/qoldiqlar/kontragent/hujjat/{{ doc.id }}/tasdiqlash" class="d-inline">
+                <button type="submit" class="btn btn-success"><i class="bi bi-check-circle"></i> Tasdiqlash</button>
+            </form>
+            {% if current_user and current_user.role == 'admin' %}
+            <form method="post" action="/qoldiqlar/kontragent/hujjat/{{ doc.id }}/delete" class="d-inline" onsubmit="return confirm('Ushbu hujjatni o\'chirmoqchimisiz?');">
+                <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash"></i> O'chirish</button>
+            </form>
+            {% endif %}
+            {% elif doc and doc.status == 'confirmed' and current_user and current_user.role == 'admin' %}
+            <form method="post" action="/qoldiqlar/kontragent/hujjat/{{ doc.id }}/revert" class="d-inline" onsubmit="return confirm('Tasdiqni bekor qilish — kontragent balanslari oldingi qiymatga qaytadi. Davom etasizmi?');">
+                <button type="submit" class="btn btn-warning"><i class="bi bi-arrow-counterclockwise"></i> Tasdiqni bekor qilish</button>
+            </form>
+            {% endif %}
+        </div>
+        <div class="card-body">
+            {% if doc %}
+            <p class="text-muted small mb-2">Foydalanuvchi: {{ doc.user.full_name or doc.user.username if doc.user else '-' }}</p>
+            <p class="small mb-3 text-muted"><strong>Balans:</strong> musbat = mijoz bizga qarzdor (uning qarzi), manfiy = biz unga qarzdormiz (bizning qarzimiz).</p>
+            <h6 class="mb-2">Hujjat qatorlari</h6>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover">
+                    <thead class="table-light">
+                        <tr><th>N</th><th>Kontragent</th><th>Yangi balans (so'm)</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for item in doc.items %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td>{{ item.partner.name if item.partner else '-' }}</td>
+                            <td><strong>{{ "{:,.0f}".format(item.balance or 0) }}</strong></td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="3" class="text-muted">Qatorlar yo'q.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            {% if partners %}
+            <form method="post" action="/qoldiqlar/kontragent/hujjat" id="kontragentDocForm">
+                <p class="text-muted small mb-2">Kontragentni nomi yoki telefon bo'yicha qidiring, tanlang, yangi balansni kiriting va <strong>Qo'shish</strong> bosing. Faqat qo'shilgan qatorlar hujjatga kiritiladi.</p>
+                <p class="small mb-3"><strong>Balans:</strong> turdan qarzdorni tanlang, summani (musbat son) kiriting. Yoki to'g'ridan-to'g'ri manfiy son yozishingiz ham mumkin (bizning qarzimiz).</p>
+                <div class="row g-2 align-items-end mb-3">
+                    <div class="col-md-4 position-relative">
+                        <label class="form-label small">Kontragent</label>
+                        <input type="text" id="partner_search" class="form-control" placeholder="Nomi yoki telefon yozing..." autocomplete="off">
+                        <input type="hidden" id="partner_id_selected" value="">
+                        <div id="partner_results" class="list-group position-absolute" style="z-index:1000; max-height:220px; overflow-y:auto; display:none; left:0; right:0;"></div>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small">Tur</label>
+                        <select id="balance_type" class="form-select form-select-sm">
+                            <option value="1">Uning qarzi</option>
+                            <option value="-1">Bizning qarzimiz</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small">Summa (so'm)</label>
+                        <input type="number" id="partner_balance_input" class="form-control form-control-sm" step="0.01" min="0" value="" placeholder="100000">
+                    </div>
+                    <div class="col-md-2">
+                        <button type="button" id="btn_add_row" class="btn btn-primary w-100"><i class="bi bi-plus-circle"></i> Qo'shish</button>
+                    </div>
+                </div>
+                <select id="partner_list" style="display:none;">
+                    {% for p in partners %}
+                    <option value="{{ p.id }}" data-name="{{ p.name }}" data-phone="{{ p.phone or '' }}">{{ p.name }}{% if p.phone %} — {{ p.phone }}{% endif %}</option>
+                    {% endfor %}
+                </select>
+                <h6 class="mb-2">Qo'shilgan qatorlar</h6>
+                <div class="table-responsive mb-3">
+                    <table class="table table-sm" id="rowsTable">
+                        <thead class="table-light">
+                            <tr><th>N</th><th>Kontragent</th><th>Yangi balans (so'm)</th><th style="width:50px;"></th></tr>
+                        </thead>
+                        <tbody id="rowsTableBody">
+                        </tbody>
+                    </table>
+                </div>
+                <p class="text-muted small mb-2" id="noRowsHint">Hozircha qator qo'shilmagan. Yuqoridan kontragent tanlang va Qo'shish bosing.</p>
+                <button type="submit" class="btn btn-success" id="btnSave"><i class="bi bi-check-circle"></i> Saqlash</button>
+            </form>
+            {% else %}
+            <p class="text-muted mb-0">Kontragentlar yo'q. <a href="/partners">Kontragentlar</a> bo'limida qo'shing.</p>
+            {% endif %}
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var form = document.getElementById('kontragentDocForm');
+    if (!form) return;
+    var partnerSearch = document.getElementById('partner_search');
+    var partnerIdSelected = document.getElementById('partner_id_selected');
+    var partnerResults = document.getElementById('partner_results');
+    var partnerList = document.getElementById('partner_list');
+    var balanceInput = document.getElementById('partner_balance_input');
+    var btnAdd = document.getElementById('btn_add_row');
+    var tbody = document.getElementById('rowsTableBody');
+    var noRowsHint = document.getElementById('noRowsHint');
+    var rowIndex = 0;
+
+    function showPartnerList(term) {
+        term = (term || '').trim().toLowerCase();
+        partnerResults.innerHTML = '';
+        partnerIdSelected.value = '';
+        if (!term) { partnerResults.style.display = 'none'; return; }
+        var opts = Array.from(partnerList.options);
+        var addedIds = [];
+        tbody.querySelectorAll('input[name="partner_id"]').forEach(function(inp) { addedIds.push(inp.value); });
+        var matches = opts.filter(function(opt) {
+            if (addedIds.indexOf(opt.value) !== -1) return false;
+            var name = (opt.dataset.name || '').toLowerCase();
+            var phone = (opt.dataset.phone || '').toLowerCase();
+            return name.indexOf(term) !== -1 || phone.indexOf(term) !== -1;
+        });
+        if (matches.length > 0) {
+            matches.forEach(function(opt) {
+                var a = document.createElement('a');
+                a.href = '#'; a.className = 'list-group-item list-group-item-action';
+                a.textContent = (opt.dataset.name || '') + (opt.dataset.phone ? ' — ' + opt.dataset.phone : '');
+                a.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    partnerSearch.value = opt.dataset.name + (opt.dataset.phone ? ' — ' + opt.dataset.phone : '');
+                    partnerIdSelected.value = opt.value;
+                    partnerResults.style.display = 'none';
+                });
+                partnerResults.appendChild(a);
+            });
+            partnerResults.style.display = 'block';
+        } else {
+            partnerResults.innerHTML = '<div class="list-group-item text-muted">Topilmadi yoki allaqachon qo\'shilgan.</div>';
+            partnerResults.style.display = 'block';
+        }
+    }
+    partnerSearch.addEventListener('focus', function() { if (!partnerIdSelected.value) showPartnerList(this.value); });
+    partnerSearch.addEventListener('input', function() { partnerIdSelected.value = ''; showPartnerList(this.value); });
+    document.addEventListener('click', function(e) {
+        if (partnerResults && !partnerSearch.contains(e.target) && !partnerResults.contains(e.target)) partnerResults.style.display = 'none';
+    });
+
+    btnAdd.addEventListener('click', function() {
+        var pid = partnerIdSelected.value;
+        var name = partnerSearch.value.trim();
+        var typeSelect = document.getElementById('balance_type');
+        var typeMul = typeSelect ? parseInt(typeSelect.value, 10) : 1;
+        var amount = parseFloat(balanceInput.value) || 0;
+        var bal = typeMul === -1 ? -Math.abs(amount) : Math.abs(amount);
+        if (!pid || !name) {
+            alert('Kontragentni ro\'yxatdan tanlang.');
+            return;
+        }
+        if (amount <= 0) {
+            alert('Summani kiriting (0 dan katta).');
+            return;
+        }
+        rowIndex++;
+        var tr = document.createElement('tr');
+        tr.className = 'doc-row';
+        tr.innerHTML = '<td class="row-n">' + rowIndex + '</td><td class="partner-name">' + (name || '-') + '</td><td><input type="hidden" name="partner_id" value="' + pid + '"><input type="number" name="balance" class="form-control form-control-sm" step="0.01" value="' + bal + '" placeholder="0"></td><td><button type="button" class="btn btn-sm btn-outline-danger remove-doc-row"><i class="bi bi-trash"></i></button></td>';
+        tr.querySelector('.remove-doc-row').addEventListener('click', function() {
+            tr.remove();
+            tbody.querySelectorAll('tr.doc-row').forEach(function(r, i) { var n = r.querySelector('.row-n'); if (n) n.textContent = i + 1; });
+            if (tbody.querySelectorAll('tr.doc-row').length === 0) noRowsHint.style.display = 'block';
+        });
+        tbody.appendChild(tr);
+        noRowsHint.style.display = 'none';
+        partnerSearch.value = ''; partnerIdSelected.value = ''; balanceInput.value = '';
+    });
+
+    form.addEventListener('submit', function(e) {
+        if (tbody.querySelectorAll('tr.doc-row').length === 0) {
+            e.preventDefault();
+            alert('Kamida bitta kontragent qo\'shing.');
+        }
+    });
+})();
+</script>
+{% endblock %}

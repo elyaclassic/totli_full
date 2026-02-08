@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% set _stages = recipe_stages if recipe_stages is defined else [] %}
 <div class="d-flex justify-content-between mb-4">
     <div>
         <a href="/production/recipes" class="btn btn-outline-secondary btn-sm mb-2">
@@ -11,6 +12,32 @@
     <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#produceModal">
         <i class="bi bi-play-fill"></i> Ishlab chiqarish
     </button>
+</div>
+
+<!-- Bosqichlar — sarlavha ostida -->
+<div class="card mb-4 border-primary">
+    <div class="card-header bg-primary bg-opacity-10 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span class="text-primary"><i class="bi bi-list-ol"></i> <strong>Bosqichlar</strong> — ishlab chiqarish bosqichlarini retseptga bog'lash</span>
+        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addStageModal">
+            <i class="bi bi-plus-lg"></i> Bosqich qo'shish
+        </button>
+    </div>
+    <div class="card-body p-0">
+        {% if _stages %}
+        <ul class="list-group list-group-flush list-group-horizontal flex-wrap">
+            {% for s in _stages %}
+            <li class="list-group-item d-flex justify-content-between align-items-center flex-grow-1">
+                <span><span class="badge bg-primary rounded-pill me-2">{{ s.stage_number }}</span> {{ s.name }}</span>
+                <form method="POST" action="/production/recipes/{{ recipe.id }}/delete-stage/{{ s.id }}" style="display: inline;" onsubmit="return confirm('Ushbu bosqichni o\u2019chirmoqchimisiz?');">
+                    <button type="submit" class="btn btn-sm btn-outline-danger" title="O'chirish"><i class="bi bi-trash"></i></button>
+                </form>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-muted mb-0 p-3">Bosqichlar hali qo'shilmagan. <strong>«Bosqich qo'shish»</strong> tugmasini bosing.</p>
+        {% endif %}
+    </div>
 </div>
 
 <div class="row">
@@ -121,8 +148,18 @@
                     {% if recipe.items %}
                     <tfoot class="table-light">
                         <tr>
-                            <td colspan="4" class="text-end"><strong>Jami:</strong></td>
-                            <td colspan="2">
+                            <td colspan="2" class="text-end"><strong>Jami:</strong></td>
+                            <td>
+                                <strong>
+                                    {% set total_qty = namespace(value=0) %}
+                                    {% for item in recipe.items %}
+                                        {% set total_qty.value = total_qty.value + item.quantity %}
+                                    {% endfor %}
+                                    {{ "%.3f"|format(total_qty.value) }} kg
+                                </strong>
+                            </td>
+                            <td></td>
+                            <td>
                                 <strong class="text-primary">
                                     {% set total = namespace(value=0) %}
                                     {% for item in recipe.items %}
@@ -133,6 +170,7 @@
                                     {{ "{:,.0f}".format(total.value) }} so'm
                                 </strong>
                             </td>
+                            <td></td>
                         </tr>
                     </tfoot>
                     {% endif %}
@@ -152,18 +190,15 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="mb-3">
+                    <div class="mb-3 position-relative">
                         <label class="form-label">Xom ashyo</label>
-                        <select class="form-select" name="product_id" id="edit_product_id" required>
-                            <option value="">Tanlang...</option>
-                            {% for m in materials %}
-                            <option value="{{ m.id }}">{{ m.name }} ({{ m.code }})</option>
-                            {% endfor %}
-                        </select>
+                        <input type="text" class="form-control" id="edit_product_search" placeholder="Yozib qidiring..." autocomplete="off">
+                        <input type="hidden" name="product_id" id="edit_product_id" required>
+                        <div id="edit_product_dropdown" class="list-group position-absolute w-100 mt-1 shadow" style="max-height: 220px; overflow-y: auto; z-index: 1050; display: none;"></div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Miqdor (kg)</label>
-                        <input type="number" class="form-control" name="quantity" id="edit_quantity" step="0.001" min="0.001" required>
+                        <input type="text" inputmode="decimal" class="form-control" name="quantity" id="edit_quantity" placeholder="0.001" required>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -179,24 +214,21 @@
 <div class="modal fade" id="addItemModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="POST" action="/production/recipes/{{ recipe.id }}/add-item">
+            <form method="POST" action="/production/recipes/{{ recipe.id }}/add-item" id="addItemForm">
                 <div class="modal-header">
                     <h5 class="modal-title">Xom ashyo qo'shish</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="mb-3">
+                    <div class="mb-3 position-relative">
                         <label class="form-label">Xom ashyo</label>
-                        <select class="form-select" name="product_id" required>
-                            <option value="">Tanlang...</option>
-                            {% for m in materials %}
-                            <option value="{{ m.id }}">{{ m.name }} ({{ m.code }})</option>
-                            {% endfor %}
-                        </select>
+                        <input type="text" class="form-control" id="add_product_search" placeholder="Yozib qidiring..." autocomplete="off">
+                        <input type="hidden" name="product_id" id="add_product_id" required>
+                        <div id="add_product_dropdown" class="list-group position-absolute w-100 mt-1 shadow" style="max-height: 220px; overflow-y: auto; z-index: 1050; display: none;"></div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Miqdor (kg)</label>
-                        <input type="number" class="form-control" name="quantity" step="0.001" min="0.001" required>
+                        <input type="text" inputmode="decimal" class="form-control" name="quantity" id="add_quantity" placeholder="0.001" required>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -209,13 +241,198 @@
 </div>
 
 <script>
-function editItem(itemId, productId, quantity) {
-    document.getElementById('editItemForm').action = '/production/recipes/{{ recipe.id }}/edit-item/' + itemId;
-    document.getElementById('edit_product_id').value = productId || '';
-    document.getElementById('edit_quantity').value = quantity || '';
-    new bootstrap.Modal(document.getElementById('editItemModal')).show();
-}
+(function() {
+    var materials = [
+        {% for m in materials %}
+        { "id": {{ m.id }}, "name": "{{ (m.name or '')|e }}", "code": "{{ (m.code or '')|e }}" }{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ];
+    materials.forEach(function(m) { m.label = m.name + ' (' + (m.code || '') + ')'; });
+
+    function filterMaterials(q) {
+        q = (q || '').trim().toLowerCase();
+        if (!q) return materials;
+        return materials.filter(function(m) {
+            return (m.name && m.name.toLowerCase().indexOf(q) >= 0) ||
+                   (m.code && m.code.toLowerCase().indexOf(q) >= 0);
+        });
+    }
+
+    function decodeHtmlEntities(s) {
+        if (!s) return s;
+        var t = document.createElement('textarea');
+        t.innerHTML = s;
+        return t.value;
+    }
+    var addState = { list: [], onSelect: null, index: 0 };
+    var editState = { list: [], onSelect: null, index: 0 };
+
+    function setDropdownHighlight(container, index) {
+        var items = container.children;
+        for (var i = 0; i < items.length; i++) items[i].classList.toggle('active', i === index);
+        if (items[index]) items[index].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+
+    function renderDropdown(container, list, onSelect, state) {
+        container.innerHTML = '';
+        if (list.length === 0) {
+            container.style.display = 'none';
+            return;
+        }
+        state.list = list;
+        state.onSelect = onSelect;
+        state.index = 0;
+        list.forEach(function(m, i) {
+            var a = document.createElement('a');
+            a.href = '#';
+            a.className = 'list-group-item list-group-item-action' + (i === 0 ? ' active' : '');
+            a.textContent = decodeHtmlEntities(m.label);
+            a.addEventListener('click', function(e) {
+                e.preventDefault();
+                onSelect(m);
+            });
+            container.appendChild(a);
+        });
+        container.style.display = 'block';
+    }
+
+    var addSearch = document.getElementById('add_product_search');
+    var addId = document.getElementById('add_product_id');
+    var addDrop = document.getElementById('add_product_dropdown');
+
+    function addSelect(m) {
+        addId.value = m.id;
+        addSearch.value = decodeHtmlEntities(m.label);
+        addDrop.style.display = 'none';
+    }
+    addSearch.addEventListener('input', function() {
+        var list = filterMaterials(this.value);
+        renderDropdown(addDrop, list.slice(0, 50), addSelect, addState);
+    });
+    addSearch.addEventListener('focus', function() {
+        if (!addId.value) renderDropdown(addDrop, materials.slice(0, 30), addSelect, addState);
+    });
+    addSearch.addEventListener('keydown', function(e) {
+        if (addDrop.style.display === 'none' || !addState.list.length) return;
+        if (e.key === 'ArrowDown') {
+            addState.index = (addState.index + 1) % addState.list.length;
+            setDropdownHighlight(addDrop, addState.index);
+            e.preventDefault();
+        } else if (e.key === 'ArrowUp') {
+            addState.index = (addState.index - 1 + addState.list.length) % addState.list.length;
+            setDropdownHighlight(addDrop, addState.index);
+            e.preventDefault();
+        } else if (e.key === 'Enter') {
+            addSelect(addState.list[addState.index]);
+            e.preventDefault();
+        } else if (e.key === 'Escape') {
+            addDrop.style.display = 'none';
+            e.preventDefault();
+        }
+    });
+    document.addEventListener('click', function(e) {
+        if (!addSearch.contains(e.target) && !addDrop.contains(e.target)) addDrop.style.display = 'none';
+    });
+
+    document.getElementById('addItemModal').addEventListener('show.bs.modal', function() {
+        addSearch.value = '';
+        addId.value = '';
+        addDrop.style.display = 'none';
+    });
+    document.getElementById('addItemForm').addEventListener('submit', function() {
+        if (!addId.value) {
+            alert('Xom ashyoni tanlang yoki yozib qidiring.');
+            return false;
+        }
+    });
+
+    function fixQuantityInput(el) {
+        var v = (el.value || '').replace(',', '.');
+        if (v.charAt(0) === '.') v = '0' + v;
+        v = v.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
+        if (v !== el.value) el.value = v;
+    }
+    document.getElementById('add_quantity').addEventListener('input', function() { fixQuantityInput(this); });
+    document.getElementById('edit_quantity').addEventListener('input', function() { fixQuantityInput(this); });
+
+    var editSearch = document.getElementById('edit_product_search');
+    var editId = document.getElementById('edit_product_id');
+    var editDrop = document.getElementById('edit_product_dropdown');
+
+    function editSelect(m) {
+        editId.value = m.id;
+        editSearch.value = decodeHtmlEntities(m.label);
+        editDrop.style.display = 'none';
+    }
+    editSearch.addEventListener('input', function() {
+        var list = filterMaterials(this.value);
+        renderDropdown(editDrop, list.slice(0, 50), editSelect, editState);
+    });
+    editSearch.addEventListener('focus', function() {
+        if (!editId.value) renderDropdown(editDrop, materials.slice(0, 30), editSelect, editState);
+    });
+    editSearch.addEventListener('keydown', function(e) {
+        if (editDrop.style.display === 'none' || !editState.list.length) return;
+        if (e.key === 'ArrowDown') {
+            editState.index = (editState.index + 1) % editState.list.length;
+            setDropdownHighlight(editDrop, editState.index);
+            e.preventDefault();
+        } else if (e.key === 'ArrowUp') {
+            editState.index = (editState.index - 1 + editState.list.length) % editState.list.length;
+            setDropdownHighlight(editDrop, editState.index);
+            e.preventDefault();
+        } else if (e.key === 'Enter') {
+            editSelect(editState.list[editState.index]);
+            e.preventDefault();
+        } else if (e.key === 'Escape') {
+            editDrop.style.display = 'none';
+            e.preventDefault();
+        }
+    });
+    document.addEventListener('click', function(e) {
+        if (!editSearch.contains(e.target) && !editDrop.contains(e.target)) editDrop.style.display = 'none';
+    });
+
+    function editItem(itemId, productId, quantity) {
+        document.getElementById('editItemForm').action = '/production/recipes/{{ recipe.id }}/edit-item/' + itemId;
+        editId.value = productId || '';
+        document.getElementById('edit_quantity').value = quantity || '';
+        var m = materials.filter(function(x) { return x.id == productId; })[0];
+        editSearch.value = m ? decodeHtmlEntities(m.label) : '';
+        editDrop.style.display = 'none';
+        new bootstrap.Modal(document.getElementById('editItemModal')).show();
+    }
+    window.editItem = editItem;
+})();
 </script>
+
+<!-- Bosqich qo'shish modal -->
+<div class="modal fade" id="addStageModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="/production/recipes/{{ recipe.id }}/add-stage">
+                <div class="modal-header">
+                    <h5 class="modal-title">Bosqich qo'shish</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label" for="add_stage_number">Tartib raqami</label>
+                        <input id="add_stage_number" type="number" class="form-control" name="stage_number" value="{{ (_stages|length + 1) if _stages else 1 }}" min="1" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="add_stage_name">Bosqich nomi</label>
+                        <input id="add_stage_name" type="text" class="form-control" name="name" placeholder="Masalan: Qiyom tayyorlash, Holva kesish, Qadoqlash" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Bekor</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-plus"></i> Qo'shish</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 
 <!-- Ishlab chiqarish modal -->
 <div class="modal fade" id="produceModal" tabindex="-1">
@@ -230,12 +447,13 @@ function editItem(itemId, productId, quantity) {
                     <input type="hidden" name="recipe_id" value="{{ recipe.id }}">
                     <input type="hidden" name="warehouse_id" value="1">
                     <div class="mb-3">
-                        <label class="form-label">Miqdor (kg)</label>
-                        <input type="number" class="form-control" name="quantity" value="10" step="0.1" min="0.1" required>
+                        {% set _unit = recipe.product.unit.code if recipe.product and recipe.product.unit else 'kg' %}
+                        <label class="form-label" for="produce_quantity">Miqdor ({{ _unit }})</label>
+                        <input id="produce_quantity" type="number" class="form-control" name="quantity" value="10" step="{{ '1' if _unit == 'dona' else '0.01' }}" min="{{ '1' if _unit == 'dona' else '0.01' }}" required>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Izoh</label>
-                        <textarea class="form-control" name="note" rows="2"></textarea>
+                        <label class="form-label" for="produce_note">Izoh</label>
+                        <textarea id="produce_note" class="form-control" name="note" rows="2"></textarea>
                     </div>
                 </div>
                 <div class="modal-footer">

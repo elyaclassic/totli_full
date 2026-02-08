@@ -7,69 +7,63 @@
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 {% endif %}
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-cart3"></i> Sotuvlar ro'yxati</span>
-                <a href="/sales/new" class="btn btn-success">
-                    <i class="bi bi-plus-circle"></i> Yangi sotuv
-                </a>
-            </div>
-            <div class="card-body p-0">
-                <table class="table table-hover">
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0"><i class="bi bi-cart3"></i> Sotuvlar</h4>
+        <a href="/sales/new" class="btn btn-success"><i class="bi bi-plus-circle"></i> Yaratish</a>
+    </div>
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
                     <thead class="table-light">
                         <tr>
-                            <th width="50">#</th>
+                            <th>№</th>
                             <th>Hujjat №</th>
                             <th>Sana</th>
                             <th>Mijoz</th>
                             <th>Ombor</th>
                             <th>Summa</th>
                             <th>Holat</th>
-                            <th width="100">Amallar</th>
+                            <th></th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% if orders %}
-                            {% for order in orders %}
-                            <tr>
-                                <td>{{ loop.index }}</td>
-                                <td><code>{{ order.number }}</code></td>
-                                <td>{{ order.date.strftime('%d.%m.%Y %H:%M') }}</td>
-                                <td>{{ order.partner.name if order.partner else '-' }}</td>
-                                <td>{{ order.warehouse.name if order.warehouse else '-' }}</td>
-                                <td class="text-success fw-bold">{{ "{:,.0f}".format(order.total) }}</td>
-                                <td>
-                                    {% if order.status == 'completed' %}
-                                        <span class="badge bg-success">Bajarildi</span>
-                                    {% elif order.status == 'draft' %}
-                                        <span class="badge bg-warning">Qoralama</span>
-                                    {% else %}
-                                        <span class="badge bg-secondary">{{ order.status }}</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    <a href="/sales/edit/{{ order.id }}" class="btn btn-sm btn-outline-primary" title="Ko'rish">
-                                        <i class="bi bi-eye"></i>
-                                    </a>
-                                    {% if order.status == 'draft' %}
-                                    <form method="POST" action="/sales/delete/{{ order.id }}" style="display:inline;" onsubmit="return confirm('Ushbu sotuvni bekor qilmoqchimisiz?');">
-                                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Bekor qilish"><i class="bi bi-trash"></i></button>
-                                    </form>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% endfor %}
+                        {% for order in orders %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td><a href="/sales/edit/{{ order.id }}">{{ order.number }}</a></td>
+                            <td>{{ order.date.strftime('%d.%m.%Y %H:%M') if order.date else '-' }}</td>
+                            <td>{{ order.partner.name if order.partner else '-' }}</td>
+                            <td>{{ order.warehouse.name if order.warehouse else '-' }}</td>
+                            <td class="fw-bold">{{ "{:,.0f}".format(order.total or 0) }} so'm</td>
+                            <td>
+                                {% if order.status == 'completed' %}
+                                <span class="badge bg-success">Bajarildi</span>
+                                {% elif order.status == 'draft' %}
+                                <span class="badge bg-warning text-dark">Qoralama</span>
+                                {% else %}
+                                <span class="badge bg-secondary">{{ order.status }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <a href="/sales/edit/{{ order.id }}" class="btn btn-sm btn-outline-primary">Ochish</a>
+                                {% if order.status == 'completed' and current_user and current_user.role == 'admin' %}
+                                <form method="POST" action="/sales/{{ order.id }}/revert" class="d-inline" onsubmit="return confirm('Tasdiqni bekor qilish — ombor qoldig\'i qaytadi. Davom etasizmi?');">
+                                    <button type="submit" class="btn btn-sm btn-outline-warning" title="Tasdiqni bekor qilish"><i class="bi bi-arrow-counterclockwise"></i></button>
+                                </form>
+                                {% elif order.status == 'draft' and current_user and current_user.role == 'admin' %}
+                                <form method="POST" action="/sales/delete/{{ order.id }}" class="d-inline" onsubmit="return confirm('Ushbu sotuvni o\'chirmoqchimisiz?');">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="O'chirish"><i class="bi bi-trash"></i></button>
+                                </form>
+                                {% endif %}
+                            </td>
+                        </tr>
                         {% else %}
-                            <tr>
-                                <td colspan="8" class="text-center text-muted py-5">
-                                    <i class="bi bi-cart-x fs-1 d-block mb-2"></i>
-                                    Hozircha sotuvlar yo'q<br>
-                                    <small>Yuqoridagi "Yangi sotuv" tugmasini bosing</small>
-                                </td>
-                            </tr>
-                        {% endif %}
+                        <tr>
+                            <td colspan="8" class="text-muted text-center py-4">Hozircha sotuvlar yo'q. <a href="/sales/new">Yangi sotuv yaratish</a></td>
+                        </tr>
+                        {% endfor %}
                     </tbody>
                 </table>
             </div>

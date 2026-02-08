@@ -2,33 +2,27 @@
 
 {% block content %}
 <div class="container-fluid">
-    <div class="row mb-3">
-        <div class="col-12">
-            <div class="d-flex justify-content-between align-items-center">
-                <h4><i class="bi bi-cash-stack"></i> Kassalar</h4>
-                <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addCashModal">
-                    <i class="bi bi-plus-circle"></i> Yangi kassa
-                </button>
-            </div>
-        </div>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0"><i class="bi bi-cash-stack"></i> Kassalar</h4>
+        <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addCashModal"><i class="bi bi-plus-circle"></i> Yaratish</button>
     </div>
 
     <div class="card">
-        <div class="card-body">
-            <table class="table table-hover">
-                <thead class="table-light">
-                    <tr>
-                        <th width="50">#</th>
-                        <th>Nomi</th>
-                        <th>Balans</th>
-                        <th>Holati</th>
-                        <th width="100">Amallar</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% if cash_registers %}
-                    {% for cash in cash_registers %}
-                    <tr>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>#</th>
+                            <th>Nomi</th>
+                            <th>Balans</th>
+                            <th>Holati</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for cash in cash_registers %}
+                        <tr>
                         <td>{{ cash.id }}</td>
                         <td><strong>{{ cash.name }}</strong></td>
                         <td>
@@ -53,19 +47,15 @@
                                 <i class="bi bi-trash"></i>
                             </button>
                         </td>
-                    </tr>
-                    {% endfor %}
-                    {% else %}
-                    <tr>
-                        <td colspan="5" class="text-center text-muted py-5">
-                            <i class="bi bi-cash-stack fs-1 d-block mb-2"></i>
-                            Hozircha kassalar yo'q<br>
-                            <small>Yuqoridagi "Yangi kassa" tugmasini bosing</small>
-                        </td>
-                    </tr>
-                    {% endif %}
-                </tbody>
-            </table>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" class="text-muted text-center py-4">Hozircha kassalar yo'q. Yangi kassa qo'shish uchun yuqoridagi Yaratish tugmasini bosing.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -202,6 +192,12 @@
             var form = document.createElement('form');
             form.method = 'POST';
             form.action = '/info/cash/delete/' + id;
+            var csrfInput = document.createElement('input');
+            csrfInput.type = 'hidden';
+            csrfInput.name = 'csrf_token';
+            var meta = document.querySelector('meta[name="csrf-token"]');
+            csrfInput.value = meta ? meta.getAttribute('content') : '';
+            form.appendChild(csrfInput);
             document.body.appendChild(form);
             form.submit();
         }

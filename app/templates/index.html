@@ -8,9 +8,12 @@
 </div>
 {% endif %}
 {% if error == "csrf" %}
-<div class="alert alert-danger alert-dismissible fade show" role="alert">
-    Xavfsizlik xatosi: sahifa muddati tugagan. Sahifani yangilab (F5) qayta urinib ko'ring.
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+<div class="alert alert-danger alert-dismissible fade show d-flex align-items-center flex-wrap gap-2" role="alert">
+    <span>Xavfsizlik xatosi: sahifa muddati tugagan.</span>
+    <span>Sahifani yangilang (F5) yoki qayta kiring:</span>
+    <a href="/" class="btn btn-sm btn-outline-danger">Sahifani yangilash</a>
+    <a href="/login" class="btn btn-sm btn-danger">Qayta kirish</a>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Yopish"></button>
 </div>
 {% endif %}
 {% if error and error != "admin_required" and error != "csrf" %}
@@ -120,10 +123,17 @@
                         </a>
                     </div>
                     <div class="col">
+                        <a href="/purchases" class="btn w-100 py-3"
+                            style="background-color: #017449; color: white; min-height: 100px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                            <i class="bi bi-box-arrow-in-down fs-4 d-block mb-2"></i>
+                            <span style="font-size: 14px; white-space: nowrap;">Ombor kirimi</span>
+                        </a>
+                    </div>
+                    <div class="col">
                         <a href="/warehouse/movement" class="btn w-100 py-3"
                             style="background-color: #017449; color: white; min-height: 100px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
                             <i class="bi bi-arrow-left-right fs-4 d-block mb-2"></i>
-                            <span style="font-size: 14px; white-space: nowrap;">Ombor kirimi</span>
+                            <span style="font-size: 14px; white-space: nowrap;">Ombordan omborga</span>
                         </a>
                     </div>
                     <div class="col">

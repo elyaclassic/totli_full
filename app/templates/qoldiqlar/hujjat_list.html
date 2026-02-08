@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <a href="/qoldiqlar" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Qoldiqlar</a>
+            <h4 class="mb-0 mt-2"><i class="bi bi-file-earmark-text"></i> Tovar qoldiqlari hujjatlari</h4>
+        </div>
+        <a href="/qoldiqlar/tovar/hujjat/new" class="btn btn-success"><i class="bi bi-plus-circle"></i> Yaratish</a>
+    </div>
+
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>№</th>
+                            <th>Sana</th>
+                            <th>Foydalanuvchi</th>
+                            <th>Jami summa tannarx (so'm)</th>
+                            <th>Jami sotuv (so'm)</th>
+                            <th>Holat</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for d in docs %}
+                        <tr>
+                            <td><a href="/qoldiqlar/tovar/hujjat/{{ d.id }}">{{ d.number }}</a></td>
+                            <td>{{ d.date.strftime('%d.%m.%Y %H:%M') if d.date else '-' }}</td>
+                            <td>{{ d.user.full_name or d.user.username if d.user else '-' }}</td>
+                            <td>{{ "{:,.0f}".format(d.total_tannarx or 0) }}</td>
+                            <td>{{ "{:,.0f}".format(d.total_sotuv or 0) }}</td>
+                            <td>
+                                {% if d.status == 'draft' %}
+                                <span class="badge bg-warning text-dark">Qoralama</span>
+                                {% else %}
+                                <span class="badge bg-success">Tasdiqlangan</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <a href="/qoldiqlar/tovar/hujjat/{{ d.id }}" class="btn btn-sm btn-outline-primary">Ochish</a>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="7" class="text-muted text-center py-4">Hujjatlar yo'q. <a href="/qoldiqlar/tovar/hujjat/new">Yangi hujjat yaratish</a></td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

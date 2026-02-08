@@ -36,11 +36,13 @@ class Purchase(Base):
     partner_id = Column(Integer, ForeignKey("partners.id"), nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     total = Column(Float, default=0)
+    total_expenses = Column(Float, default=0)  # Xarajatlar jami (so'm)
     status = Column(String(20), default="draft")
     note = Column(Text)
     created_at = Column(DateTime, default=datetime.now)
 
     items = relationship("PurchaseItem", back_populates="purchase")
+    expenses = relationship("PurchaseExpense", back_populates="purchase")
     partner = relationship("Partner")
     warehouse = relationship("Warehouse")
 
@@ -56,6 +58,17 @@ class PurchaseItem(Base):
     purchase = relationship("Purchase", back_populates="items")
     product = relationship("Product")
 
+
+class PurchaseExpense(Base):
+    """Tovar kirimi xarajatlari"""
+    __tablename__ = "purchase_expenses"
+    id = Column(Integer, primary_key=True, index=True)
+    purchase_id = Column(Integer, ForeignKey("purchases.id"))
+    name = Column(String(200))   # Xarajat turi/nomi (yo'l, yuk, boj, ...)
+    amount = Column(Float)       # Summa (so'm)
+    created_at = Column(DateTime, default=datetime.now)
+
+    purchase = relationship("Purchase", back_populates="expenses")
 
 
 # ==========================================
@@ -185,6 +198,135 @@ class Stock(Base):
     product = relationship("Product", back_populates="stock_items")
 
 
+class WarehouseTransfer(Base):
+    """Ombordan omborga o'tkazish hujjati"""
+    __tablename__ = "warehouse_transfers"
+    id = Column(Integer, primary_key=True, index=True)
+    number = Column(String(50), unique=True, index=True)
+    date = Column(DateTime, default=datetime.now)
+    from_warehouse_id = Column(Integer, ForeignKey("warehouses.id"), nullable=False)
+    to_warehouse_id = Column(Integer, ForeignKey("warehouses.id"), nullable=False)
+    status = Column(String(20), default="draft")  # draft, confirmed
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    note = Column(Text)
+    created_at = Column(DateTime, default=datetime.now)
+
+    from_warehouse = relationship("Warehouse", foreign_keys=[from_warehouse_id])
+    to_warehouse = relationship("Warehouse", foreign_keys=[to_warehouse_id])
+    user = relationship("User", foreign_keys=[user_id])
+    items = relationship("WarehouseTransferItem", back_populates="transfer", cascade="all, delete-orphan")
+
+
+class WarehouseTransferItem(Base):
+    """Ombordan omborga o'tkazish hujjati qatori"""
+    __tablename__ = "warehouse_transfer_items"
+    id = Column(Integer, primary_key=True, index=True)
+    transfer_id = Column(Integer, ForeignKey("warehouse_transfers.id"), nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    quantity = Column(Float, default=0)
+
+    transfer = relationship("WarehouseTransfer", back_populates="items")
+    product = relationship("Product")
+
+
+# ==========================================
+# TOVAR QOLDIQ HUJJATI (1C uslubida)
+# ==========================================
+
+class StockAdjustmentDoc(Base):
+    """Tovar qoldiqlari hujjati (bitta hujjat — bir nechta qator)"""
+    __tablename__ = "stock_adjustment_docs"
+    id = Column(Integer, primary_key=True, index=True)
+    number = Column(String(50), unique=True, index=True)
+    date = Column(DateTime, default=datetime.now)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    status = Column(String(20), default="draft")  # draft, confirmed
+    total_tannarx = Column(Float, default=0)   # Jami summa tannarx (so'm)
+    total_sotuv = Column(Float, default=0)     # Jami sotuv summa (so'm)
+    created_at = Column(DateTime, default=datetime.now)
+
+    user = relationship("User")
+    items = relationship("StockAdjustmentDocItem", back_populates="doc", cascade="all, delete-orphan")
+
+
+class StockAdjustmentDocItem(Base):
+    """Tovar qoldiq hujjati qatori"""
+    __tablename__ = "stock_adjustment_doc_items"
+    id = Column(Integer, primary_key=True, index=True)
+    doc_id = Column(Integer, ForeignKey("stock_adjustment_docs.id"))
+    product_id = Column(Integer, ForeignKey("products.id"))
+    warehouse_id = Column(Integer, ForeignKey("warehouses.id"))
+    quantity = Column(Float)
+    cost_price = Column(Float, default=0)   # Tannarx (so'm)
+    sale_price = Column(Float, default=0)     # Sotuv narxi (so'm)
+
+    doc = relationship("StockAdjustmentDoc", back_populates="items")
+    product = relationship("Product")
+    warehouse = relationship("Warehouse")
+
+
+# ==========================================
+# KASSA QOLDIQ HUJJATI (1C uslubida)
+# ==========================================
+
+class CashBalanceDoc(Base):
+    """Kassa qoldiqlari hujjati"""
+    __tablename__ = "cash_balance_docs"
+    id = Column(Integer, primary_key=True, index=True)
+    number = Column(String(50), unique=True, index=True)
+    date = Column(DateTime, default=datetime.now)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    status = Column(String(20), default="draft")  # draft, confirmed
+    created_at = Column(DateTime, default=datetime.now)
+
+    user = relationship("User")
+    items = relationship("CashBalanceDocItem", back_populates="doc", cascade="all, delete-orphan")
+
+
+class CashBalanceDocItem(Base):
+    """Kassa qoldiq hujjati qatori — bitta kassa, yangi balans"""
+    __tablename__ = "cash_balance_doc_items"
+    id = Column(Integer, primary_key=True, index=True)
+    doc_id = Column(Integer, ForeignKey("cash_balance_docs.id"))
+    cash_register_id = Column(Integer, ForeignKey("cash_registers.id"))
+    balance = Column(Float, default=0)
+    previous_balance = Column(Float, default=None)  # Tasdiqdan oldingi balans (revert uchun)
+
+    doc = relationship("CashBalanceDoc", back_populates="items")
+    cash_register = relationship("CashRegister")
+
+
+# ==========================================
+# KONTRAGENT QOLDIQ HUJJATI (1C uslubida)
+# ==========================================
+
+class PartnerBalanceDoc(Base):
+    """Kontragent qoldiqlari (balans) hujjati"""
+    __tablename__ = "partner_balance_docs"
+    id = Column(Integer, primary_key=True, index=True)
+    number = Column(String(50), unique=True, index=True)
+    date = Column(DateTime, default=datetime.now)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    status = Column(String(20), default="draft")  # draft, confirmed
+    created_at = Column(DateTime, default=datetime.now)
+
+    user = relationship("User")
+    items = relationship("PartnerBalanceDocItem", back_populates="doc", cascade="all, delete-orphan")
+
+
+class PartnerBalanceDocItem(Base):
+    """Kontragent balans hujjati qatori"""
+    __tablename__ = "partner_balance_doc_items"
+    id = Column(Integer, primary_key=True, index=True)
+    doc_id = Column(Integer, ForeignKey("partner_balance_docs.id"))
+    partner_id = Column(Integer, ForeignKey("partners.id"))
+    balance = Column(Float, default=0)
+    previous_balance = Column(Float, default=None)  # Tasdiqdan oldingi balans (revert uchun)
+
+    doc = relationship("PartnerBalanceDoc", back_populates="items")
+    partner = relationship("Partner")
+
+
 # ==========================================
 # ISHLAB CHIQARISH
 # ==========================================
@@ -202,6 +344,20 @@ class Recipe(Base):
     
     product = relationship("Product")
     items = relationship("RecipeItem", back_populates="recipe")
+    stages = relationship("RecipeStage", back_populates="recipe", order_by="RecipeStage.stage_number", cascade="all, delete-orphan")
+
+
+class RecipeStage(Base):
+    """Retseptga bog'langan ishlab chiqarish bosqichlari"""
+    __tablename__ = "recipe_stages"
+    __table_args__ = (UniqueConstraint("recipe_id", "stage_number", name="uq_recipe_stage_number"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=False)
+    stage_number = Column(Integer, nullable=False)
+    name = Column(String(200), nullable=False)
+
+    recipe = relationship("Recipe", back_populates="stages")
 
 
 class RecipeItem(Base):
@@ -229,7 +385,8 @@ class Production(Base):
     output_warehouse_id = Column(Integer, ForeignKey("warehouses.id"), nullable=True)  # 2-ombor: yarim tayyor ombori (mahsulot shu yerga yoziladi)
     quantity = Column(Float)  # Ishlab chiqarilgan miqdor (o'zgarmaydi)
     status = Column(String(20), default="draft")  # draft, in_progress, completed, cancelled
-    current_stage = Column(Integer, default=1)  # 1–4: qiyom, hamir, sovutish_kesish, qadoqlash
+    current_stage = Column(Integer, default=1)  # joriy bosqich (1 dan max_stage gacha)
+    max_stage = Column(Integer, nullable=True)   # retseptdagi bosqichlar soni (yoki 4)
     user_id = Column(Integer, ForeignKey("users.id"))
     machine_id = Column(Integer, ForeignKey("machines.id"), nullable=True)  # Qaysi uskunda (oxirgi bosqich)
     operator_id = Column(Integer, ForeignKey("employees.id"), nullable=True)  # Operator (xodim)
@@ -258,11 +415,11 @@ class ProductionItem(Base):
     product = relationship("Product")
 
 
-# Ishlab chiqarish 4 bosqichi: 1) qiyom tayyorlash 2) hamir qorish (qo'shimchalar) 3) sovutish va kesish 4) qadoqlash
+# Ishlab chiqarish 4 bosqichi: 1) qiyom 2) qiyomga qo'shimchalar → yarim tayyor 3) holva kesish 4) qadoqlash
 PRODUCTION_STAGE_NAMES = {
     1: "Qiyom tayyorlash",
-    2: "Yarim tayyor qiyomni hamir qorish, qo'shimchalar",
-    3: "Hamirni sovutish va kesish",
+    2: "Qiyomga qo'shiladigan mahsulotlar, yarim tayyor",
+    3: "Holva kesish",
     4: "Qadoqlash",
 }
 

@@ -1,131 +1,183 @@
 {% extends "base.html" %}
 
 {% block content %}
+<style>
+/* 1C uslubi: ixcham forma */
+.form-1c { max-width: 700px; }
+.form-1c .form-row { display: flex; align-items: center; border-bottom: 1px solid #dee2e6; min-height: 32px; }
+.form-1c .form-row .label { width: 180px; flex-shrink: 0; padding: 4px 8px; font-size: 13px; color: #495057; }
+.form-1c .form-row .field { flex: 1; padding: 2px 4px; }
+.form-1c .form-row .field input.form-control,
+.form-1c .form-row .field select.form-select { border: 1px solid #ced4da; border-radius: 2px; padding: 4px 6px; font-size: 13px; height: 28px; }
+.form-1c .form-row .field input.form-control:focus { outline: 1px solid #0d6efd; }
+.combo-drop { position: absolute; left: 0; right: 0; top: 100%; z-index: 1000; max-height: 220px; overflow-y: auto; background: #fff; border: 1px solid #ced4da; box-shadow: 0 4px 12px rgba(0,0,0,0.15); margin-top: 1px; }
+.combo-drop .combo-item { padding: 6px 8px; font-size: 13px; cursor: pointer; border-bottom: 1px solid #f0f0f0; }
+.combo-drop .combo-item:hover { background: #e7f1ff; }
+.combo-wrap { position: relative; }
+</style>
+
 <div class="container-fluid">
-    <div class="row mb-3">
+    <div class="row mb-2">
         <div class="col-12">
-            <h4 class="mb-0"><i class="bi bi-arrow-left-right"></i> Ombor harakati</h4>
-            <p class="text-muted mb-0 small">So'nggi kirimlar, sotuvlar va ishlab chiqarish</p>
+            <h5 class="mb-0">Ombordan omborga o'tkazish</h5>
+            <p class="text-muted mb-0 small">Bir ombordagi mahsulotni boshqa omborga ko'chiring</p>
         </div>
     </div>
+    {% if request.query_params.get('success') %}
+    <div class="alert alert-success alert-dismissible fade show py-2" role="alert">
+        <i class="bi bi-check-circle"></i> O'tkazish muvaffaqiyatli amalga oshirildi.
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+    {% if request.query_params.get('error') and request.query_params.get('detail') %}
+    <div class="alert alert-danger alert-dismissible fade show py-2" role="alert">
+        <i class="bi bi-exclamation-triangle"></i> {{ request.query_params.get('detail') }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
 
-    <div class="row">
-        <div class="col-md-4 mb-4">
-            <div class="card h-100">
-                <div class="card-header bg-success text-white">
-                    <i class="bi bi-box-arrow-in-down"></i> So'nggi kirimlar (tovar kirimi)
-                </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-sm table-hover mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Sana</th>
-                                    <th>№</th>
-                                    <th>Ombor</th>
-                                    <th>Jami</th>
-                                    <th>Holat</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for p in recent_purchases %}
-                                <tr>
-                                    <td>{{ p.date.strftime('%d.%m.%Y') if p.date else '-' }}</td>
-                                    <td><a href="/purchases/edit/{{ p.id }}">{{ p.number or '-' }}</a></td>
-                                    <td>{{ (p.warehouse.name if p and p.warehouse else '-') }}</td>
-                                    <td>{{ "{:,.0f}".format(p.total or 0) }} so'm</td>
-                                    <td><span class="badge bg-{{ 'success' if p.status == 'confirmed' else 'secondary' }}">{{ p.status or 'draft' }}</span></td>
-                                </tr>
-                                {% else %}
-                                <tr><td colspan="5" class="text-center text-muted py-3">Kirim yo'q</td></tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                <div class="card-footer small">
-                    <a href="/purchases">Barcha kirimlar &rarr;</a>
+    <div class="form-1c bg-white border rounded p-0">
+        <form method="post" action="/warehouse/transfer" id="transferForm">
+            <div class="form-row">
+                <div class="label">Qayerdan (ombor) *</div>
+                <div class="field">
+                    <select name="from_warehouse_id" class="form-select w-100" required id="fromWh">
+                        <option value="">— Tanlang —</option>
+                        {% for wh in warehouses %}
+                        <option value="{{ wh.id }}">{{ wh.name }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
             </div>
-        </div>
-
-        <div class="col-md-4 mb-4">
-            <div class="card h-100">
-                <div class="card-header bg-primary text-white">
-                    <i class="bi bi-box-arrow-up"></i> So'nggi sotuvlar (chiqim)
-                </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-sm table-hover mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Sana</th>
-                                    <th>№</th>
-                                    <th>Mijoz</th>
-                                    <th>Jami</th>
-                                    <th>Holat</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for o in recent_sales %}
-                                <tr>
-                                    <td>{{ o.created_at.strftime('%d.%m.%Y %H:%M') if o.created_at else '-' }}</td>
-                                    <td><a href="/sales/edit/{{ o.id }}">{{ o.number or '-' }}</a></td>
-                                    <td>{{ (o.partner.name if o and o.partner else 'Noma\'lum') }}</td>
-                                    <td>{{ "{:,.0f}".format(o.total or 0) }} so'm</td>
-                                    <td><span class="badge bg-{{ 'primary' if o.status == 'completed' else 'warning' if o.status == 'confirmed' else 'secondary' }}">{{ o.status or 'draft' }}</span></td>
-                                </tr>
-                                {% else %}
-                                <tr><td colspan="5" class="text-center text-muted py-3">Sotuv yo'q</td></tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                <div class="card-footer small">
-                    <a href="/sales">Barcha sotuvlar &rarr;</a>
+            <div class="form-row">
+                <div class="label">Qayerga (ombor) *</div>
+                <div class="field">
+                    <select name="to_warehouse_id" class="form-select w-100" required id="toWh">
+                        <option value="">— Tanlang —</option>
+                        {% for wh in warehouses %}
+                        <option value="{{ wh.id }}">{{ wh.name }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
             </div>
-        </div>
-
-        <div class="col-md-4 mb-4">
-            <div class="card h-100">
-                <div class="card-header bg-info text-white">
-                    <i class="bi bi-gear"></i> So'nggi ishlab chiqarish
-                </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-sm table-hover mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Sana</th>
-                                    <th>№</th>
-                                    <th>Retsept</th>
-                                    <th>Miqdor</th>
-                                    <th>Holat</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for p in recent_productions %}
-                                <tr>
-                                    <td>{{ p.created_at.strftime('%d.%m.%Y %H:%M') if p.created_at else '-' }}</td>
-                                    <td><a href="/production/{{ p.id }}/materials">{{ p.number or '-' }}</a></td>
-                                    <td>{{ (p.recipe.name if p and p.recipe else (p.recipe_id if p else '-') or '-') }}</td>
-                                    <td>{{ "{:,.2f}".format(p.quantity or 0) }}</td>
-                                    <td><span class="badge bg-{{ 'info' if p.status == 'completed' else 'secondary' }}">{{ p.status or 'draft' }}</span></td>
-                                </tr>
-                                {% else %}
-                                <tr><td colspan="5" class="text-center text-muted py-3">Ishlab chiqarish yo'q</td></tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                <div class="card-footer small">
-                    <a href="/production/orders">Barcha buyurtmalar &rarr;</a>
+            <div class="form-row">
+                <div class="label">Mahsulot *</div>
+                <div class="field combo-wrap">
+                    <input type="text" class="form-control w-100" id="productSearch" placeholder="Nom yoki kod yozing (F4 — ro'yxat)" autocomplete="off">
+                    <input type="hidden" name="product_id" id="productId" value="">
+                    <div class="combo-drop" id="comboDrop" style="display: none;"></div>
+                    <small class="text-muted d-block mt-1" id="availableHint"></small>
                 </div>
             </div>
-        </div>
+            <div class="form-row">
+                <div class="label">Miqdor *</div>
+                <div class="field">
+                    <input type="text" name="quantity" class="form-control" style="width: 120px;" value="0" required inputmode="decimal" id="qtyInput">
+                </div>
+            </div>
+            <div class="form-row border-0 pt-2 pb-2">
+                <div class="label"></div>
+                <div class="field">
+                    <button type="submit" class="btn btn-primary btn-sm">O'tkazish</button>
+                    <a href="/warehouse" class="btn btn-outline-secondary btn-sm ms-1">Orqaga</a>
+                </div>
+            </div>
+        </form>
     </div>
 </div>
+
+<script>
+(function() {
+    var stockByWhProduct = {{ stock_by_warehouse_product | tojson | safe }};
+    var products = [
+        {% for p in products %}
+        {"id": {{ p.id }}, "name": {{ p.name | tojson }}, "code": {{ (p.code or '') | tojson }}}{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ];
+    var fromWh = document.getElementById('fromWh');
+    var toWh = document.getElementById('toWh');
+    var productId = document.getElementById('productId');
+    var productSearch = document.getElementById('productSearch');
+    var comboDrop = document.getElementById('comboDrop');
+    var availableHint = document.getElementById('availableHint');
+
+    function getAvailableInWarehouse() {
+        var fromId = fromWh.value;
+        return (fromId && stockByWhProduct[fromId]) ? stockByWhProduct[fromId] : {};
+    }
+
+    function showList() {
+        var q = (productSearch.value || '').trim().toLowerCase();
+        var avail = getAvailableInWarehouse();
+        var html = '';
+        products.forEach(function(p) {
+            if (avail[p.id] === undefined) return;
+            var name = (p.name + (p.code ? ' (' + p.code + ')' : '')).toLowerCase();
+            if (q && name.indexOf(q) === -1) return;
+            var qty = avail[p.id];
+            html += '<div class="combo-item" data-id="' + p.id + '" data-name="' + (p.name + (p.code ? ' (' + p.code + ')' : '')) + '" data-qty="' + qty + '">' + (p.name + (p.code ? ' (' + p.code + ')' : '')) + ' — mavjud: ' + qty + '</div>';
+        });
+        comboDrop.innerHTML = html || '<div class="combo-item text-muted">Mos mahsulot yo\'q</div>';
+        comboDrop.style.display = 'block';
+        if (comboDrop.querySelectorAll('.combo-item[data-id]').length) {
+            comboDrop.querySelectorAll('.combo-item[data-id]').forEach(function(el) {
+                el.addEventListener('click', function() {
+                    productId.value = this.dataset.id;
+                    productSearch.value = this.dataset.name;
+                    comboDrop.style.display = 'none';
+                    updateHint();
+                });
+            });
+        }
+    }
+
+    function hideList() {
+        setTimeout(function() { comboDrop.style.display = 'none'; }, 150);
+    }
+
+    function updateHint() {
+        var pid = productId.value;
+        if (!pid) { availableHint.textContent = ''; return; }
+        var avail = getAvailableInWarehouse();
+        var qty = avail[pid];
+        if (qty !== undefined) availableHint.textContent = 'Qayerdan omborda mavjud: ' + qty;
+        else availableHint.textContent = 'Ushbu omborda qoldiq yo\'q';
+    }
+
+    productSearch.addEventListener('focus', function() {
+        if (fromWh.value) showList();
+    });
+    productSearch.addEventListener('input', function() {
+        if (fromWh.value) showList();
+        else productId.value = '';
+    });
+    productSearch.addEventListener('keydown', function(e) {
+        if (e.key === 'F4') { e.preventDefault(); if (fromWh.value) showList(); }
+        if (e.key === 'Escape') { comboDrop.style.display = 'none'; }
+    });
+    document.addEventListener('click', function(e) {
+        if (!productSearch.contains(e.target) && !comboDrop.contains(e.target)) hideList();
+    });
+
+    fromWh.addEventListener('change', function() {
+        productId.value = '';
+        productSearch.value = '';
+        if (toWh.value === fromWh.value) toWh.value = '';
+        updateHint();
+    });
+    toWh.addEventListener('change', function() {
+        if (toWh.value === fromWh.value) toWh.value = '';
+    });
+
+    document.getElementById('transferForm').addEventListener('submit', function(e) {
+        if (!productId.value) {
+            e.preventDefault();
+            productSearch.focus();
+            alert('Mahsulotni tanlang yoki yozib qidiring.');
+        }
+    });
+
+    updateHint();
+})();
+</script>
 {% endblock %}

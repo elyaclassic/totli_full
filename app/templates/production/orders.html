@@ -21,11 +21,10 @@
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 {% endif %}
-<div class="d-flex justify-content-between mb-4">
-    <h4><i class="bi bi-clipboard-check"></i> Ishlab chiqarish buyurtmalari</h4>
-    <a href="/production/new" class="btn btn-primary">
-        <i class="bi bi-plus"></i> Yangi buyurtma
-    </a>
+<div class="container-fluid">
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0"><i class="bi bi-clipboard-check"></i> Ishlab chiqarish buyurtmalari</h4>
+    <a href="/production/new" class="btn btn-success"><i class="bi bi-plus-circle"></i> Yaratish</a>
 </div>
 
 <!-- Filtrlar -->
@@ -83,22 +82,47 @@
                         {% endif %}
                     </td>
                     <td>
-                        <strong>{{ "%.1f"|format(prod.quantity) }} kg</strong>
+                        {% set unit_name = (prod.recipe.product.unit.name if prod.recipe and prod.recipe.product and prod.recipe.product.unit else 'kg') %}
+                        {% set qty_kg = (prod.quantity * (prod.recipe.output_quantity or 1)) if (prod.recipe and prod.recipe.output_quantity) else prod.quantity %}
+                        <strong>{{ "%.1f"|format(prod.quantity) }} {{ unit_name }}</strong>
+                        {% if unit_name|lower != 'kg' and prod.recipe and prod.recipe.output_quantity %}
+                        <span class="text-muted small">({{ "%.1f"|format(qty_kg) }} kg)</span>
+                        {% endif %}
                     </td>
                     <td>
                         {% set cur = getattr(prod, 'current_stage', 1) or 1 %}
-                        {% for sn in [1,2,3,4] %}
-                            {% if sn < cur %}
-                                <span class="badge bg-success me-1" title="{{ stage_names.get(sn, '') }}">{{ sn }}</span>
-                            {% elif sn == cur and prod.status != 'completed' %}
-                                <span class="badge bg-primary me-1" title="{{ stage_names.get(sn, '') }}">{{ sn }}</span>
-                            {% elif sn == cur and prod.status == 'completed' %}
-                                <span class="badge bg-success me-1">{{ sn }}</span>
-                            {% else %}
-                                <span class="badge bg-secondary me-1">{{ sn }}</span>
-                            {% endif %}
-                        {% endfor %}
-                        <small class="d-block text-muted mt-1">{{ stage_names.get(cur, '') if stage_names else '' }}</small>
+                        {% set r_stages = (prod.recipe.stages|sort(attribute='stage_number')) if (prod.recipe and prod.recipe.stages) else [] %}
+                        {% set eff_max = (r_stages|map(attribute='stage_number')|list|max) if r_stages else 2 %}
+                        {% if r_stages %}
+                            {% for s in r_stages %}
+                                {% if s.stage_number < cur %}
+                                    <span class="badge bg-success me-1" title="{{ s.name }}">{{ s.stage_number }}</span>
+                                {% elif s.stage_number == cur and prod.status != 'completed' %}
+                                    <span class="badge bg-primary me-1" title="{{ s.name }}">{{ s.stage_number }}</span>
+                                {% elif s.stage_number == cur and prod.status == 'completed' %}
+                                    <span class="badge bg-success me-1">{{ s.stage_number }}</span>
+                                {% else %}
+                                    <span class="badge bg-secondary me-1">{{ s.stage_number }}</span>
+                                {% endif %}
+                            {% endfor %}
+                            <small class="d-block text-muted mt-1">
+                                {% for s in r_stages %}{% if s.stage_number == cur %}{{ s.name }}{% endif %}{% endfor %}
+                            </small>
+                        {% else %}
+                            {% set default_max = 2 %}
+                            {% for sn in [1, 2] %}
+                                {% if sn < cur %}
+                                    <span class="badge bg-success me-1" title="{{ stage_names.get(sn, '') }}">{{ sn }}</span>
+                                {% elif sn == cur and prod.status != 'completed' %}
+                                    <span class="badge bg-primary me-1" title="{{ stage_names.get(sn, '') }}">{{ sn }}</span>
+                                {% elif sn == cur and prod.status == 'completed' %}
+                                    <span class="badge bg-success me-1">{{ sn }}</span>
+                                {% else %}
+                                    <span class="badge bg-secondary me-1">{{ sn }}</span>
+                                {% endif %}
+                            {% endfor %}
+                            <small class="d-block text-muted mt-1">{{ stage_names.get(cur, '') if stage_names else '' }}</small>
+                        {% endif %}
                     </td>
                     <td>{{ prod.machine.name if prod.machine else '-' }}</td>
                     <td>{{ prod.operator.full_name if prod.operator else '-' }}</td>
@@ -133,7 +157,7 @@
                             <i class="bi bi-pencil"></i>
                         </a>
                         <form method="POST" action="/production/{{ prod.id }}/complete-stage" style="display: inline;" class="d-inline">
-                            <input type="hidden" name="stage_number" value="{{ getattr(prod, 'current_stage', 1) or 1 }}">
+                            <input type="hidden" name="stage_number" value="{{ [cur, eff_max]|min }}">
                             <select name="machine_id" class="form-select form-select-sm d-inline-block w-auto" title="Uskuna">
                                 <option value="">— Uskuna —</option>
                                 {% for m in machines %}<option value="{{ m.id }}">{{ m.name }}</option>{% endfor %}
@@ -166,6 +190,15 @@
                         </form>
                         {% else %}
                         <span class="text-muted">-</span>
+                        {% endif %}
+                        {% if current_user and current_user.role == 'admin' %}
+                        <form method="POST" action="/production/{{ prod.id }}/delete" style="display: inline;" class="ms-1"
+                            onsubmit="return confirm('Buyurtmani butunlay o\'chirishni xohlaysizmi? Bu amalni qaytarib bo\'lmaydi.');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
+                            <button type="submit" class="btn btn-sm btn-outline-danger" title="O'chirish">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
                         {% endif %}
                     </td>
                 </tr>
@@ -200,4 +233,5 @@ function filterStatus(status) {
     event.target.classList.add('active');
 }
 </script>
+</div>
 {% endblock %}

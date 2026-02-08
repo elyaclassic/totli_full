@@ -7,6 +7,9 @@ Map configuration for switching between providers
 # Map provider: 'yandex' or 'google'
 MAP_PROVIDER = 'yandex'
 
+# Yandex Maps API Key (https://developer.tech.yandex.ru/ — bepul kalit olish mumkin)
+YANDEX_MAPS_API_KEY = '096da66c-342b-4bab-80cd-3b44b851429c'
+
 # Google Maps API Key (faqat MAP_PROVIDER='google' bo'lganda kerak)
 # Google Maps API Key (only needed when MAP_PROVIDER='google')
 GOOGLE_MAPS_API_KEY = ''  # Bu yerga API key kiriting / Enter your API key here

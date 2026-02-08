@@ -3,10 +3,11 @@ Hisobotlar — savdo, qoldiq, qarzdorlik va Excel export.
 """
 import io
 from datetime import datetime
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, File, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy.orm import Session
-from openpyxl import Workbook
+from sqlalchemy import func
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 
 from app.core import templates
@@ -166,6 +167,95 @@ async def report_stock_export(db: Session = Depends(get_db), current_user: User 
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename=qoldiq_{datetime.now().strftime('%Y%m%d')}.xlsx"},
     )
+
+
+@router.get("/stock/andoza")
+async def report_stock_andoza(current_user: User = Depends(require_auth)):
+    """Qoldiqlar uchun Excel andoza (Tannarx va Sotuv narxi ixtiyoriy)."""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Andoza"
+    ws.append(["Ombor nomi (yoki kodi)", "Mahsulot nomi (yoki kodi)", "Qoldiq", "Tannarx (so'm)", "Sotuv narxi (so'm)"])
+    ws.append(["Xom ashyo ombori", "Yong'oq", 30, "", ""])
+    ws.append(["Xom ashyo ombori", "Bodom", 100, "", ""])
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=qoldiqlar_andoza.xlsx"},
+    )
+
+
+@router.post("/stock/import")
+async def report_stock_import(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Exceldan qoldiqlarni yuklash. Ustunlar: Ombor nomi (yoki kodi), Mahsulot nomi (yoki kodi), Qoldiq; ixtiyoriy: Tannarx, Sotuv narxi."""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    contents = await file.read()
+    wb = load_workbook(io.BytesIO(contents))
+    ws = wb.active
+    rows = list(ws.iter_rows(min_row=2, values_only=True))
+    for row in rows:
+        if not row or (row[0] is None or row[0] == "") or (row[1] is None or row[1] == ""):
+            continue
+        wh_key = str(row[0] or "").strip()
+        raw_prod = row[1]
+        if raw_prod is not None and isinstance(raw_prod, (int, float)) and float(raw_prod) == int(float(raw_prod)):
+            product_key = str(int(float(raw_prod)))
+        else:
+            product_key = str(raw_prod or "").strip()
+        try:
+            qty = float(row[2]) if row[2] is not None and row[2] != "" else 0
+        except (TypeError, ValueError):
+            qty = 0
+        tannarx = None
+        sotuv_narxi = None
+        if len(row) > 3 and row[3] is not None and row[3] != "":
+            try:
+                tannarx = float(row[3])
+            except (TypeError, ValueError):
+                pass
+        if len(row) > 4 and row[4] is not None and row[4] != "":
+            try:
+                sotuv_narxi = float(row[4])
+            except (TypeError, ValueError):
+                pass
+        wh = db.query(Warehouse).filter(
+            (func.lower(Warehouse.name) == wh_key.lower()) | (Warehouse.code == wh_key)
+        ).first()
+        product = db.query(Product).filter(
+            (Product.code == product_key) | (Product.barcode == product_key)
+        ).first()
+        if not product and product_key:
+            product = db.query(Product).filter(
+                Product.name.isnot(None),
+                func.lower(Product.name) == product_key.lower()
+            ).first()
+        if not wh or not product:
+            continue
+        stock = db.query(Stock).filter(
+            Stock.warehouse_id == wh.id,
+            Stock.product_id == product.id,
+        ).first()
+        if stock:
+            stock.quantity = qty
+        else:
+            stock = Stock(warehouse_id=wh.id, product_id=product.id, quantity=qty)
+            db.add(stock)
+        if tannarx is not None:
+            product.purchase_price = tannarx
+        if sotuv_narxi is not None:
+            product.sale_price = sotuv_narxi
+        db.commit()
+    return RedirectResponse(url="/reports/stock", status_code=303)
 
 
 @router.get("/debts", response_class=HTMLResponse)

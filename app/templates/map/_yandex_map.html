@@ -2,7 +2,7 @@
 <!-- Currently in use -->
 
 {% block extra_js %}
-<script src="https://api-maps.yandex.ru/2.1/?lang=uz_UZ" type="text/javascript"></script>
+<script src="https://api-maps.yandex.ru/2.1/?lang=uz_UZ{% if yandex_maps_apikey %}&apikey={{ yandex_maps_apikey }}{% endif %}" type="text/javascript"></script>
 <script>
     console.log('Map script started');
 
@@ -11,7 +11,7 @@
 
         var myMap = new ymaps.Map('mainMap', {
             center: [40.533555, 70.930423],  // Qo'qon
-            zoom: 12,
+            zoom: 11,
             controls: ['zoomControl', 'searchControl', 'fullscreenControl']
         });
 
