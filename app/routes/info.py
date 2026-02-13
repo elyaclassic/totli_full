@@ -41,8 +41,13 @@ async def info_warehouses(request: Request, db: Session = Depends(get_db), curre
     if not current_user:
         return RedirectResponse(url="/login", status_code=303)
     warehouses = db.query(Warehouse).all()
+    departments = db.query(Department).filter(Department.is_active == True).all()
     return templates.TemplateResponse("info/warehouses.html", {
-        "request": request, "warehouses": warehouses, "current_user": current_user, "page_title": "Omborlar"
+        "request": request, 
+        "warehouses": warehouses, 
+        "departments": departments,
+        "current_user": current_user, 
+        "page_title": "Omborlar"
     })
 
 
@@ -51,13 +56,20 @@ async def info_warehouses_add(
     request: Request,
     name: str = Form(...),
     address: str = Form(""),
+    department_id: int = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
     existing_by_name = db.query(Warehouse).filter(Warehouse.name == name).first()
     if existing_by_name:
         raise HTTPException(status_code=400, detail=f"'{name}' nomli ombor allaqachon mavjud!")
-    warehouse = Warehouse(name=name, code=None, address=address, is_active=True)
+    warehouse = Warehouse(
+        name=name, 
+        code=None, 
+        address=address, 
+        department_id=department_id if department_id else None,
+        is_active=True
+    )
     db.add(warehouse)
     db.commit()
     return RedirectResponse(url="/info/warehouses", status_code=303)
@@ -68,6 +80,7 @@ async def info_warehouses_edit(
     warehouse_id: int,
     name: str = Form(...),
     address: str = Form(""),
+    department_id: int = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
@@ -82,6 +95,7 @@ async def info_warehouses_edit(
         raise HTTPException(status_code=400, detail=f"'{name}' nomli ombor allaqachon mavjud!")
     warehouse.name = name
     warehouse.address = address
+    warehouse.department_id = department_id if department_id else None
     db.commit()
     return RedirectResponse(url="/info/warehouses", status_code=303)
 
@@ -521,9 +535,11 @@ async def info_prices_edit(
 @router.get("/cash", response_class=HTMLResponse)
 async def info_cash(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     cash_registers = db.query(CashRegister).all()
+    departments = db.query(Department).filter(Department.is_active == True).all()
     return templates.TemplateResponse("info/cash.html", {
         "request": request,
         "cash_registers": cash_registers,
+        "departments": departments,
         "current_user": current_user,
         "page_title": "Kassalar",
     })
@@ -534,10 +550,16 @@ async def info_cash_add(
     request: Request,
     name: str = Form(...),
     balance: float = Form(0),
+    department_id: int = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
-    cash = CashRegister(name=name, balance=balance, is_active=True)
+    cash = CashRegister(
+        name=name, 
+        balance=balance, 
+        department_id=department_id if department_id else None,
+        is_active=True
+    )
     db.add(cash)
     db.commit()
     return RedirectResponse(url="/info/cash", status_code=303)
@@ -548,6 +570,7 @@ async def info_cash_edit(
     cash_id: int,
     name: str = Form(...),
     balance: float = Form(0),
+    department_id: int = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
@@ -556,6 +579,7 @@ async def info_cash_edit(
         raise HTTPException(status_code=404, detail="Kassa topilmadi")
     cash.name = name
     cash.balance = balance
+    cash.department_id = department_id if department_id else None
     db.commit()
     return RedirectResponse(url="/info/cash", status_code=303)
 

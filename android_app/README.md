@@ -95,8 +95,8 @@ class MainActivity : AppCompatActivity() {
         setupWebView()
         checkLocationPermission()
         
-        // Load URL
-        webView.loadUrl("https://lineal-whelpless-margrett.ngrok-free.dev/static/pwa/simple_dashboard.html")
+        // Load URL (ZeroTier IP yoki server manzili)
+        webView.loadUrl("http://10.243.49.144/static/pwa/login.html")
     }
     
     private fun setupWebView() {
@@ -212,7 +212,7 @@ Endi sizda **to'liq Android app** bor:
 ## 📝 ESLATMA:
 
 **PRODUCTION** uchun:
-1. **ngrok URL**ni **haqiqiy domain**ga o'zgartiring
+1. **Server URL**ni o'zgartiring (ZeroTier IP: 10.243.49.144 yoki haqiqiy domain)
 2. **Release APK** yasang (signed)
 3. **Google Play**ga yuklang (opsional)
 

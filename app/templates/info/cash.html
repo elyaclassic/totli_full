@@ -15,6 +15,7 @@
                         <tr>
                             <th>#</th>
                             <th>Nomi</th>
+                            <th>Bo'lim</th>
                             <th>Balans</th>
                             <th>Holati</th>
                             <th></th>
@@ -25,6 +26,13 @@
                         <tr>
                         <td>{{ cash.id }}</td>
                         <td><strong>{{ cash.name }}</strong></td>
+                        <td>
+                            {% if cash.department %}
+                            <span class="badge bg-info">{{ cash.department.name }}</span>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
                         <td>
                             <span class="badge {% if cash.balance >= 0 %}bg-success{% else %}bg-danger{% endif %} fs-6">
                                 {{ "{:,.0f}".format(cash.balance) }} so'm
@@ -39,7 +47,7 @@
                         </td>
                         <td>
                             <button class="btn btn-sm btn-outline-primary" title="Tahrirlash"
-                                onclick="editCash({{ cash.id }}, `{{ cash.name }}`, {{ cash.balance }})">
+                                onclick="editCash({{ cash.id }}, `{{ cash.name }}`, {{ cash.balance }}, {{ cash.department_id or 'null' }})">
                                 <i class="bi bi-pencil"></i>
                             </button>
                             <button class="btn btn-sm btn-outline-danger" title="O'chirish"
@@ -50,7 +58,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="5" class="text-muted text-center py-4">Hozircha kassalar yo'q. Yangi kassa qo'shish uchun yuqoridagi Yaratish tugmasini bosing.</td>
+                            <td colspan="6" class="text-muted text-center py-4">Hozircha kassalar yo'q. Yangi kassa qo'shish uchun yuqoridagi Yaratish tugmasini bosing.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -91,6 +99,16 @@
                         <input type="text" class="form-control" name="name" placeholder="Asosiy kassa" required>
                     </div>
                     <div class="mb-3">
+                        <label class="form-label">Bo'lim</label>
+                        <select class="form-select" name="department_id">
+                            <option value="">— Bo'lim tanlanmagan —</option>
+                            {% for dept in departments %}
+                            <option value="{{ dept.id }}">{{ dept.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Kassa qaysi bo'limga tegishli ekanligini belgilang</small>
+                    </div>
+                    <div class="mb-3">
                         <label class="form-label">Boshlang'ich balans</label>
                         <input type="number" class="form-control" name="balance" value="0" step="0.01">
                         <small class="text-muted">Kassadagi boshlang'ich pul miqdori</small>
@@ -118,6 +136,16 @@
                     <div class="mb-3">
                         <label class="form-label">Nomi *</label>
                         <input type="text" class="form-control" name="name" id="edit_name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Bo'lim</label>
+                        <select class="form-select" name="department_id" id="edit_department_id">
+                            <option value="">— Bo'lim tanlanmagan —</option>
+                            {% for dept in departments %}
+                            <option value="{{ dept.id }}">{{ dept.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Kassa qaysi bo'limga tegishli ekanligini belgilang</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Balans</label>
@@ -180,10 +208,11 @@
         }
     });
 
-    function editCash(id, name, balance) {
+    function editCash(id, name, balance, departmentId) {
         document.getElementById('editCashForm').action = '/info/cash/edit/' + id;
         document.getElementById('edit_name').value = name;
         document.getElementById('edit_balance').value = balance;
+        document.getElementById('edit_department_id').value = departmentId || '';
         new bootstrap.Modal(document.getElementById('editCashModal')).show();
     }
 

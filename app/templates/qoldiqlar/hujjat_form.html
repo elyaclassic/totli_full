@@ -37,50 +37,88 @@
         </div>
         <div class="card-body">
             {% if doc %}
-            <p class="text-muted small mb-2">Foydalanuvchi: {{ doc.user.full_name or doc.user.username if doc.user else '-' }}</p>
-            <p class="mb-3">Jami summa tannarx: <strong>{{ "{:,.0f}".format(doc.total_tannarx or 0) }}</strong> so'm &nbsp;|&nbsp; Jami sotuv: <strong>{{ "{:,.0f}".format(doc.total_sotuv or 0) }}</strong> so'm</p>
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <p class="mb-1"><strong>Hujjat raqami:</strong> <span class="badge bg-primary">{{ doc.number }}</span></p>
+                    <p class="mb-1"><strong>Sana:</strong> {{ doc.date.strftime('%d.%m.%Y %H:%M') if doc.date else '-' }}</p>
+                    <p class="mb-1"><strong>Foydalanuvchi:</strong> {{ doc.user.full_name or doc.user.username if doc.user else '-' }}</p>
+                </div>
+                <div class="col-md-6">
+                    <p class="mb-1"><strong>Holat:</strong> 
+                        {% if doc.status == 'draft' %}
+                        <span class="badge bg-warning text-dark">Qoralama</span>
+                        {% else %}
+                        <span class="badge bg-success">Tasdiqlangan</span>
+                        {% endif %}
+                    </p>
+                    <p class="mb-1"><strong>Jami summa tannarx:</strong> <span class="text-success fw-bold">{{ "{:,.0f}".format(doc.total_tannarx or 0) }}</span> so'm</p>
+                    <p class="mb-1"><strong>Jami sotuv summa:</strong> <span class="text-primary fw-bold">{{ "{:,.0f}".format(doc.total_sotuv or 0) }}</span> so'm</p>
+                </div>
+            </div>
+            <hr>
             {% endif %}
 
             {% if doc %}
-            <!-- Mavjud qatorlar -->
-            <h6 class="mb-2">Hujjat qatorlari</h6>
+            <!-- Mavjud qatorlar - 1C uslubida -->
+            <div class="mb-3">
+                <h6 class="mb-2"><i class="bi bi-list-ul"></i> Hujjat qatorlari ({{ doc.items|length }} ta)</h6>
+            </div>
             <div class="table-responsive mb-4">
-                <table class="table table-sm table-hover">
+                <table class="table table-sm table-bordered table-hover" style="font-size: 0.9rem;">
                     <thead class="table-light">
                         <tr>
-                            <th>N</th>
+                            <th style="width: 40px;" class="text-center">№</th>
                             <th>Tovar</th>
-                            <th>O'mbor</th>
-                            <th>Soni</th>
-                            <th>Tannarx (so'm)</th>
-                            <th>Summa tannarx</th>
-                            <th>Sotuv narx (so'm)</th>
-                            <th>Sotuv summa</th>
-                            {% if doc.status == 'draft' %}<th></th>{% endif %}
+                            <th style="width: 150px;">Ombor</th>
+                            <th style="width: 100px;" class="text-end">Qoldiq</th>
+                            <th style="width: 120px;" class="text-end">Tannarx (so'm)</th>
+                            <th style="width: 140px;" class="text-end">Summa tannarx</th>
+                            <th style="width: 120px;" class="text-end">Sotuv narx (so'm)</th>
+                            <th style="width: 140px;" class="text-end">Sotuv summa</th>
+                            {% if doc.status == 'draft' %}<th style="width: 60px;" class="text-center">Amal</th>{% endif %}
                         </tr>
                     </thead>
                     <tbody>
                         {% for item in doc.items %}
                         <tr>
-                            <td>{{ loop.index }}</td>
-                            <td>{{ item.product.name if item.product else '-' }}{% if item.product and item.product.unit %} ({{ item.product.unit.name }}){% endif %}</td>
-                            <td>{{ item.warehouse.name if item.warehouse else '-' }}</td>
-                            <td>{{ item.quantity }}</td>
-                            <td>{{ "{:,.0f}".format(item.cost_price or 0) }}</td>
-                            <td><strong>{{ "{:,.0f}".format((item.quantity or 0) * (item.cost_price or 0)) }}</strong></td>
-                            <td>{{ "{:,.0f}".format(item.sale_price or 0) }}</td>
-                            <td><strong>{{ "{:,.0f}".format((item.quantity or 0) * (item.sale_price or 0)) }}</strong></td>
-                            {% if doc.status == 'draft' %}
+                            <td class="text-center">{{ loop.index }}</td>
                             <td>
+                                <strong>{{ item.product.name if item.product else '-' }}</strong>
+                                {% if item.product and (item.product.code or item.product.barcode) %}
+                                <br><small class="text-muted"><code>{{ item.product.code or item.product.barcode }}</code></small>
+                                {% endif %}
+                                {% if item.product and item.product.unit %}
+                                <br><small class="text-muted">{{ item.product.unit.name }}</small>
+                                {% endif %}
+                            </td>
+                            <td>{{ item.warehouse.name if item.warehouse else '-' }}</td>
+                            <td class="text-end fw-bold">{{ "{:,.2f}".format(item.quantity) }}</td>
+                            <td class="text-end">{{ "{:,.0f}".format(item.cost_price or 0) }}</td>
+                            <td class="text-end"><strong class="text-success">{{ "{:,.0f}".format((item.quantity or 0) * (item.cost_price or 0)) }}</strong></td>
+                            <td class="text-end">{{ "{:,.0f}".format(item.sale_price or 0) }}</td>
+                            <td class="text-end"><strong class="text-primary">{{ "{:,.0f}".format((item.quantity or 0) * (item.sale_price or 0)) }}</strong></td>
+                            {% if doc.status == 'draft' %}
+                            <td class="text-center">
                                 <form method="post" action="/qoldiqlar/tovar/hujjat/{{ doc.id }}/delete-row/{{ item.id }}" class="d-inline" onsubmit="return confirm('Ushbu qatorni o\'chirishni xohlaysizmi?');">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="O'chirish"><i class="bi bi-trash"></i></button>
                                 </form>
                             </td>
                             {% endif %}
                         </tr>
                         {% else %}
-                        <tr><td colspan="9" class="text-muted">Hozircha qatorlar yo'q.</td></tr>
+                        <tr><td colspan="{% if doc.status == 'draft' %}9{% else %}8{% endif %}" class="text-muted text-center py-4">Hozircha qatorlar yo'q.</td></tr>
                         {% endfor %}
+                        {% if doc.items %}
+                        <tr class="table-info fw-bold">
+                            <td colspan="3" class="text-end">JAMI:</td>
+                            <td class="text-end">{{ "{:,.2f}".format(doc.items|sum(attribute='quantity')) }}</td>
+                            <td colspan="1"></td>
+                            <td class="text-end">{{ "{:,.0f}".format(doc.total_tannarx or 0) }}</td>
+                            <td colspan="1"></td>
+                            <td class="text-end">{{ "{:,.0f}".format(doc.total_sotuv or 0) }}</td>
+                            {% if doc.status == 'draft' %}<td></td>{% endif %}
+                        </tr>
+                        {% endif %}
                     </tbody>
                 </table>
             </div>

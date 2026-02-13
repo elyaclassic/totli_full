@@ -11,6 +11,13 @@
     {% if request.query_params.get('success') == 'import' and request.query_params.get('detail') %}
     <div class="alert alert-success alert-dismissible fade show" role="alert">
         <i class="bi bi-check-circle"></i> {{ request.query_params.get('detail') }}
+        {% if request.query_params.get('doc_id') and request.query_params.get('doc_number') %}
+        <br><small class="d-block mt-2">
+            <i class="bi bi-file-earmark-text"></i> Hujjat yaratildi: 
+            <a href="/qoldiqlar/tovar/hujjat/{{ request.query_params.get('doc_id') }}" class="alert-link fw-bold">{{ request.query_params.get('doc_number') }}</a>
+            - <a href="/qoldiqlar/tovar/hujjat/{{ request.query_params.get('doc_id') }}" class="alert-link">Hujjatni ochish</a>
+        </small>
+        {% endif %}
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
     {% endif %}

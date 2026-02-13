@@ -19,7 +19,7 @@ import openpyxl
 import io
 from app.models.database import (
     get_db, init_db, SessionLocal,
-    User, Product, Category, Unit, Warehouse, Stock,
+    User, Product, Category, Unit, Warehouse, Stock, StockMovement,
     WarehouseTransfer, WarehouseTransferItem,
     Partner, Order, OrderItem, Payment, CashRegister,
     Recipe, RecipeItem, RecipeStage, Production, ProductionItem, ProductionStage, PRODUCTION_STAGE_NAMES, Machine, Employee, Salary,
@@ -2818,12 +2818,19 @@ async def qoldiqlar_tovar_hujjat_tasdiqlash(
         raise HTTPException(status_code=400, detail="Kamida bitta qator bo'lishi kerak")
 
     for item in doc.items:
+        # Eski qoldiqni olish
         stock = db.query(Stock).filter(
             Stock.warehouse_id == item.warehouse_id,
             Stock.product_id == item.product_id,
         ).first()
+        old_quantity = stock.quantity if stock else 0
+        
+        # Yangi qoldiqni hisoblash
+        new_quantity = item.quantity
+        quantity_change = new_quantity - old_quantity
+        
         if stock:
-            stock.quantity = (stock.quantity or 0) + item.quantity
+            stock.quantity = new_quantity
             stock.updated_at = datetime.now()
         else:
             db.add(Stock(
@@ -2831,6 +2838,22 @@ async def qoldiqlar_tovar_hujjat_tasdiqlash(
                 product_id=item.product_id,
                 quantity=item.quantity,
             ))
+        
+        # StockMovement yozuvini yaratish (adjustment)
+        if quantity_change != 0:
+            create_stock_movement(
+                db=db,
+                warehouse_id=item.warehouse_id,
+                product_id=item.product_id,
+                quantity_change=quantity_change,  # O'zgarish (+ yoki -)
+                operation_type="adjustment",
+                document_type="StockAdjustmentDoc",
+                document_id=doc.id,
+                document_number=doc.number,
+                user_id=current_user.id if current_user else None,
+                note=f"Qoldiq tuzatish: {doc.number}"
+            )
+    
     doc.status = "confirmed"
     db.commit()
     return RedirectResponse(url=f"/qoldiqlar/tovar/hujjat/{doc_id}", status_code=303)
@@ -3624,6 +3647,63 @@ async def product_upload_image(
 # OMBOR
 # ==========================================
 
+def create_stock_movement(
+    db: Session,
+    warehouse_id: int,
+    product_id: int,
+    quantity_change: float,
+    operation_type: str,
+    document_type: str,
+    document_id: int,
+    document_number: str = None,
+    user_id: int = None,
+    note: str = None
+):
+    """Har bir operatsiya uchun StockMovement yozuvini yaratish"""
+    # Stock ni topish yoki yaratish
+    stock = db.query(Stock).filter(
+        Stock.warehouse_id == warehouse_id,
+        Stock.product_id == product_id
+    ).first()
+    
+    # Qoldiqni yangilash
+    if stock:
+        stock.quantity = (stock.quantity or 0) + quantity_change
+        if stock.quantity < 0:
+            stock.quantity = 0
+        stock.updated_at = datetime.now()
+        stock_id = stock.id
+        quantity_after = stock.quantity
+    else:
+        # Yangi stock yaratish
+        quantity_after = quantity_change if quantity_change > 0 else 0
+        stock = Stock(
+            warehouse_id=warehouse_id,
+            product_id=product_id,
+            quantity=quantity_after
+        )
+        db.add(stock)
+        db.flush()  # ID olish uchun
+        stock_id = stock.id
+    
+    # StockMovement yozuvini yaratish
+    movement = StockMovement(
+        stock_id=stock_id,
+        warehouse_id=warehouse_id,
+        product_id=product_id,
+        operation_type=operation_type,
+        document_type=document_type,
+        document_id=document_id,
+        document_number=document_number,
+        quantity_change=quantity_change,
+        quantity_after=quantity_after,
+        user_id=user_id,
+        note=note
+    )
+    db.add(movement)
+    return movement
+
+
 @app.get("/warehouse", response_class=HTMLResponse)
 async def warehouse_list(request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Qaysi omborda nima bor — ombor qoldiqlari"""
@@ -3632,63 +3712,97 @@ async def warehouse_list(request: Request, db: Session = Depends(get_db), curren
     warehouses = db.query(Warehouse).all()
     # Faqat qoldiq > 0 bo'lgan yozuvlarni ko'rsatamiz (0 qoldiqlar ro'yxatda chiqmasin)
     stocks = db.query(Stock).join(Product).join(Warehouse).filter(Stock.quantity > 0).all()
-    # Har bir qoldiq uchun manba hujjatlar: tovar kirim (Purchase), ishlab chiqarish (Production), qoldiq hujjati (StockAdjustmentDoc)
+    
+    # Har bir qoldiq uchun oxirgi hujjatni StockMovement dan olish
     stock_sources = {}
     for s in stocks:
-        items = []
-        # 1) Tovar kirim (sotib olingan) — tasdiqlangan kirimlar
-        purchases = (
-            db.query(Purchase)
-            .join(PurchaseItem, Purchase.id == PurchaseItem.purchase_id)
-            .filter(
-                Purchase.warehouse_id == s.warehouse_id,
-                PurchaseItem.product_id == s.product_id,
-                Purchase.status == "confirmed",
+        # Oxirgi StockMovement ni topish (har bir operatsiya uchun alohida hujjat)
+        last_movement = db.query(StockMovement).filter(
+            StockMovement.warehouse_id == s.warehouse_id,
+            StockMovement.product_id == s.product_id
+        ).order_by(StockMovement.created_at.desc()).first()
+        
+        if last_movement:
+            # Hujjat URL ni aniqlash
+            doc_url = ""
+            if last_movement.document_type == "Purchase":
+                doc_url = f"/purchases/edit/{last_movement.document_id}"
+            elif last_movement.document_type == "Production":
+                doc_url = f"/production/orders"
+            elif last_movement.document_type == "WarehouseTransfer":
+                doc_url = f"/warehouse/transfers/{last_movement.document_id}"
+            elif last_movement.document_type == "StockAdjustmentDoc":
+                doc_url = f"/qoldiqlar/tovar/hujjat/{last_movement.document_id}"
+            elif last_movement.document_type == "Sale":
+                doc_url = f"/sales/edit/{last_movement.document_id}"
+            else:
+                doc_url = "#"
+            
+            doc_date = last_movement.created_at.strftime("%d.%m.%Y") if last_movement.created_at else ""
+            stock_sources[s.id] = [(last_movement.document_number or f"{last_movement.document_type}-{last_movement.document_id}", doc_url, doc_date)]
+        else:
+            # Eski tizim uchun fallback - StockMovement yo'q bo'lsa, eski usulni ishlatish
+            items = []
+            # 1) Tovar kirim (sotib olingan) — tasdiqlangan kirimlar
+            purchases = (
+                db.query(Purchase)
+                .join(PurchaseItem, Purchase.id == PurchaseItem.purchase_id)
+                .filter(
+                    Purchase.warehouse_id == s.warehouse_id,
+                    PurchaseItem.product_id == s.product_id,
+                    Purchase.status == "confirmed",
+                )
+                .order_by(Purchase.date.desc())
+                .limit(1)
+                .all()
             )
-            .order_by(Purchase.date.desc())
-            .limit(3)
-            .all()
-        )
-        for p in purchases:
-            items.append((p.number, f"/purchases/edit/{p.id}", p.date.strftime("%d.%m.%Y") if p.date else ""))
-        # 2) Ishlab chiqarish — tayyor mahsulot shu omborga yozilgan (PR-...)
-        out_wh_id = s.warehouse_id
-        productions = (
-            db.query(Production)
-            .join(Recipe, Production.recipe_id == Recipe.id)
-            .filter(
-                Production.status == "completed",
-                Recipe.product_id == s.product_id,
-                or_(
-                    Production.output_warehouse_id == out_wh_id,
-                    and_(Production.output_warehouse_id.is_(None), Production.warehouse_id == out_wh_id),
-                ),
+            for p in purchases:
+                items.append((p.number, f"/purchases/edit/{p.id}", p.date.strftime("%d.%m.%Y") if p.date else ""))
+            
+            # 2) Ishlab chiqarish
+            out_wh_id = s.warehouse_id
+            productions = (
+                db.query(Production)
+                .join(Recipe, Production.recipe_id == Recipe.id)
+                .filter(
+                    Production.status == "completed",
+                    Recipe.product_id == s.product_id,
+                    or_(
+                        Production.output_warehouse_id == out_wh_id,
+                        and_(Production.output_warehouse_id.is_(None), Production.warehouse_id == out_wh_id),
+                    ),
+                )
+                .order_by(Production.date.desc())
+                .limit(1)
+                .all()
             )
-            .order_by(Production.date.desc())
-            .limit(3)
-            .all()
-        )
-        for pr in productions:
-            items.append((pr.number, f"/production/orders", pr.date.strftime("%d.%m.%Y") if pr.date else ""))
-        # 3) Qoldiq hujjati (tovar qoldiqlari tasdiqlangan)
-        adj_docs = (
-            db.query(StockAdjustmentDoc)
-            .join(StockAdjustmentDocItem, StockAdjustmentDoc.id == StockAdjustmentDocItem.doc_id)
-            .filter(
-                StockAdjustmentDoc.status == "confirmed",
-                StockAdjustmentDocItem.warehouse_id == s.warehouse_id,
-                StockAdjustmentDocItem.product_id == s.product_id,
+            for pr in productions:
+                items.append((pr.number, f"/production/orders", pr.date.strftime("%d.%m.%Y") if pr.date else ""))
+            
+            # 3) Qoldiq hujjati
+            adj_docs = (
+                db.query(StockAdjustmentDoc)
+                .join(StockAdjustmentDocItem, StockAdjustmentDoc.id == StockAdjustmentDocItem.doc_id)
+                .filter(
+                    StockAdjustmentDoc.status == "confirmed",
+                    StockAdjustmentDocItem.warehouse_id == s.warehouse_id,
+                    StockAdjustmentDocItem.product_id == s.product_id,
+                )
+                .order_by(StockAdjustmentDoc.date.desc())
+                .limit(1)
+                .distinct()
+                .all()
             )
-            .order_by(StockAdjustmentDoc.date.desc())
-            .limit(3)
-            .distinct()
-            .all()
-        )
-        for doc in adj_docs:
-            items.append((doc.number, f"/qoldiqlar/tovar/hujjat/{doc.id}", doc.date.strftime("%d.%m.%Y") if doc.date else ""))
-        # Sana bo'yicha oxirgi 5 ta
-        items.sort(key=lambda x: x[2] or "", reverse=True)
-        stock_sources[s.id] = items[:8]
+            for doc in adj_docs:
+                items.append((doc.number, f"/qoldiqlar/tovar/hujjat/{doc.id}", doc.date.strftime("%d.%m.%Y") if doc.date else ""))
+            
+            # Oxirgi hujjatni olish
+            if items:
+                items.sort(key=lambda x: x[2] or "", reverse=True)
+                stock_sources[s.id] = items[:1]
+            else:
+                stock_sources[s.id] = []
+    
     return templates.TemplateResponse("warehouse/list.html", {
         "request": request,
         "warehouses": warehouses,
@@ -3773,7 +3887,7 @@ async def warehouse_import(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
-    """Exceldan qoldiqlarni yuklash. Ustunlari: Ombor nomi (yoki kodi), Mahsulot nomi (yoki kodi), Qoldiq; ixtiyoriy: Tannarx, Sotuv narxi."""
+    """Exceldan qoldiqlarni yuklash — bitta hujjat (StockAdjustmentDoc) yaratiladi, barcha mahsulotlar o'sha hujjatga yoziladi."""
     from urllib.parse import quote
     form = await request.form()
     file = form.get("file") or form.get("excel_file")
@@ -3786,14 +3900,13 @@ async def warehouse_import(
         wb = openpyxl.load_workbook(io.BytesIO(contents), read_only=False, data_only=True)
         ws = wb.active
         rows = list(ws.iter_rows(min_row=2, values_only=True))
-        updated = 0
-        skipped = 0
-        errors = []
+        items_data = []  # Barcha mahsulotlar bitta hujjatga yoziladi
         skip_no_wh = 0
         skip_no_prod = 0
         skip_empty = 0
         missing_products = []
         missing_warehouses = []
+        
         for idx, row in enumerate(rows):
             if not row or (row[0] is None and row[1] is None):
                 skip_empty += 1
@@ -3808,8 +3921,8 @@ async def warehouse_import(
                 qty = float(row[2]) if len(row) > 2 and row[2] is not None else 0
             except (TypeError, ValueError):
                 qty = 0
-            tannarx = None
-            sotuv_narxi = None
+            tannarx = 0.0
+            sotuv_narxi = 0.0
             if len(row) > 3 and row[3] is not None and row[3] != "":
                 try:
                     tannarx = float(row[3])
@@ -3820,10 +3933,12 @@ async def warehouse_import(
                     sotuv_narxi = float(row[4])
                 except (TypeError, ValueError):
                     pass
+            # Bo'sh qatorlarni o'tkazib yuborish
             if not wh_key or not prod_key:
-                skipped += 1
                 skip_empty += 1
                 continue
+            # Miqdor 0 yoki manfiy bo'lsa ham, hujjatga yozish (adjustment uchun)
+            # Lekin qoldiqni yangilashda 0 bo'lishi mumkin
             warehouse = db.query(Warehouse).filter(
                 (func.lower(Warehouse.name) == wh_key.lower()) | (Warehouse.code == wh_key)
             ).first()
@@ -3839,42 +3954,128 @@ async def warehouse_import(
                 if wh_key and wh_key not in missing_warehouses:
                     missing_warehouses.append(wh_key)
                 skip_no_wh += 1
-                skipped += 1
                 continue
             if not product:
                 if prod_key and prod_key not in missing_products:
                     missing_products.append(prod_key)
                 skip_no_prod += 1
-                skipped += 1
                 continue
-            stock = db.query(Stock).filter(
-                Stock.warehouse_id == warehouse.id,
-                Stock.product_id == product.id,
-            ).first()
-            if stock:
-                stock.quantity = qty
-            else:
-                db.add(Stock(warehouse_id=warehouse.id, product_id=product.id, quantity=qty))
-            if tannarx is not None:
+            
+            # Mahsulotni hujjatga qo'shish
+            items_data.append((product.id, warehouse.id, qty, tannarx, sotuv_narxi))
+            
+            # Mahsulot narxlarini yangilash
+            if tannarx is not None and tannarx > 0:
                 product.purchase_price = tannarx
-            if sotuv_narxi is not None:
+            if sotuv_narxi is not None and sotuv_narxi > 0:
                 product.sale_price = sotuv_narxi
-            updated += 1
+        
+        if not items_data:
+            detail = "Hech qanday to'g'ri qator topilmadi. Ombor va mahsulot nomi/kodi to'g'ri ekanligini tekshiring."
+            if missing_products:
+                detail += f" Mahsulot topilmadi: {', '.join(missing_products[:10])}"
+                if len(missing_products) > 10:
+                    detail += f" va yana {len(missing_products) - 10} ta"
+            return RedirectResponse(url="/warehouse?error=import&detail=" + quote(detail), status_code=303)
+        
+        # Bitta hujjat yaratish
+        today = datetime.now()
+        count = db.query(StockAdjustmentDoc).filter(
+            StockAdjustmentDoc.date >= today.replace(hour=0, minute=0, second=0)
+        ).count()
+        number = f"QLD-{today.strftime('%Y%m%d')}-{str(count + 1).zfill(4)}"
+        total_tannarx = sum(qty * cp for _, _, qty, cp, _ in items_data)
+        total_sotuv = sum(qty * sp for _, _, qty, _, sp in items_data)
+        doc = StockAdjustmentDoc(
+            number=number,
+            date=today,
+            user_id=current_user.id if current_user else None,
+            status="draft",  # Qoralama holatida yaratiladi, keyin tasdiqlash mumkin
+            total_tannarx=total_tannarx,
+            total_sotuv=total_sotuv,
+        )
+        db.add(doc)
+        db.flush()
+        
+        # Barcha mahsulotlarni hujjatga qo'shish
+        for pid, wid, qty, cp, sp in items_data:
+            db.add(StockAdjustmentDocItem(
+                doc_id=doc.id,
+                product_id=pid,
+                warehouse_id=wid,
+                quantity=qty,
+                cost_price=cp,
+                sale_price=sp,
+            ))
+        
+        db.flush()  # Hujjat va qatorlarni saqlash
+        
+        # Hujjatni avtomatik tasdiqlash va qoldiqlarni yangilash
+        for item in doc.items:
+            # Eski qoldiqni olish
+            stock = db.query(Stock).filter(
+                Stock.warehouse_id == item.warehouse_id,
+                Stock.product_id == item.product_id,
+            ).first()
+            old_quantity = stock.quantity if stock else 0
+            
+            # Yangi qoldiqni hisoblash
+            new_quantity = item.quantity
+            quantity_change = new_quantity - old_quantity
+            
+            # Qoldiqni yangilash (adjustment uchun to'g'ridan-to'g'ri belgilash)
+            if stock:
+                stock.quantity = new_quantity
+                stock.updated_at = datetime.now()
+                stock_id = stock.id
+                quantity_after = new_quantity
+            else:
+                stock = Stock(
+                    warehouse_id=item.warehouse_id,
+                    product_id=item.product_id,
+                    quantity=new_quantity,
+                )
+                db.add(stock)
+                db.flush()
+                stock_id = stock.id
+                quantity_after = new_quantity
+            
+            # StockMovement yozuvini yaratish (adjustment)
+            if quantity_change != 0:
+                movement = StockMovement(
+                    stock_id=stock_id,
+                    warehouse_id=item.warehouse_id,
+                    product_id=item.product_id,
+                    operation_type="adjustment",
+                    document_type="StockAdjustmentDoc",
+                    document_id=doc.id,
+                    document_number=doc.number,
+                    quantity_change=quantity_change,
+                    quantity_after=quantity_after,
+                    user_id=current_user.id if current_user else None,
+                    note=f"Exceldan yuklash: {doc.number}",
+                    created_at=datetime.now()
+                )
+                db.add(movement)
+        
+        # Hujjatni tasdiqlangan holatga o'tkazish
+        doc.status = "confirmed"
+        
         db.commit()
-        detail = f"Yuklandi: {updated} ta"
-        if skipped:
-            detail += f", o'tkazib yuborildi: {skipped} ta"
-            if skip_no_prod:
-                sample = ", ".join(missing_products[:5])
-                if len(missing_products) > 5:
-                    sample += f" va yana {len(missing_products) - 5} ta"
-                detail += f". Mahsulot topilmadi ({skip_no_prod} ta): {sample}"
-            if skip_no_wh:
-                sample = ", ".join(missing_warehouses[:3])
-                if len(missing_warehouses) > 3:
-                    sample += f" va yana {len(missing_warehouses) - 3} ta"
-                detail += f". Ombor topilmadi ({skip_no_wh} ta): {sample}"
-        return RedirectResponse(url="/warehouse?success=import&detail=" + quote(detail), status_code=303)
+        
+        # Xabar tayyorlash
+        detail = f"Yuklandi: {len(items_data)} ta"
+        if skip_no_prod or skip_no_wh:
+            detail += f", o'tkazib yuborildi: {skip_no_prod + skip_no_wh} ta"
+        if missing_products:
+            detail += f". Mahsulot topilmadi: {', '.join(missing_products[:5])}"
+            if len(missing_products) > 5:
+                detail += f" va yana {len(missing_products) - 5} ta"
+        
+        return RedirectResponse(
+            url="/warehouse?success=import&detail=" + quote(detail) + "&doc_id=" + str(doc.id) + "&doc_number=" + quote(doc.number),
+            status_code=303
+        )
     except Exception as e:
         traceback.print_exc()
         return RedirectResponse(url="/warehouse?error=import&detail=" + quote(str(e)[:200]), status_code=303)
@@ -4017,13 +4218,19 @@ async def warehouse_transfer_save(
     if not current_user:
         return RedirectResponse(url="/login", status_code=303)
     transfer = db.query(WarehouseTransfer).filter(WarehouseTransfer.id == transfer_id).first()
-    if not transfer or transfer.status != "draft":
-        raise HTTPException(status_code=404, detail="Hujjat topilmadi yoki tahrirlab bo'lmaydi")
+    if not transfer:
+        raise HTTPException(status_code=404, detail="Hujjat topilmadi")
+    # Faqat draft va pending_approval holatida tahrirlash mumkin
+    if transfer.status == "confirmed":
+        return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Tasdiqlangan hujjatni tahrirlab bo'lmaydi."), status_code=303)
     if from_warehouse_id == to_warehouse_id:
         return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Qayerdan va qayerga bir xil bo'lmasin."), status_code=303)
     transfer.from_warehouse_id = from_warehouse_id
     transfer.to_warehouse_id = to_warehouse_id
     transfer.note = note or None
+    # Save qilinganda pending_approval holatiga o'tkazish (bo'lim foydalanuvchisi tasdiqlashi uchun)
+    if transfer.status == "draft":
+        transfer.status = "pending_approval"
     form = await request.form()
     db.query(WarehouseTransferItem).filter(WarehouseTransferItem.transfer_id == transfer_id).delete()
     for key, value in form.items():
@@ -4053,8 +4260,11 @@ async def warehouse_transfer_confirm(
     transfer = db.query(WarehouseTransfer).filter(WarehouseTransfer.id == transfer_id).first()
     if not transfer:
         raise HTTPException(status_code=404, detail="Hujjat topilmadi")
+    # Faqat pending_approval holatidagi hujjatni tasdiqlash mumkin
     if transfer.status == "confirmed":
         return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Hujjat allaqachon tasdiqlangan."), status_code=303)
+    if transfer.status != "pending_approval":
+        return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Hujjatni avval saqlang (pending_approval holatiga o'tkazish kerak)."), status_code=303)
     items = db.query(WarehouseTransferItem).filter(WarehouseTransferItem.transfer_id == transfer_id).all()
     if not items:
         return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Kamida bitta mahsulot qo'shing."), status_code=303)
@@ -4071,23 +4281,40 @@ async def warehouse_transfer_confirm(
                 url=f"/warehouse/transfers/{transfer_id}?error=" + quote(f"Qayerdan omborda «{name}» yetarli emas (kerak: {item.quantity}, mavjud: {avail})"),
                 status_code=303
             )
+    # Qoldiqlarni yangilash - faqat tasdiqlanganda
     for item in items:
-        src = db.query(Stock).filter(
-            Stock.warehouse_id == transfer.from_warehouse_id,
-            Stock.product_id == item.product_id
-        ).first()
-        src.quantity -= item.quantity
-        if src.quantity <= 0:
-            src.quantity = 0
-        dest = db.query(Stock).filter(
-            Stock.warehouse_id == transfer.to_warehouse_id,
-            Stock.product_id == item.product_id
-        ).first()
-        if dest:
-            dest.quantity += item.quantity
-        else:
-            db.add(Stock(warehouse_id=transfer.to_warehouse_id, product_id=item.product_id, quantity=item.quantity))
+        # Qayerdan ombordan ayirish - StockMovement yozuvini yaratish
+        create_stock_movement(
+            db=db,
+            warehouse_id=transfer.from_warehouse_id,
+            product_id=item.product_id,
+            quantity_change=-item.quantity,  # Chiqim
+            operation_type="transfer_out",
+            document_type="WarehouseTransfer",
+            document_id=transfer.id,
+            document_number=transfer.number,
+            user_id=current_user.id if current_user else None,
+            note=f"O'tkazish (chiqim): {transfer.number}"
+        )
+        
+        # Qayerga omborga qo'shish - StockMovement yozuvini yaratish
+        create_stock_movement(
+            db=db,
+            warehouse_id=transfer.to_warehouse_id,
+            product_id=item.product_id,
+            quantity_change=item.quantity,  # Kirim
+            operation_type="transfer_in",
+            document_type="WarehouseTransfer",
+            document_id=transfer.id,
+            document_number=transfer.number,
+            user_id=current_user.id if current_user else None,
+            note=f"O'tkazish (kirim): {transfer.number}"
+        )
+    
+    # Tasdiqlash ma'lumotlarini saqlash
     transfer.status = "confirmed"
+    transfer.approved_by_user_id = current_user.id
+    transfer.approved_at = datetime.now()
     db.commit()
     return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?confirmed=1", status_code=303)
 
@@ -4476,20 +4703,19 @@ async def purchase_confirm(purchase_id: int, db: Session = Depends(get_db), curr
     total_expenses = purchase.total_expenses or 0
     items_total = purchase.total or 0
     for item in purchase.items:
-        stock = db.query(Stock).filter(
-            Stock.warehouse_id == purchase.warehouse_id,
-            Stock.product_id == item.product_id
-        ).first()
-        
-        if stock:
-            stock.quantity += item.quantity
-        else:
-            stock = Stock(
-                warehouse_id=purchase.warehouse_id,
-                product_id=item.product_id,
-                quantity=item.quantity
-            )
-            db.add(stock)
+        # StockMovement yozuvini yaratish - har bir operatsiya uchun alohida hujjat
+        create_stock_movement(
+            db=db,
+            warehouse_id=purchase.warehouse_id,
+            product_id=item.product_id,
+            quantity_change=item.quantity,
+            operation_type="purchase",
+            document_type="Purchase",
+            document_id=purchase.id,
+            document_number=purchase.number,
+            user_id=current_user.id if current_user else None,
+            note=f"Tovar kirimi: {purchase.number}"
+        )
         
         # Tannarx = qator narxi + xarajat ulushi (tovar kirimi summasi + xarajat = tannarx)
         product = db.query(Product).filter(Product.id == item.product_id).first()
@@ -5026,7 +5252,19 @@ async def sales_confirm(
             Stock.product_id == item.product_id
         ).first()
         if stock:
-            stock.quantity -= item.quantity
+            # StockMovement yozuvini yaratish (chiqim - sotuv)
+            create_stock_movement(
+                db=db,
+                warehouse_id=order.warehouse_id,
+                product_id=item.product_id,
+                quantity_change=-item.quantity,  # Chiqim
+                operation_type="sale",
+                document_type="Sale",
+                document_id=order.id,
+                document_number=order.number,
+                user_id=current_user.id if current_user else None,
+                note=f"Sotuv: {order.number}"
+            )
     order.status = "completed"
     db.commit()
     check_low_stock_and_notify(db)
@@ -5652,13 +5890,27 @@ def _do_complete_production_stock(db, production, recipe):
             name = product_name.name if product_name else f"#{product_id}"
             msg = quote(f"Yetarli yo'q: {name} (kerak: {required}, mavjud: {stock.quantity if stock else 0})", safe="")
             return RedirectResponse(url=f"/production/orders?error=insufficient_stock&detail={msg}", status_code=303)
+    # Xom ashyolarni ayirish va StockMovement yozuvlarini yaratish
     for product_id, required in items_to_use:
         stock = db.query(Stock).filter(
             Stock.warehouse_id == production.warehouse_id,
             Stock.product_id == product_id
         ).first()
         if stock:
-            stock.quantity -= required
+            # StockMovement yozuvini yaratish (chiqim)
+            create_stock_movement(
+                db=db,
+                warehouse_id=production.warehouse_id,
+                product_id=product_id,
+                quantity_change=-required,  # Chiqim
+                operation_type="production_consumption",
+                document_type="Production",
+                document_id=production.id,
+                document_number=production.number,
+                user_id=production.user_id,
+                note=f"Ishlab chiqarish (xom ashyo): {production.number}"
+            )
+    
     total_material_cost = 0.0
     for product_id, required in items_to_use:
         product = db.query(Product).filter(Product.id == product_id).first()
@@ -5667,6 +5919,8 @@ def _do_complete_production_stock(db, production, recipe):
     output_units = production.quantity * (recipe.output_quantity or 1)
     cost_per_unit = (total_material_cost / output_units) if output_units > 0 else 0
     out_wh_id = production.output_warehouse_id if production.output_warehouse_id else production.warehouse_id
+    
+    # Tayyor mahsulotni qo'shish va StockMovement yozuvini yaratish
     product_stock = db.query(Stock).filter(
         Stock.warehouse_id == out_wh_id,
         Stock.product_id == recipe.product_id
@@ -5675,6 +5929,20 @@ def _do_complete_production_stock(db, production, recipe):
         product_stock.quantity += output_units
     else:
         db.add(Stock(warehouse_id=out_wh_id, product_id=recipe.product_id, quantity=output_units))
+    
+    # StockMovement yozuvini yaratish (kirim - tayyor mahsulot)
+    create_stock_movement(
+        db=db,
+        warehouse_id=out_wh_id,
+        product_id=recipe.product_id,
+        quantity_change=output_units,  # Kirim
+        operation_type="production_output",
+        document_type="Production",
+        document_id=production.id,
+        document_number=production.number,
+        user_id=production.user_id,
+        note=f"Ishlab chiqarish (tayyor mahsulot): {production.number}"
+    )
     output_product = db.query(Product).filter(Product.id == recipe.product_id).first()
     if output_product:
         product_stock = db.query(Stock).filter(Stock.warehouse_id == out_wh_id, Stock.product_id == recipe.product_id).first()

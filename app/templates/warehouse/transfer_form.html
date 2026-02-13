@@ -33,7 +33,7 @@
     {% endif %}
 
     <div class="form-1c bg-white border rounded p-0 mb-3">
-        <form method="post" action="{% if transfer %}/warehouse/transfers/{{ transfer.id }}/save{% else %}/warehouse/transfers/create{% endif %}" id="docForm">
+        <form method="post" action="{% if transfer and transfer.status != 'confirmed' %}/warehouse/transfers/{{ transfer.id }}/save{% elif transfer %}#{% else %}/warehouse/transfers/create{% endif %}" id="docForm" {% if transfer and transfer.status == 'confirmed' %}onsubmit="return false;"{% endif %}>
             <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
             <div class="form-row">
                 <div class="label">№</div>
@@ -47,32 +47,65 @@
                     {% if transfer %}{{ transfer.date.strftime('%d.%m.%Y %H:%M') if transfer.date else '—' }}{% else %}{{ now.strftime('%d.%m.%Y %H:%M') if now else '' }}{% endif %}
                 </div>
             </div>
+            {% if transfer %}
+            <div class="form-row">
+                <div class="label">Holati</div>
+                <div class="field">
+                    {% if transfer.status == 'draft' %}
+                    <span class="badge bg-warning text-dark">Qoralama</span>
+                    {% elif transfer.status == 'pending_approval' %}
+                    <span class="badge bg-primary">Tasdiqlash kutilmoqda</span>
+                    {% elif transfer.status == 'confirmed' %}
+                    <span class="badge bg-success">Tasdiqlangan</span>
+                    {% if transfer.approved_by %}
+                    <small class="text-muted ms-2">({{ transfer.approved_by.full_name if transfer.approved_by else transfer.approved_by_user_id }} tomonidan tasdiqlangan{% if transfer.approved_at %} - {{ transfer.approved_at.strftime('%d.%m.%Y %H:%M') }}{% endif %})</small>
+                    {% endif %}
+                    {% else %}
+                    <span class="badge bg-secondary">{{ transfer.status }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
             <div class="form-row">
                 <div class="label">Ombordan *</div>
                 <div class="field">
+                    {% if transfer and transfer.status == 'confirmed' %}
+                    <input type="text" class="form-control w-100" value="{{ transfer.from_warehouse.name if transfer.from_warehouse else '—' }}" readonly>
+                    <input type="hidden" name="from_warehouse_id" value="{{ transfer.from_warehouse_id }}">
+                    {% else %}
                     <select name="from_warehouse_id" class="form-select w-100" required id="fromWh">
                         <option value="">— Tanlang —</option>
                         {% for wh in warehouses %}
                         <option value="{{ wh.id }}" {% if transfer and transfer.from_warehouse_id == wh.id %}selected{% endif %}>{{ wh.name }}</option>
                         {% endfor %}
                     </select>
+                    {% endif %}
                 </div>
             </div>
             <div class="form-row">
                 <div class="label">Omborga *</div>
                 <div class="field">
+                    {% if transfer and transfer.status == 'confirmed' %}
+                    <input type="text" class="form-control w-100" value="{{ transfer.to_warehouse.name if transfer.to_warehouse else '—' }}" readonly>
+                    <input type="hidden" name="to_warehouse_id" value="{{ transfer.to_warehouse_id }}">
+                    {% else %}
                     <select name="to_warehouse_id" class="form-select w-100" required id="toWh">
                         <option value="">— Tanlang —</option>
                         {% for wh in warehouses %}
                         <option value="{{ wh.id }}" {% if transfer and transfer.to_warehouse_id == wh.id %}selected{% endif %}>{{ wh.name }}</option>
                         {% endfor %}
                     </select>
+                    {% endif %}
                 </div>
             </div>
             <div class="form-row">
                 <div class="label">Izoh</div>
                 <div class="field">
+                    {% if transfer and transfer.status == 'confirmed' %}
+                    <input type="text" class="form-control w-100" value="{{ transfer.note or '' }}" readonly>
+                    {% else %}
                     <input type="text" name="note" class="form-control w-100" value="{{ transfer.note or '' }}" placeholder="Izoh">
+                    {% endif %}
                 </div>
             </div>
             <div class="p-2 border-top">
@@ -97,12 +130,27 @@
                         <tr class="item-row">
                             <td class="row-num">{{ loop.index }}</td>
                             <td class="combo-wrap">
+                                {% if transfer.status == 'confirmed' %}
+                                <input type="text" class="form-control" value="{{ row.product.name if row.product else '' }}{% if row.product and row.product.code %} ({{ row.product.code }}){% endif %}" readonly>
+                                <input type="hidden" name="product_id_{{ loop.index }}" value="{{ row.product_id }}">
+                                {% else %}
                                 <input type="text" class="form-control combo-input" placeholder="Nom yoki kod (F4)" data-row="{{ loop.index }}" value="{{ row.product.name if row.product else '' }}{% if row.product and row.product.code %} ({{ row.product.code }}){% endif %}" autocomplete="off">
                                 <input type="hidden" name="product_id_{{ loop.index }}" value="{{ row.product_id }}">
                                 <div class="combo-drop" id="comboDrop{{ loop.index }}" style="display:none;"></div>
+                                {% endif %}
                             </td>
-                            <td><input type="text" name="quantity_{{ loop.index }}" class="form-control qty-input" value="{{ row.quantity }}" inputmode="decimal"></td>
-                            <td><button type="button" class="btn btn-outline-danger btn-sm rm-row">&times;</button></td>
+                            <td>
+                                {% if transfer.status == 'confirmed' %}
+                                <input type="text" class="form-control qty-input" value="{{ row.quantity }}" readonly>
+                                {% else %}
+                                <input type="text" name="quantity_{{ loop.index }}" class="form-control qty-input" value="{{ row.quantity }}" inputmode="decimal">
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if transfer.status != 'confirmed' %}
+                                <button type="button" class="btn btn-outline-danger btn-sm rm-row">&times;</button>
+                                {% endif %}
+                            </td>
                         </tr>
                         {% endfor %}
                         {% else %}
@@ -119,14 +167,26 @@
                         {% endif %}
                     </tbody>
                 </table>
+                {% if not transfer or transfer.status != 'confirmed' %}
                 <button type="button" class="btn btn-success btn-sm mt-1" id="addRow"><i class="bi bi-plus"></i> Qator qo'shish</button>
+                {% endif %}
             </div>
             <div class="form-row border-0 p-2">
                 <div class="label"></div>
                 <div class="field d-flex gap-1 flex-wrap">
+                    {% if transfer and transfer.status == 'confirmed' %}
+                    <span class="text-muted small align-self-center">Hujjat tasdiqlangan, tahrirlab bo'lmaydi</span>
+                    {% else %}
                     <button type="submit" class="btn btn-primary btn-sm">Saqlash</button>
-                    {% if transfer and transfer.status == 'draft' %}
-                    <button type="button" class="btn btn-success btn-sm" id="btnConfirm" data-confirm-url="/warehouse/transfers/{{ transfer.id }}/confirm">Tasdiqlash</button>
+                    {% endif %}
+                    {% if transfer and transfer.status == 'pending_approval' %}
+                    {# Bo'lim foydalanuvchisi tasdiqlashi mumkin #}
+                    <form method="post" action="/warehouse/transfers/{{ transfer.id }}/confirm" class="d-inline" onsubmit="return confirm('Hujjatni tasdiqlash — ombordagi qoldiqlar o\'zgaradi. Davom etasizmi?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
+                        <button type="submit" class="btn btn-success btn-sm"><i class="bi bi-check-lg"></i> Tasdiqlash</button>
+                    </form>
+                    {% elif transfer and transfer.status == 'draft' %}
+                    {# Draft holatida tasdiqlash tugmasi yo'q, avval saqlash kerak #}
                     {% endif %}
                     <a href="/warehouse/transfers" class="btn btn-outline-secondary btn-sm">Chiqish</a>
                 </div>

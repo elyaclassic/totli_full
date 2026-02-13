@@ -38,6 +38,7 @@
                         <tr>
                             <th>#</th>
                             <th>Nomi</th>
+                            <th>Bo'lim</th>
                             <th>Manzil</th>
                             <th>Holati</th>
                             <th></th>
@@ -48,6 +49,13 @@
                     <tr>
                         <td>{{ warehouse.id }}</td>
                         <td><strong>{{ warehouse.name }}</strong></td>
+                        <td>
+                            {% if warehouse.department %}
+                            <span class="badge bg-info">{{ warehouse.department.name }}</span>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
                         <td>{{ warehouse.address or '-' }}</td>
                         <td>
                             {% if warehouse.is_active %}
@@ -58,7 +66,7 @@
                         </td>
                         <td>
                             <button class="btn btn-sm btn-outline-primary" title="Tahrirlash"
-                                onclick="editWarehouse({{ warehouse.id }}, `{{ warehouse.name }}`, `{{ warehouse.address or '' }}`)">
+                                onclick="editWarehouse({{ warehouse.id }}, `{{ warehouse.name }}`, `{{ warehouse.address or '' }}`, {{ warehouse.department_id or 'null' }})">
                                 <i class="bi bi-pencil"></i>
                             </button>
                             <button class="btn btn-sm btn-outline-danger" title="O'chirish"
@@ -69,7 +77,7 @@
                     </tr>
                         {% else %}
                         <tr>
-                            <td colspan="5" class="text-muted text-center py-4">Hozircha omborlar yo'q. Yangi ombor qo'shish uchun yuqoridagi Yaratish tugmasini bosing.</td>
+                            <td colspan="6" class="text-muted text-center py-4">Hozircha omborlar yo'q. Yangi ombor qo'shish uchun yuqoridagi Yaratish tugmasini bosing.</td>
                         </tr>
                         {% endfor %}
                 </tbody>
@@ -92,6 +100,16 @@
                     <div class="mb-3">
                         <label class="form-label">Nomi *</label>
                         <input type="text" class="form-control" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Bo'lim</label>
+                        <select class="form-select" name="department_id">
+                            <option value="">— Bo'lim tanlanmagan —</option>
+                            {% for dept in departments %}
+                            <option value="{{ dept.id }}">{{ dept.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Ombor qaysi bo'limga tegishli ekanligini belgilang</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Manzil</label>
@@ -120,6 +138,16 @@
                     <div class="mb-3">
                         <label class="form-label">Nomi *</label>
                         <input type="text" class="form-control" name="name" id="edit_name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Bo'lim</label>
+                        <select class="form-select" name="department_id" id="edit_department_id">
+                            <option value="">— Bo'lim tanlanmagan —</option>
+                            {% for dept in departments %}
+                            <option value="{{ dept.id }}">{{ dept.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Ombor qaysi bo'limga tegishli ekanligini belgilang</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Manzil</label>
@@ -197,10 +225,11 @@
         }
     });
 
-    function editWarehouse(id, name, address) {
+    function editWarehouse(id, name, address, departmentId) {
         document.getElementById('editWarehouseForm').action = '/info/warehouses/edit/' + id;
         document.getElementById('edit_name').value = name;
         document.getElementById('edit_address').value = address;
+        document.getElementById('edit_department_id').value = departmentId || '';
 
         var modal = new bootstrap.Modal(document.getElementById('editWarehouseModal'));
         modal.show();

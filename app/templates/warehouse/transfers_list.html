@@ -8,6 +8,7 @@
 .form-1c-list .table-1c th { background: #e9ecef; font-weight: 600; white-space: nowrap; }
 .form-1c-list .table-1c td, .form-1c-list .table-1c th { padding: 6px 10px; vertical-align: middle; }
 .form-1c-list .badge-draft { background: #ffc107; color: #000; }
+.form-1c-list .badge-pending_approval { background: #0d6efd; color: #fff; }
 .form-1c-list .badge-confirmed { background: #198754; color: #fff; }
 </style>
 
@@ -58,7 +59,8 @@
                         <th>Ombordan</th>
                         <th>Omborga</th>
                         <th>Qatorlar</th>
-                        <th>Foydalanuvchi</th>
+                        <th>Yaratgan</th>
+                        <th>Tasdiqlagan</th>
                         <th>Amal</th>
                     </tr>
                 </thead>
@@ -70,16 +72,47 @@
                         <td>
                             {% if t.status == 'draft' %}
                             <span class="badge badge-draft">Qoralama</span>
-                            {% else %}
+                            {% elif t.status == 'pending_approval' %}
+                            <span class="badge badge-pending_approval">Tasdiqlash kutilmoqda</span>
+                            {% elif t.status == 'confirmed' %}
                             <span class="badge badge-confirmed">Tasdiqlangan</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ t.status }}</span>
                             {% endif %}
                         </td>
-                        <td>{{ t.from_warehouse.name if t.from_warehouse else '—' }}</td>
-                        <td>{{ t.to_warehouse.name if t.to_warehouse else '—' }}</td>
+                        <td>
+                            {{ t.from_warehouse.name if t.from_warehouse else '—' }}
+                            {% if t.from_warehouse and t.from_warehouse.department %}
+                            <br><small class="text-muted">({{ t.from_warehouse.department.name }})</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {{ t.to_warehouse.name if t.to_warehouse else '—' }}
+                            {% if t.to_warehouse and t.to_warehouse.department %}
+                            <br><small class="text-muted">({{ t.to_warehouse.department.name }})</small>
+                            {% endif %}
+                        </td>
                         <td>{{ t.items|length }} ta</td>
                         <td>{{ t.user.full_name if t.user else t.user_id }}</td>
                         <td>
+                            {% if t.approved_by %}
+                            {{ t.approved_by.full_name }}
+                            {% if t.approved_at %}
+                            <br><small class="text-muted">{{ t.approved_at.strftime('%d.%m.%Y %H:%M') }}</small>
+                            {% endif %}
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
                             <a href="/warehouse/transfers/{{ t.id }}" class="btn btn-outline-primary btn-sm">Ochish</a>
+                            {% if t.status == 'pending_approval' %}
+                            {# Bo'lim foydalanuvchisi tasdiqlashi mumkin #}
+                            <form method="post" action="/warehouse/transfers/{{ t.id }}/confirm" class="d-inline" onsubmit="return confirm('Hujjatni tasdiqlash — ombordagi qoldiqlar o\'zgaradi. Davom etasizmi?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
+                                <button type="submit" class="btn btn-success btn-sm" title="Tasdiqlash"><i class="bi bi-check-lg"></i> Tasdiqlash</button>
+                            </form>
+                            {% endif %}
                             {% if t.status == 'confirmed' and current_user and current_user.role == 'admin' %}
                             <form method="post" action="/warehouse/transfers/{{ t.id }}/revert" class="d-inline" onsubmit="return confirm('Tasdiqni bekor qilish — ombordagi harakat teskari qilinadi. Davom etasizmi?');">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
@@ -96,7 +129,7 @@
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="8" class="text-center text-muted py-4">Hujjatlar yo'q. «Yaratish» tugmasini bosing.</td>
+                        <td colspan="9" class="text-center text-muted py-4">Hujjatlar yo'q. «Yaratish» tugmasini bosing.</td>
                     </tr>
                     {% endfor %}
                 </tbody>

@@ -26,8 +26,8 @@ class MainActivity : AppCompatActivity() {
         setupWebView()
         checkLocationPermission()
         
-        // Load URL - ngrok (HTTPS, no password required) - Start with login page
-        webView.loadUrl("https://lineal-whelpless-margrett.ngrok-free.dev/static/pwa/login.html")
+        // Load URL - ZeroTier One (10.243.49.144) - Start with login page
+        webView.loadUrl("http://10.243.49.144/static/pwa/login.html")
     }
     
     private fun setupWebView() {

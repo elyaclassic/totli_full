@@ -179,9 +179,11 @@ class Warehouse(Base):
     name = Column(String(100), index=True)
     address = Column(String(255))
     responsible_id = Column(Integer, ForeignKey("users.id"))
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)  # Bo'limga biriktirish
     is_active = Column(Boolean, default=True)
     
     stocks = relationship("Stock", back_populates="warehouse")
+    department = relationship("Department")
 
 
 class Stock(Base):
@@ -196,6 +198,38 @@ class Stock(Base):
     
     warehouse = relationship("Warehouse", back_populates="stocks")
     product = relationship("Product", back_populates="stock_items")
+    movements = relationship("StockMovement", back_populates="stock", order_by="StockMovement.created_at.desc()")
+
+
+class StockMovement(Base):
+    """Ombor harakati - har bir operatsiya uchun hujjat"""
+    __tablename__ = "stock_movements"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=True)  # null bo'lishi mumkin (yangi qoldiq)
+    warehouse_id = Column(Integer, ForeignKey("warehouses.id"), nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    
+    # Operatsiya turi va hujjat
+    operation_type = Column(String(50), nullable=False)  # purchase, production, transfer_in, transfer_out, sale, adjustment, other
+    document_type = Column(String(50), nullable=False)  # Purchase, Production, WarehouseTransfer, Sale, StockAdjustmentDoc
+    document_id = Column(Integer, nullable=False)  # Hujjat ID
+    document_number = Column(String(100), nullable=True)  # Hujjat raqami (ko'rsatish uchun)
+    
+    # Harakat miqdori
+    quantity_change = Column(Float, nullable=False)  # O'zgarish miqdori (+ kirim, - chiqim)
+    quantity_after = Column(Float, nullable=False)  # O'zgarishdan keyingi qoldiq
+    
+    # Qo'shimcha ma'lumotlar
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Operatsiyani bajargan foydalanuvchi
+    note = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    
+    # Relationships
+    stock = relationship("Stock", back_populates="movements")
+    warehouse = relationship("Warehouse")
+    product = relationship("Product")
+    user = relationship("User")
 
 
 class WarehouseTransfer(Base):
@@ -206,14 +240,17 @@ class WarehouseTransfer(Base):
     date = Column(DateTime, default=datetime.now)
     from_warehouse_id = Column(Integer, ForeignKey("warehouses.id"), nullable=False)
     to_warehouse_id = Column(Integer, ForeignKey("warehouses.id"), nullable=False)
-    status = Column(String(20), default="draft")  # draft, confirmed
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    status = Column(String(20), default="draft")  # draft, pending_approval, confirmed
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Yaratgan foydalanuvchi
+    approved_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Tasdiqlagan foydalanuvchi (bo'lim foydalanuvchisi)
+    approved_at = Column(DateTime, nullable=True)  # Tasdiqlash vaqti
     note = Column(Text)
     created_at = Column(DateTime, default=datetime.now)
 
     from_warehouse = relationship("Warehouse", foreign_keys=[from_warehouse_id])
     to_warehouse = relationship("Warehouse", foreign_keys=[to_warehouse_id])
     user = relationship("User", foreign_keys=[user_id])
+    approved_by = relationship("User", foreign_keys=[approved_by_user_id])
     items = relationship("WarehouseTransferItem", back_populates="transfer", cascade="all, delete-orphan")
 
 
@@ -586,7 +623,10 @@ class CashRegister(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100))
     balance = Column(Float, default=0)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)  # Bo'limga biriktirish
     is_active = Column(Boolean, default=True)
+    
+    department = relationship("Department")
 
 
 class Payment(Base):
@@ -842,6 +882,10 @@ class Department(Base):
     description = Column(Text)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.now)
+    
+    # Relationships
+    warehouses = relationship("Warehouse", backref="warehouse_department")
+    cash_registers = relationship("CashRegister", backref="cash_department")
 
 
 class Direction(Base):
