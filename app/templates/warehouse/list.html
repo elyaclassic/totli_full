@@ -86,6 +86,7 @@
                                             {% if current_user and current_user.role == 'admin' %}
                                             <td>
                                                 <form action="/warehouse/stock/{{ stock.id }}/zero" method="post" class="d-inline" onsubmit="return confirm('Ushbu qoldiqni nolga tushirishni xohlaysizmi?');">
+                                                    <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
                                                     <button type="submit" class="btn btn-outline-danger btn-sm" title="Qoldiqni nolga tushirish"><i class="bi bi-dash-circle"></i></button>
                                                 </form>
                                             </td>
@@ -165,6 +166,7 @@
                             {% if current_user and current_user.role == 'admin' %}
                             <td>
                                 <form action="/warehouse/stock/{{ stock.id }}/zero" method="post" class="d-inline" onsubmit="return confirm('Ushbu qoldiqni nolga tushirishni xohlaysizmi?');">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
                                     <button type="submit" class="btn btn-outline-danger btn-sm" title="Qoldiqni nolga tushirish"><i class="bi bi-dash-circle"></i></button>
                                 </form>
                             </td>
@@ -190,6 +192,7 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <form action="/warehouse/import" method="post" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-upload"></i> Qoldiqlarni Exceldan yuklash</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>

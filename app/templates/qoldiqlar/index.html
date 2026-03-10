@@ -71,10 +71,12 @@
                                         <a href="/qoldiqlar/kassa/hujjat/{{ d.id }}" class="btn btn-sm btn-outline-primary">Ochish</a>
                                         {% if d.status == 'confirmed' and current_user and current_user.role == 'admin' %}
                                         <form method="post" action="/qoldiqlar/kassa/hujjat/{{ d.id }}/revert" class="d-inline" onsubmit="return confirm('Tasdiqni bekor qilmoqchimisiz?');">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
                                             <button type="submit" class="btn btn-sm btn-outline-warning" title="Tasdiqni bekor qilish"><i class="bi bi-arrow-counterclockwise"></i></button>
                                         </form>
                                         {% elif d.status == 'draft' and current_user and current_user.role == 'admin' %}
                                         <form method="post" action="/qoldiqlar/kassa/hujjat/{{ d.id }}/delete" class="d-inline" onsubmit="return confirm('Ushbu hujjatni o\'chirmoqchimisiz?');">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
                                             <button type="submit" class="btn btn-sm btn-outline-danger" title="O'chirish"><i class="bi bi-trash"></i></button>
                                         </form>
                                         {% endif %}
@@ -140,10 +142,12 @@
                                         <a href="/qoldiqlar/tovar/hujjat/{{ d.id }}" class="btn btn-sm btn-outline-primary">Ochish</a>
                                         {% if d.status == 'confirmed' and current_user and current_user.role == 'admin' %}
                                         <form method="post" action="/qoldiqlar/tovar/hujjat/{{ d.id }}/revert" class="d-inline" onsubmit="return confirm('Tasdiqni bekor qilmoqchimisiz?');">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
                                             <button type="submit" class="btn btn-sm btn-outline-warning" title="Tasdiqni bekor qilish"><i class="bi bi-arrow-counterclockwise"></i></button>
                                         </form>
                                         {% elif d.status == 'draft' and current_user and current_user.role == 'admin' %}
                                         <form method="post" action="/qoldiqlar/tovar/hujjat/{{ d.id }}/delete" class="d-inline" onsubmit="return confirm('Ushbu hujjatni o\'chirmoqchimisiz?');">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
                                             <button type="submit" class="btn btn-sm btn-outline-danger" title="O'chirish"><i class="bi bi-trash"></i></button>
                                         </form>
                                         {% endif %}
@@ -200,10 +204,12 @@
                                         <a href="/qoldiqlar/kontragent/hujjat/{{ d.id }}" class="btn btn-sm btn-outline-primary">Ochish</a>
                                         {% if d.status == 'confirmed' and current_user and current_user.role == 'admin' %}
                                         <form method="post" action="/qoldiqlar/kontragent/hujjat/{{ d.id }}/revert" class="d-inline" onsubmit="return confirm('Tasdiqni bekor qilmoqchimisiz?');">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
                                             <button type="submit" class="btn btn-sm btn-outline-warning" title="Tasdiqni bekor qilish"><i class="bi bi-arrow-counterclockwise"></i></button>
                                         </form>
                                         {% elif d.status == 'draft' and current_user and current_user.role == 'admin' %}
                                         <form method="post" action="/qoldiqlar/kontragent/hujjat/{{ d.id }}/delete" class="d-inline" onsubmit="return confirm('Ushbu hujjatni o\'chirmoqchimisiz?');">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
                                             <button type="submit" class="btn btn-sm btn-outline-danger" title="O'chirish"><i class="bi bi-trash"></i></button>
                                         </form>
                                         {% endif %}
@@ -230,6 +236,7 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <form action="/qoldiqlar/tovar/import-excel" method="post" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-upload"></i> Exceldan tovar qoldiqlarini yuklash</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>

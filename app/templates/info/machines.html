@@ -83,6 +83,7 @@
                             </button>
                             {% if m.is_active %}
                             <form action="/info/machines/delete/{{ m.id }}" method="post" class="d-inline" onsubmit="return confirm('Ushbu uskunani o\'chirishni xohlaysizmi?');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
                                 <button type="submit" class="btn btn-sm btn-outline-danger" title="O'chirish"><i class="bi bi-trash"></i></button>
                             </form>
                             {% endif %}
@@ -109,6 +110,7 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <form action="/info/machines/add" method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-plus-circle"></i> Yangi uskuna</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -164,6 +166,7 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <form id="editMachineForm" method="post" action="">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-pencil"></i> Uskunani tahrirlash</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>

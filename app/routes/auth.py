@@ -11,6 +11,7 @@ from app.core import templates
 from app.models.database import get_db, User
 from app.deps import get_current_user
 from app.utils.auth import verify_password, create_session_token
+from app.utils.audit_log import log_audit
 
 router = APIRouter(tags=["auth"])
 
@@ -22,7 +23,8 @@ async def login_page(request: Request, current_user: Optional[User] = Depends(ge
     err = request.query_params.get("error")
     if err == "please_retry":
         err = "Xatolik yuz berdi. Qayta kirishni urinib ko'ring."
-    return templates.TemplateResponse("login.html", {"request": request, "error": err})
+    csrf_token = getattr(request.state, "csrf_token", "") or ""
+    return templates.TemplateResponse("login.html", {"request": request, "error": err, "csrf_token": csrf_token})
 
 
 @router.post("/login")
@@ -36,22 +38,29 @@ async def login(
         username = (username or "").strip()
         password = (password or "").strip()
         if not username or not password:
+            csrf_token = getattr(request.state, "csrf_token", "") or ""
             return templates.TemplateResponse("login.html", {
                 "request": request,
                 "error": "Login va parolni kiriting!",
+                "csrf_token": csrf_token,
             })
         user = db.query(User).filter(User.username == username).first()
         if not user or not verify_password(password, user.password_hash):
+            csrf_token = getattr(request.state, "csrf_token", "") or ""
             return templates.TemplateResponse("login.html", {
                 "request": request,
                 "error": "Login yoki parol noto'g'ri!",
+                "csrf_token": csrf_token,
             })
         if not user.is_active:
+            csrf_token = getattr(request.state, "csrf_token", "") or ""
             return templates.TemplateResponse("login.html", {
                 "request": request,
                 "error": "Sizning hisobingiz faol emas. Administrator bilan bog'laning.",
+                "csrf_token": csrf_token,
             })
         token = create_session_token(user.id, user.username)
+        log_audit(user.id, user.username, "login_success", None)
         use_https = os.getenv("HTTPS", "").lower() in ("1", "true", "yes")
         # Rolga qarab bosh sahifaga yo'naltirish
         role_home = {"agent": "/dashboard/agent", "driver": "/dashboard/agent", "production": "/production", "qadoqlash": "/production"}
@@ -68,9 +77,11 @@ async def login(
         )
         return resp
     except Exception as e:
+        csrf_token = getattr(request.state, "csrf_token", "") or ""
         return templates.TemplateResponse("login.html", {
             "request": request,
             "error": f"Tizimda xatolik: {str(e)}",
+            "csrf_token": csrf_token,
         })
 
 

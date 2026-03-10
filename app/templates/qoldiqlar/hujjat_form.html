@@ -22,15 +22,18 @@
             </h5>
             {% if doc and doc.status == 'draft' %}
             <form method="post" action="/qoldiqlar/tovar/hujjat/{{ doc.id }}/tasdiqlash" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
                 <button type="submit" class="btn btn-success"><i class="bi bi-check-circle"></i> Tasdiqlash</button>
             </form>
             {% if current_user and current_user.role == 'admin' %}
             <form method="post" action="/qoldiqlar/tovar/hujjat/{{ doc.id }}/delete" class="d-inline" onsubmit="return confirm('Ushbu hujjatni o\'chirmoqchimisiz?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
                 <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash"></i> O'chirish</button>
             </form>
             {% endif %}
             {% elif doc and doc.status == 'confirmed' and current_user and current_user.role == 'admin' %}
             <form method="post" action="/qoldiqlar/tovar/hujjat/{{ doc.id }}/revert" class="d-inline" onsubmit="return confirm('Tasdiqni bekor qilish — ombor qoldig\'i kamayadi. Davom etasizmi?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
                 <button type="submit" class="btn btn-warning"><i class="bi bi-arrow-counterclockwise"></i> Tasdiqni bekor qilish</button>
             </form>
             {% endif %}
@@ -100,6 +103,7 @@
                             {% if doc.status == 'draft' %}
                             <td class="text-center">
                                 <form method="post" action="/qoldiqlar/tovar/hujjat/{{ doc.id }}/delete-row/{{ item.id }}" class="d-inline" onsubmit="return confirm('Ushbu qatorni o\'chirishni xohlaysizmi?');">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
                                     <button type="submit" class="btn btn-sm btn-outline-danger" title="O'chirish"><i class="bi bi-trash"></i></button>
                                 </form>
                             </td>
@@ -127,6 +131,7 @@
             <!-- Qator qo'shish -->
             <h6 class="mb-2">Qator qo'shish</h6>
             <form method="post" action="/qoldiqlar/tovar/hujjat/{{ doc.id }}/add-row" class="row g-2 align-items-end mb-4">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
                 <div class="col-md-3 position-relative">
                     <label class="form-label small">Mahsulot *</label>
                     <input type="text" class="form-control form-control-sm add-product-search" placeholder="Nomi yoki kod..." autocomplete="off">
@@ -167,6 +172,13 @@
             {% else %}
             <!-- Yangi hujjat: barcha qatorlar bir formda -->
             <form method="post" action="/qoldiqlar/tovar/hujjat" id="newDocForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Hujjat sanasi *</label>
+                        <input type="date" name="doc_date" id="doc_date" class="form-control form-control-sm" value="{{ now_date or '' }}" required>
+                    </div>
+                </div>
                 <h6 class="mb-2">Qatorlar</h6>
                 <div class="table-responsive mb-3">
                     <table class="table table-sm" id="itemsTable">

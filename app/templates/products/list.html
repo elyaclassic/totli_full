@@ -26,6 +26,11 @@
     <div class="card">
             <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2 py-3">
                 <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <form action="/products" method="get" class="d-inline-flex gap-1 align-items-center me-2">
+                        <input type="hidden" name="type" value="{{ current_type }}">
+                        <input type="search" name="q" value="{{ search_q or '' }}" placeholder="Nomi, kodi, shtrix kod..." class="form-control form-control-sm" style="width: 200px;">
+                        <button type="submit" class="btn btn-outline-secondary btn-sm"><i class="bi bi-search"></i></button>
+                    </form>
                     <a href="/products" class="btn btn-sm {% if current_type == 'all' %}btn-success{% else %}btn-outline-success{% endif %}">Hammasi</a>
                     <a href="/products?type=tayyor" class="btn btn-sm {% if current_type == 'tayyor' %}btn-success{% else %}btn-outline-success{% endif %}">Tayyor</a>
                     <a href="/products?type=yarim_tayyor" class="btn btn-sm {% if current_type == 'yarim_tayyor' %}btn-warning{% else %}btn-outline-warning{% endif %}">Yarim tayyor</a>
@@ -105,6 +110,20 @@
                         {% endif %}
                     </tbody>
                 </table>
+                {% if pagination and pagination.total_pages > 1 %}
+                <nav class="d-flex justify-content-between align-items-center px-3 py-2 border-top flex-wrap gap-2">
+                    <small class="text-muted">Jami {{ pagination.total }} ta, sahifa {{ pagination.page }}/{{ pagination.total_pages }}</small>
+                    <ul class="pagination pagination-sm mb-0">
+                        <li class="page-item {% if pagination.page <= 1 %}disabled{% endif %}">
+                            <a class="page-link" href="?type={{ current_type }}&q={{ search_q or '' }}&page={{ pagination.page - 1 }}">Oldingi</a>
+                        </li>
+                        <li class="page-item active"><span class="page-link">{{ pagination.page }}</span></li>
+                        <li class="page-item {% if pagination.page >= pagination.total_pages %}disabled{% endif %}">
+                            <a class="page-link" href="?type={{ current_type }}&q={{ search_q or '' }}&page={{ pagination.page + 1 }}">Keyingi</a>
+                        </li>
+                    </ul>
+                </nav>
+                {% endif %}
             </div>
         </div>
     </div>

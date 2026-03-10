@@ -2,12 +2,22 @@
 
 {% block content %}
 <div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
         <div>
             <a href="/qoldiqlar" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Qoldiqlar</a>
             <h4 class="mb-0 mt-2"><i class="bi bi-file-earmark-text"></i> Tovar qoldiqlari hujjatlari</h4>
         </div>
-        <a href="/qoldiqlar/tovar/hujjat/new" class="btn btn-success"><i class="bi bi-plus-circle"></i> Yaratish</a>
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            <form action="/qoldiqlar/tovar/hujjat" method="get" class="d-inline-flex flex-wrap gap-2 align-items-center">
+                <label class="form-label mb-0 small">Sana dan:</label>
+                <input type="date" name="date_from" value="{{ date_from or '' }}" class="form-control form-control-sm" style="width: 150px;">
+                <label class="form-label mb-0 small">gacha:</label>
+                <input type="date" name="date_to" value="{{ date_to or '' }}" class="form-control form-control-sm" style="width: 150px;">
+                <button type="submit" class="btn btn-outline-primary btn-sm"><i class="bi bi-funnel"></i> Filtr</button>
+                <a href="/qoldiqlar/tovar/hujjat" class="btn btn-outline-secondary btn-sm">Tozalash</a>
+            </form>
+            <a href="/qoldiqlar/tovar/hujjat/new" class="btn btn-success"><i class="bi bi-plus-circle"></i> Yaratish</a>
+        </div>
     </div>
 
     <div class="card">

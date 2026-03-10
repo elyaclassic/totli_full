@@ -38,6 +38,7 @@
 
     <div class="form-1c bg-white border rounded p-0">
         <form method="post" action="/warehouse/transfer" id="transferForm">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
             <div class="form-row">
                 <div class="label">Qayerdan (ombor) *</div>
                 <div class="field">

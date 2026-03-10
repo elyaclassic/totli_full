@@ -21,15 +21,18 @@
             </h5>
             {% if doc and doc.status == 'draft' %}
             <form method="post" action="/qoldiqlar/kontragent/hujjat/{{ doc.id }}/tasdiqlash" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
                 <button type="submit" class="btn btn-success"><i class="bi bi-check-circle"></i> Tasdiqlash</button>
             </form>
             {% if current_user and current_user.role == 'admin' %}
             <form method="post" action="/qoldiqlar/kontragent/hujjat/{{ doc.id }}/delete" class="d-inline" onsubmit="return confirm('Ushbu hujjatni o\'chirmoqchimisiz?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
                 <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash"></i> O'chirish</button>
             </form>
             {% endif %}
             {% elif doc and doc.status == 'confirmed' and current_user and current_user.role == 'admin' %}
             <form method="post" action="/qoldiqlar/kontragent/hujjat/{{ doc.id }}/revert" class="d-inline" onsubmit="return confirm('Tasdiqni bekor qilish — kontragent balanslari oldingi qiymatga qaytadi. Davom etasizmi?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
                 <button type="submit" class="btn btn-warning"><i class="bi bi-arrow-counterclockwise"></i> Tasdiqni bekor qilish</button>
             </form>
             {% endif %}
@@ -60,6 +63,7 @@
             {% else %}
             {% if partners %}
             <form method="post" action="/qoldiqlar/kontragent/hujjat" id="kontragentDocForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
                 <p class="text-muted small mb-2">Kontragentni nomi yoki telefon bo'yicha qidiring, tanlang, yangi balansni kiriting va <strong>Qo'shish</strong> bosing. Faqat qo'shilgan qatorlar hujjatga kiritiladi.</p>
                 <p class="small mb-3"><strong>Balans:</strong> turdan qarzdorni tanlang, summani (musbat son) kiriting. Yoki to'g'ridan-to'g'ri manfiy son yozishingiz ham mumkin (bizning qarzimiz).</p>
                 <div class="row g-2 align-items-end mb-3">

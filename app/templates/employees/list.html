@@ -4,7 +4,13 @@
 <div class="container-fluid">
     <div class="card">
         <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2 py-3">
-            <h5 class="mb-0"><i class="bi bi-person-badge"></i> Xodimlar</h5>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <h5 class="mb-0"><i class="bi bi-person-badge"></i> Xodimlar</h5>
+                <form action="/employees" method="get" class="d-inline-flex gap-1 align-items-center ms-2">
+                    <input type="search" name="q" value="{{ search_q or '' }}" placeholder="F.I.O, kodi, telefon..." class="form-control form-control-sm" style="width: 200px;">
+                    <button type="submit" class="btn btn-outline-secondary btn-sm"><i class="bi bi-search"></i></button>
+                </form>
+            </div>
             <div class="d-flex flex-wrap gap-2 align-items-center">
                 <form action="/employees/export" method="get" class="d-inline">
                     <button type="submit" class="btn btn-outline-success btn-sm"><i class="bi bi-file-earmark-excel"></i> Export</button>
@@ -66,6 +72,20 @@
                         {% endfor %}
                     </tbody>
                 </table>
+                {% if pagination and pagination.total_pages > 1 %}
+                <nav class="d-flex justify-content-between align-items-center px-3 py-2 border-top flex-wrap gap-2">
+                    <small class="text-muted">Jami {{ pagination.total }} ta, sahifa {{ pagination.page }}/{{ pagination.total_pages }}</small>
+                    <ul class="pagination pagination-sm mb-0">
+                        <li class="page-item {% if pagination.page <= 1 %}disabled{% endif %}">
+                            <a class="page-link" href="?q={{ search_q or '' }}&page={{ pagination.page - 1 }}">Oldingi</a>
+                        </li>
+                        <li class="page-item active"><span class="page-link">{{ pagination.page }}</span></li>
+                        <li class="page-item {% if pagination.page >= pagination.total_pages %}disabled{% endif %}">
+                            <a class="page-link" href="?q={{ search_q or '' }}&page={{ pagination.page + 1 }}">Keyingi</a>
+                        </li>
+                    </ul>
+                </nav>
+                {% endif %}
             </div>
         </div>
     </div>
