@@ -38,7 +38,7 @@ from app.models.database import (
     PartnerBalanceDoc, PartnerBalanceDocItem,
 )
 from app.utils.auth import (
-    hash_password, get_user_from_token,
+    hash_password, get_user_from_token, create_session_token,
     generate_csrf_token, verify_csrf_token,
 )
 from app.utils.audit_log import log_audit
@@ -224,8 +224,9 @@ async def _csrf_middleware_impl(request: Request, call_next):
             response.set_cookie("csrf_token", token, path="/", httponly=False, samesite="lax", max_age=86400 * 7)
         return response
 
-    # Himoyalanmaydigan yo'llar (API login, static, PWA location)
-    if path in ("/login", "/api/agent/login", "/api/driver/login") or path.startswith("/static"):
+    # Token bilan himoyalangan mobil/PWA endpointlar browser CSRF cookie-siga tayanmaydi.
+    mobile_token_paths = {"/api/agent/location", "/api/driver/location"}
+    if path in ("/login", "/api/agent/login", "/api/driver/login") or path in mobile_token_paths or path.startswith("/static"):
         try:
             setattr(request.state, "csrf_token", request.cookies.get("csrf_token") or generate_csrf_token())
         except Exception:
@@ -4704,28 +4705,40 @@ async def add_delivery_order(
 
 
 
-@app.post("/api/driver/location")
-async def update_driver_location(
-    driver_code: str = Form(...),
+@app.post("/api/driver/location_OLD_DISABLED")
+async def update_driver_location_OLD(
     latitude: float = Form(...),
     longitude: float = Form(...),
+    driver_code: str = Form(None),
+    token: str = Form(None),
+    accuracy: float = Form(None),
+    battery: int = Form(None),
     speed: float = Form(0),
     db: Session = Depends(get_db)
 ):
     """Haydovchi lokatsiyasini yangilash"""
-    driver = db.query(Driver).filter(Driver.code == driver_code).first()
+    driver = None
+    if token:
+        user_data = get_user_from_token(token)
+        if not user_data or user_data.get("user_type") != "driver":
+            return {"success": False, "error": "Invalid token"}
+        driver = db.query(Driver).filter(Driver.id == user_data["user_id"], Driver.is_active == True).first()
+    elif driver_code:
+        driver = db.query(Driver).filter(Driver.code == driver_code, Driver.is_active == True).first()
     if not driver:
         raise HTTPException(status_code=404, detail="Haydovchi topilmadi")
-    
+
     location = DriverLocation(
         driver_id=driver.id,
         latitude=latitude,
         longitude=longitude,
+        accuracy=accuracy,
+        battery=battery,
         speed=speed
     )
     db.add(location)
     db.commit()
-    return {"status": "ok", "message": "Lokatsiya saqlandi"}
+    return {"success": True, "status": "ok", "message": "Lokatsiya saqlandi", "location_id": location.id}
 
 
 @app.get("/api/agents/locations")
@@ -4889,7 +4902,7 @@ async def driver_location_update(
     """Driver location update"""
     try:
         user_data = get_user_from_token(token)
-        if not user_data or user_data.get("role") != "driver":
+        if not user_data or user_data.get("user_type") != "driver":
             return {"success": False, "error": "Invalid token"}
         
         driver_id = user_data["user_id"]
@@ -4968,8 +4981,11 @@ async def agent_location_update(
 ):
     """Agent location update"""
     try:
-        # Test mode - agent_id = 1
-        agent_id = 1
+        user_data = get_user_from_token(token)
+        if not user_data or user_data.get("user_type") != "agent":
+            return {"success": False, "error": "Invalid token"}
+
+        agent_id = user_data["user_id"]
         
         location = AgentLocation(
             agent_id=agent_id,
