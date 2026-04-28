@@ -38,7 +38,7 @@ from app.models.database import (
     PartnerBalanceDoc, PartnerBalanceDocItem,
 )
 from app.utils.auth import (
-    hash_password, get_user_from_token,
+    hash_password, create_session_token, get_user_from_token,
     generate_csrf_token, verify_csrf_token,
 )
 from app.utils.audit_log import log_audit
@@ -224,8 +224,14 @@ async def _csrf_middleware_impl(request: Request, call_next):
             response.set_cookie("csrf_token", token, path="/", httponly=False, samesite="lax", max_age=86400 * 7)
         return response
 
-    # Himoyalanmaydigan yo'llar (API login, static, PWA location)
-    if path in ("/login", "/api/agent/login", "/api/driver/login") or path.startswith("/static"):
+    # Himoyalanmaydigan yo'llar (API login, static, PWA token-based endpoints)
+    if path in (
+        "/login",
+        "/api/agent/login",
+        "/api/driver/login",
+        "/api/agent/location",
+        "/api/driver/location",
+    ) or path.startswith("/static"):
         try:
             setattr(request.state, "csrf_token", request.cookies.get("csrf_token") or generate_csrf_token())
         except Exception:
@@ -4704,30 +4710,6 @@ async def add_delivery_order(
 
 
 
-@app.post("/api/driver/location")
-async def update_driver_location(
-    driver_code: str = Form(...),
-    latitude: float = Form(...),
-    longitude: float = Form(...),
-    speed: float = Form(0),
-    db: Session = Depends(get_db)
-):
-    """Haydovchi lokatsiyasini yangilash"""
-    driver = db.query(Driver).filter(Driver.code == driver_code).first()
-    if not driver:
-        raise HTTPException(status_code=404, detail="Haydovchi topilmadi")
-    
-    location = DriverLocation(
-        driver_id=driver.id,
-        latitude=latitude,
-        longitude=longitude,
-        speed=speed
-    )
-    db.add(location)
-    db.commit()
-    return {"status": "ok", "message": "Lokatsiya saqlandi"}
-
-
 @app.get("/api/agents/locations")
 async def get_agents_locations(db: Session = Depends(get_db)):
     """Barcha agentlarning oxirgi joylashuvi"""
@@ -4858,7 +4840,7 @@ async def agent_location_update_OLD(
         user_data = get_user_from_token(token)
         if not user_data or user_data.get("role") != "agent":
             return {"success": False, "error": "Invalid token"}
-        
+
         agent_id = user_data["user_id"]
         
         location = AgentLocation(
@@ -4889,11 +4871,14 @@ async def driver_location_update(
     """Driver location update"""
     try:
         user_data = get_user_from_token(token)
-        if not user_data or user_data.get("role") != "driver":
+        if not user_data or user_data.get("user_type") != "driver":
             return {"success": False, "error": "Invalid token"}
-        
+
         driver_id = user_data["user_id"]
-        
+        driver = db.query(Driver).filter(Driver.id == driver_id, Driver.is_active == True).first()
+        if not driver:
+            return {"success": False, "error": "Invalid token"}
+
         location = DriverLocation(
             driver_id=driver_id,
             latitude=latitude,
@@ -4903,7 +4888,7 @@ async def driver_location_update(
         )
         db.add(location)
         db.commit()
-        
+
         return {"success": True, "location_id": location.id}
     except Exception as e:
         db.rollback()
@@ -4917,7 +4902,7 @@ async def agent_orders(token: str, db: Session = Depends(get_db)):
         user_data = get_user_from_token(token)
         if not user_data:
             return {"success": False, "error": "Invalid token"}
-        
+
         # Hozircha bo'sh ro'yxat qaytaramiz
         return {"success": True, "orders": []}
     except Exception as e:
@@ -4931,7 +4916,7 @@ async def agent_partners(token: str, db: Session = Depends(get_db)):
         user_data = get_user_from_token(token)
         if not user_data:
             return {"success": False, "error": "Invalid token"}
-        
+
         partners = db.query(Partner).filter(Partner.is_active == True).all()
         return {
             "success": True,
@@ -4968,9 +4953,15 @@ async def agent_location_update(
 ):
     """Agent location update"""
     try:
-        # Test mode - agent_id = 1
-        agent_id = 1
-        
+        user_data = get_user_from_token(token)
+        if not user_data or user_data.get("user_type") != "agent":
+            return {"success": False, "error": "Invalid token"}
+
+        agent_id = user_data["user_id"]
+        agent = db.query(Agent).filter(Agent.id == agent_id, Agent.is_active == True).first()
+        if not agent:
+            return {"success": False, "error": "Invalid token"}
+
         location = AgentLocation(
             agent_id=agent_id,
             latitude=latitude,
