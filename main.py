@@ -1210,16 +1210,6 @@ async def qoldiqlar_tovar_hujjat_tasdiqlash(
         new_quantity = item.quantity
         quantity_change = new_quantity - old_quantity
         
-        if stock:
-            stock.quantity = new_quantity
-            stock.updated_at = datetime.now()
-        else:
-            db.add(Stock(
-                warehouse_id=item.warehouse_id,
-                product_id=item.product_id,
-                quantity=item.quantity,
-            ))
-        
         # StockMovement yozuvini yaratish (adjustment)
         if quantity_change != 0:
             create_stock_movement(
@@ -4022,16 +4012,6 @@ def _do_complete_production_stock(db, production, recipe):
     output_units = production.quantity * (recipe.output_quantity or 1)
     cost_per_unit = (total_material_cost / output_units) if output_units > 0 else 0
     out_wh_id = production.output_warehouse_id if production.output_warehouse_id else production.warehouse_id
-    
-    # Tayyor mahsulotni qo'shish va StockMovement yozuvini yaratish
-    product_stock = db.query(Stock).filter(
-        Stock.warehouse_id == out_wh_id,
-        Stock.product_id == recipe.product_id
-    ).first()
-    if product_stock:
-        product_stock.quantity += output_units
-    else:
-        db.add(Stock(warehouse_id=out_wh_id, product_id=recipe.product_id, quantity=output_units))
     
     # StockMovement yozuvini yaratish (kirim - tayyor mahsulot)
     create_stock_movement(
