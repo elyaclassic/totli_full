@@ -29,6 +29,8 @@ def test_agent_location_rejects_invalid_token_without_writing(tmp_path):
             agent_location_update(
                 latitude=41.3111,
                 longitude=69.2797,
+                accuracy=None,
+                battery=None,
                 token="not-a-valid-token",
                 db=db,
             )
@@ -53,6 +55,8 @@ def test_agent_location_uses_authenticated_agent_id(tmp_path):
             agent_location_update(
                 latitude=41.3111,
                 longitude=69.2797,
+                accuracy=None,
+                battery=None,
                 token=create_session_token(2, "agent"),
                 db=db,
             )
