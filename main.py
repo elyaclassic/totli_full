@@ -1210,16 +1210,6 @@ async def qoldiqlar_tovar_hujjat_tasdiqlash(
         new_quantity = item.quantity
         quantity_change = new_quantity - old_quantity
         
-        if stock:
-            stock.quantity = new_quantity
-            stock.updated_at = datetime.now()
-        else:
-            db.add(Stock(
-                warehouse_id=item.warehouse_id,
-                product_id=item.product_id,
-                quantity=item.quantity,
-            ))
-        
         # StockMovement yozuvini yaratish (adjustment)
         if quantity_change != 0:
             create_stock_movement(
@@ -1252,16 +1242,49 @@ async def qoldiqlar_tovar_hujjat_revert(
         raise HTTPException(status_code=404, detail="Hujjat topilmadi")
     if doc.status != "confirmed":
         raise HTTPException(status_code=400, detail="Faqat tasdiqlangan hujjatning tasdiqini bekor qilish mumkin")
-    for item in doc.items:
-        stock = db.query(Stock).filter(
-            Stock.warehouse_id == item.warehouse_id,
-            Stock.product_id == item.product_id,
-        ).first()
-        if stock:
-            stock.quantity = (stock.quantity or 0) - item.quantity
-            if stock.quantity < 0:
-                stock.quantity = 0
-            stock.updated_at = datetime.now()
+    last_revert_id = db.query(func.max(StockMovement.id)).filter(
+        StockMovement.document_type == "StockAdjustmentDoc",
+        StockMovement.document_id == doc.id,
+        StockMovement.operation_type == "adjustment_revert",
+    ).scalar()
+    movements_query = db.query(StockMovement).filter(
+        StockMovement.document_type == "StockAdjustmentDoc",
+        StockMovement.document_id == doc.id,
+        StockMovement.operation_type == "adjustment",
+    )
+    if last_revert_id:
+        movements_query = movements_query.filter(StockMovement.id > last_revert_id)
+    movements = movements_query.order_by(StockMovement.id).all()
+
+    if movements:
+        for movement in movements:
+            quantity_change = -(movement.quantity_change or 0)
+            if quantity_change == 0:
+                continue
+            create_stock_movement(
+                db=db,
+                warehouse_id=movement.warehouse_id,
+                product_id=movement.product_id,
+                quantity_change=quantity_change,
+                operation_type="adjustment_revert",
+                document_type="StockAdjustmentDoc",
+                document_id=doc.id,
+                document_number=doc.number,
+                user_id=current_user.id if current_user else None,
+                note=f"Qoldiq tuzatish bekor qilindi: {doc.number}",
+            )
+    else:
+        # Legacy confirmed documents may not have StockMovement rows.
+        for item in doc.items:
+            stock = db.query(Stock).filter(
+                Stock.warehouse_id == item.warehouse_id,
+                Stock.product_id == item.product_id,
+            ).first()
+            if stock:
+                stock.quantity = (stock.quantity or 0) - item.quantity
+                if stock.quantity < 0:
+                    stock.quantity = 0
+                stock.updated_at = datetime.now()
     doc.status = "draft"
     db.commit()
     return RedirectResponse(url=f"/qoldiqlar/tovar/hujjat/{doc_id}", status_code=303)
@@ -2366,6 +2389,22 @@ async def warehouse_transfer_revert(
     if transfer.status != "confirmed":
         return RedirectResponse(url=f"/warehouse/transfers?error=" + quote("Faqat tasdiqlangan hujjatning tasdiqini bekor qilish mumkin."), status_code=303)
     items = db.query(WarehouseTransferItem).filter(WarehouseTransferItem.transfer_id == transfer_id).all()
+    for item in items:
+        dest = db.query(Stock).filter(
+            Stock.warehouse_id == transfer.to_warehouse_id,
+            Stock.product_id == item.product_id,
+        ).first()
+        if not dest or (dest.quantity or 0) < item.quantity:
+            product = db.query(Product).filter(Product.id == item.product_id).first()
+            name = product.name if product else f"#{item.product_id}"
+            available = dest.quantity if dest else 0
+            return RedirectResponse(
+                url="/warehouse/transfers?error=" + quote(
+                    f"Qaytarib bo'lmaydi: qabul qiluvchi omborda «{name}» yetarli emas "
+                    f"(kerak: {item.quantity}, mavjud: {available})."
+                ),
+                status_code=303,
+            )
     for item in items:
         dest = db.query(Stock).filter(
             Stock.warehouse_id == transfer.to_warehouse_id,
@@ -4022,16 +4061,6 @@ def _do_complete_production_stock(db, production, recipe):
     output_units = production.quantity * (recipe.output_quantity or 1)
     cost_per_unit = (total_material_cost / output_units) if output_units > 0 else 0
     out_wh_id = production.output_warehouse_id if production.output_warehouse_id else production.warehouse_id
-    
-    # Tayyor mahsulotni qo'shish va StockMovement yozuvini yaratish
-    product_stock = db.query(Stock).filter(
-        Stock.warehouse_id == out_wh_id,
-        Stock.product_id == recipe.product_id
-    ).first()
-    if product_stock:
-        product_stock.quantity += output_units
-    else:
-        db.add(Stock(warehouse_id=out_wh_id, product_id=recipe.product_id, quantity=output_units))
     
     # StockMovement yozuvini yaratish (kirim - tayyor mahsulot)
     create_stock_movement(
