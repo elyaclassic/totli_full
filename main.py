@@ -38,7 +38,7 @@ from app.models.database import (
     PartnerBalanceDoc, PartnerBalanceDocItem,
 )
 from app.utils.auth import (
-    hash_password, get_user_from_token,
+    hash_password, create_session_token, get_user_from_token,
     generate_csrf_token, verify_csrf_token,
 )
 from app.utils.audit_log import log_audit
@@ -224,8 +224,14 @@ async def _csrf_middleware_impl(request: Request, call_next):
             response.set_cookie("csrf_token", token, path="/", httponly=False, samesite="lax", max_age=86400 * 7)
         return response
 
-    # Himoyalanmaydigan yo'llar (API login, static, PWA location)
-    if path in ("/login", "/api/agent/login", "/api/driver/login") or path.startswith("/static"):
+    # Himoyalanmaydigan yo'llar (login, static, token-based PWA APIs)
+    if path in (
+        "/login",
+        "/api/agent/login",
+        "/api/driver/login",
+        "/api/agent/location",
+        "/api/driver/location",
+    ) or path.startswith("/static"):
         try:
             setattr(request.state, "csrf_token", request.cookies.get("csrf_token") or generate_csrf_token())
         except Exception:
@@ -1208,17 +1214,9 @@ async def qoldiqlar_tovar_hujjat_tasdiqlash(
         
         # Yangi qoldiqni hisoblash
         new_quantity = item.quantity
+        if new_quantity is None or new_quantity < 0:
+            raise HTTPException(status_code=400, detail="Qoldiq manfiy bo'lishi mumkin emas")
         quantity_change = new_quantity - old_quantity
-        
-        if stock:
-            stock.quantity = new_quantity
-            stock.updated_at = datetime.now()
-        else:
-            db.add(Stock(
-                warehouse_id=item.warehouse_id,
-                product_id=item.product_id,
-                quantity=item.quantity,
-            ))
         
         # StockMovement yozuvini yaratish (adjustment)
         if quantity_change != 0:
@@ -1246,19 +1244,30 @@ async def qoldiqlar_tovar_hujjat_revert(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """Tovar qoldiq hujjati tasdiqini bekor qilish (faqat admin) — ombor qoldig'ini kamaytirish"""
+    """Tovar qoldiq hujjati tasdiqini bekor qilish (faqat admin) — ombor harakatini teskari qilish"""
     doc = db.query(StockAdjustmentDoc).filter(StockAdjustmentDoc.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Hujjat topilmadi")
     if doc.status != "confirmed":
         raise HTTPException(status_code=400, detail="Faqat tasdiqlangan hujjatning tasdiqini bekor qilish mumkin")
-    for item in doc.items:
+    movements = db.query(StockMovement).filter(
+        StockMovement.document_type == "StockAdjustmentDoc",
+        StockMovement.document_id == doc.id,
+    ).all()
+    movement_changes = {}
+    for movement in movements:
+        key = (movement.warehouse_id, movement.product_id)
+        movement_changes[key] = movement_changes.get(key, 0) + (movement.quantity_change or 0)
+
+    for (warehouse_id, product_id), quantity_change in movement_changes.items():
+        if quantity_change == 0:
+            continue
         stock = db.query(Stock).filter(
-            Stock.warehouse_id == item.warehouse_id,
-            Stock.product_id == item.product_id,
+            Stock.warehouse_id == warehouse_id,
+            Stock.product_id == product_id,
         ).first()
         if stock:
-            stock.quantity = (stock.quantity or 0) - item.quantity
+            stock.quantity = (stock.quantity or 0) - quantity_change
             if stock.quantity < 0:
                 stock.quantity = 0
             stock.updated_at = datetime.now()
@@ -4706,26 +4715,30 @@ async def add_delivery_order(
 
 @app.post("/api/driver/location")
 async def update_driver_location(
-    driver_code: str = Form(...),
     latitude: float = Form(...),
     longitude: float = Form(...),
+    accuracy: float = Form(None),
+    battery: int = Form(None),
     speed: float = Form(0),
+    token: str = Form(...),
     db: Session = Depends(get_db)
 ):
     """Haydovchi lokatsiyasini yangilash"""
-    driver = db.query(Driver).filter(Driver.code == driver_code).first()
+    driver = _get_mobile_user(token, "driver", db)
     if not driver:
-        raise HTTPException(status_code=404, detail="Haydovchi topilmadi")
+        return {"success": False, "error": "Invalid token"}
     
     location = DriverLocation(
         driver_id=driver.id,
         latitude=latitude,
         longitude=longitude,
+        accuracy=accuracy,
+        battery=battery,
         speed=speed
     )
     db.add(location)
     db.commit()
-    return {"status": "ok", "message": "Lokatsiya saqlandi"}
+    return {"success": True, "location_id": location.id}
 
 
 @app.get("/api/agents/locations")
@@ -4777,6 +4790,22 @@ async def get_drivers_locations(db: Session = Depends(get_db)):
 # ==========================================
 # PWA API ENDPOINTS
 # ==========================================
+
+def _get_mobile_user(token: str, expected_type: str, db: Session):
+    """Token-based PWA endpointlari uchun foydalanuvchini tekshirish."""
+    user_data = get_user_from_token(token)
+    if not user_data or user_data.get("user_type") != expected_type:
+        return None
+
+    model = Agent if expected_type == "agent" else Driver if expected_type == "driver" else None
+    if model is None:
+        return None
+
+    user = db.query(model).filter(model.id == user_data.get("user_id")).first()
+    if not user or not user.is_active:
+        return None
+    return user
+
 
 @app.post("/api/agent/login")
 async def agent_login(
@@ -4856,7 +4885,7 @@ async def agent_location_update_OLD(
     """Agent location update"""
     try:
         user_data = get_user_from_token(token)
-        if not user_data or user_data.get("role") != "agent":
+        if not user_data or user_data.get("user_type") != "agent":
             return {"success": False, "error": "Invalid token"}
         
         agent_id = user_data["user_id"]
@@ -4877,7 +4906,7 @@ async def agent_location_update_OLD(
         return {"success": False, "error": str(e)}
 
 
-@app.post("/api/driver/location")
+@app.post("/api/driver/location_OLD_DISABLED")
 async def driver_location_update(
     latitude: float = Form(...),
     longitude: float = Form(...),
@@ -4889,7 +4918,7 @@ async def driver_location_update(
     """Driver location update"""
     try:
         user_data = get_user_from_token(token)
-        if not user_data or user_data.get("role") != "driver":
+        if not user_data or user_data.get("user_type") != "driver":
             return {"success": False, "error": "Invalid token"}
         
         driver_id = user_data["user_id"]
@@ -4914,8 +4943,8 @@ async def driver_location_update(
 async def agent_orders(token: str, db: Session = Depends(get_db)):
     """Agent orders list"""
     try:
-        user_data = get_user_from_token(token)
-        if not user_data:
+        agent = _get_mobile_user(token, "agent", db)
+        if not agent:
             return {"success": False, "error": "Invalid token"}
         
         # Hozircha bo'sh ro'yxat qaytaramiz
@@ -4928,8 +4957,8 @@ async def agent_orders(token: str, db: Session = Depends(get_db)):
 async def agent_partners(token: str, db: Session = Depends(get_db)):
     """Agent partners list"""
     try:
-        user_data = get_user_from_token(token)
-        if not user_data:
+        agent = _get_mobile_user(token, "agent", db)
+        if not agent:
             return {"success": False, "error": "Invalid token"}
         
         partners = db.query(Partner).filter(Partner.is_active == True).all()
@@ -4968,11 +4997,12 @@ async def agent_location_update(
 ):
     """Agent location update"""
     try:
-        # Test mode - agent_id = 1
-        agent_id = 1
+        agent = _get_mobile_user(token, "agent", db)
+        if not agent:
+            return {"success": False, "error": "Invalid token"}
         
         location = AgentLocation(
-            agent_id=agent_id,
+            agent_id=agent.id,
             latitude=latitude,
             longitude=longitude,
             accuracy=accuracy,
