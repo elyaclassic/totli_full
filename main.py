@@ -62,6 +62,8 @@ app = FastAPI(
 )
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
+MOBILE_TOKEN_POST_PATHS = {"/api/agent/location", "/api/driver/location"}
+
 # Backup: kuniga bir marta avtomatik
 @app.on_event("startup")
 def _startup_backup_scheduler():
@@ -225,7 +227,11 @@ async def _csrf_middleware_impl(request: Request, call_next):
         return response
 
     # Himoyalanmaydigan yo'llar (API login, static, PWA location)
-    if path in ("/login", "/api/agent/login", "/api/driver/login") or path.startswith("/static"):
+    if (
+        path in ("/login", "/api/agent/login", "/api/driver/login")
+        or (path in MOBILE_TOKEN_POST_PATHS and method == "POST")
+        or path.startswith("/static")
+    ):
         try:
             setattr(request.state, "csrf_token", request.cookies.get("csrf_token") or generate_csrf_token())
         except Exception:
@@ -4704,8 +4710,8 @@ async def add_delivery_order(
 
 
 
-@app.post("/api/driver/location")
-async def update_driver_location(
+@app.post("/api/driver/location_OLD_DISABLED")
+async def update_driver_location_OLD(
     driver_code: str = Form(...),
     latitude: float = Form(...),
     longitude: float = Form(...),
@@ -4844,6 +4850,23 @@ async def driver_login(
         return {"success": False, "error": str(e)}
 
 
+def _validate_mobile_token(token: str, expected_user_type: str, db: Session) -> Optional[int]:
+    user_data = get_user_from_token(token)
+    if not user_data or user_data.get("user_type") != expected_user_type:
+        return None
+    try:
+        actor_id = int(user_data["user_id"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if expected_user_type == "agent":
+        exists = db.query(Agent.id).filter(Agent.id == actor_id, Agent.is_active == True).first()
+    elif expected_user_type == "driver":
+        exists = db.query(Driver.id).filter(Driver.id == actor_id, Driver.is_active == True).first()
+    else:
+        exists = None
+    return actor_id if exists else None
+
+
 @app.post("/api/agent/location_OLD_DISABLED")
 async def agent_location_update_OLD(
     latitude: float = Form(...),
@@ -4855,11 +4878,9 @@ async def agent_location_update_OLD(
 ):
     """Agent location update"""
     try:
-        user_data = get_user_from_token(token)
-        if not user_data or user_data.get("role") != "agent":
+        agent_id = _validate_mobile_token(token, "agent", db)
+        if not agent_id:
             return {"success": False, "error": "Invalid token"}
-        
-        agent_id = user_data["user_id"]
         
         location = AgentLocation(
             agent_id=agent_id,
@@ -4888,11 +4909,9 @@ async def driver_location_update(
 ):
     """Driver location update"""
     try:
-        user_data = get_user_from_token(token)
-        if not user_data or user_data.get("role") != "driver":
+        driver_id = _validate_mobile_token(token, "driver", db)
+        if not driver_id:
             return {"success": False, "error": "Invalid token"}
-        
-        driver_id = user_data["user_id"]
         
         location = DriverLocation(
             driver_id=driver_id,
@@ -4968,8 +4987,9 @@ async def agent_location_update(
 ):
     """Agent location update"""
     try:
-        # Test mode - agent_id = 1
-        agent_id = 1
+        agent_id = _validate_mobile_token(token, "agent", db)
+        if not agent_id:
+            return {"success": False, "error": "Invalid token"}
         
         location = AgentLocation(
             agent_id=agent_id,
