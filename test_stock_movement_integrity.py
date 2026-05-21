@@ -157,6 +157,7 @@ def test_production_completion_adds_finished_goods_once(db_session):
     db_session.commit()
 
     result = _do_complete_production_stock(db_session, production, recipe)
+    db_session.flush()
 
     assert result is None
     material_stock = db_session.query(Stock).filter_by(
