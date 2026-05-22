@@ -1210,16 +1210,6 @@ async def qoldiqlar_tovar_hujjat_tasdiqlash(
         new_quantity = item.quantity
         quantity_change = new_quantity - old_quantity
         
-        if stock:
-            stock.quantity = new_quantity
-            stock.updated_at = datetime.now()
-        else:
-            db.add(Stock(
-                warehouse_id=item.warehouse_id,
-                product_id=item.product_id,
-                quantity=item.quantity,
-            ))
-        
         # StockMovement yozuvini yaratish (adjustment)
         if quantity_change != 0:
             create_stock_movement(
@@ -4023,15 +4013,13 @@ def _do_complete_production_stock(db, production, recipe):
     cost_per_unit = (total_material_cost / output_units) if output_units > 0 else 0
     out_wh_id = production.output_warehouse_id if production.output_warehouse_id else production.warehouse_id
     
-    # Tayyor mahsulotni qo'shish va StockMovement yozuvini yaratish
+    # Tayyor mahsulotning eski qoldig'i tannarx hisoblash uchun kerak;
+    # qoldiqning o'zini create_stock_movement yangilaydi.
     product_stock = db.query(Stock).filter(
         Stock.warehouse_id == out_wh_id,
         Stock.product_id == recipe.product_id
     ).first()
-    if product_stock:
-        product_stock.quantity += output_units
-    else:
-        db.add(Stock(warehouse_id=out_wh_id, product_id=recipe.product_id, quantity=output_units))
+    old_output_quantity = product_stock.quantity if product_stock else 0
     
     # StockMovement yozuvini yaratish (kirim - tayyor mahsulot)
     create_stock_movement(
@@ -4048,9 +4036,8 @@ def _do_complete_production_stock(db, production, recipe):
     )
     output_product = db.query(Product).filter(Product.id == recipe.product_id).first()
     if output_product:
-        product_stock = db.query(Stock).filter(Stock.warehouse_id == out_wh_id, Stock.product_id == recipe.product_id).first()
         old_price = output_product.purchase_price or 0
-        old_qty = (product_stock.quantity - output_units) if product_stock else 0
+        old_qty = old_output_quantity
         if old_qty > 0 and old_price > 0 and output_units > 0:
             output_product.purchase_price = (old_qty * old_price + output_units * cost_per_unit) / (old_qty + output_units)
         elif cost_per_unit > 0:
