@@ -62,18 +62,6 @@ app = FastAPI(
 )
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
-# Backup: kuniga bir marta avtomatik
-@app.on_event("startup")
-def _startup_backup_scheduler():
-    try:
-        from apscheduler.schedulers.background import BackgroundScheduler
-        from app.utils.backup import run_backup
-        _scheduler = BackgroundScheduler()
-        _scheduler.add_job(run_backup, "interval", hours=24, id="db_backup")
-        _scheduler.start()
-    except Exception:
-        pass
-
 # Routerlar (auth, dashboard, home, reports, info)
 app.include_router(auth_routes.router)
 app.include_router(home_routes.router)
@@ -5312,6 +5300,11 @@ async def startup():
         start_scheduler()
     except Exception as e:
         print("[Startup] Scheduler ishga tushmadi:", e)
+    try:
+        from app.utils.backup import start_backup_scheduler
+        start_backup_scheduler()
+    except Exception as e:
+        print("[Startup] Backup scheduler ishga tushmadi:", e)
     print("TOTLI HOLVA Business System ishga tushdi!")
     _mp = os.path.abspath(__file__)
     print("  main.py:", _mp)
@@ -5323,6 +5316,15 @@ async def startup():
                 break
     except Exception:
         pass
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    try:
+        from app.utils.backup import stop_backup_scheduler
+        stop_backup_scheduler()
+    except Exception as e:
+        print("[Shutdown] Backup scheduler to'xtamadi:", e)
 
 
 if __name__ == "__main__":
