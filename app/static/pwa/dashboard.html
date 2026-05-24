@@ -923,7 +923,12 @@
                     formData.append('longitude', position.coords.longitude);
                     formData.append('accuracy', position.coords.accuracy);
                     formData.append('battery', 100);
-                    formData.append('token', 'test_token');
+                    const token = Session.getToken();
+                    if (!token) {
+                        console.warn('GPS yuborilmadi: sessiya tokeni topilmadi');
+                        return;
+                    }
+                    formData.append('token', token);
 
                     const response = await fetch('/api/agent/location', {
                         method: 'POST',
@@ -943,7 +948,10 @@
             async function loadCustomers() {
                 try {
                     // Get token from session
-                    const token = Session.getToken() || 'test_token';
+                    const token = Session.getToken();
+                    if (!token) {
+                        return;
+                    }
 
                     // Load from API
                     const response = await fetch(`/api/agent/partners?token=${encodeURIComponent(token)}`);
