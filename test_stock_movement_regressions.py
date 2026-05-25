@@ -151,6 +151,7 @@ def test_production_completion_adds_finished_goods_once(db_session):
     error_response = _do_complete_production_stock(db_session, production, recipe)
 
     assert error_response is None
+    db_session.flush()
     material_stock = db_session.query(Stock).filter_by(
         warehouse_id=warehouse.id,
         product_id=material.id,
