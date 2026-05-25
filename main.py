@@ -1199,41 +1199,18 @@ async def qoldiqlar_tovar_hujjat_tasdiqlash(
         raise HTTPException(status_code=400, detail="Kamida bitta qator bo'lishi kerak")
 
     for item in doc.items:
-        # Eski qoldiqni olish
-        stock = db.query(Stock).filter(
-            Stock.warehouse_id == item.warehouse_id,
-            Stock.product_id == item.product_id,
-        ).first()
-        old_quantity = stock.quantity if stock else 0
-        
-        # Yangi qoldiqni hisoblash
-        new_quantity = item.quantity
-        quantity_change = new_quantity - old_quantity
-        
-        if stock:
-            stock.quantity = new_quantity
-            stock.updated_at = datetime.now()
-        else:
-            db.add(Stock(
-                warehouse_id=item.warehouse_id,
-                product_id=item.product_id,
-                quantity=item.quantity,
-            ))
-        
-        # StockMovement yozuvini yaratish (adjustment)
-        if quantity_change != 0:
-            create_stock_movement(
-                db=db,
-                warehouse_id=item.warehouse_id,
-                product_id=item.product_id,
-                quantity_change=quantity_change,  # O'zgarish (+ yoki -)
-                operation_type="adjustment",
-                document_type="StockAdjustmentDoc",
-                document_id=doc.id,
-                document_number=doc.number,
-                user_id=current_user.id if current_user else None,
-                note=f"Qoldiq tuzatish: {doc.number}"
-            )
+        set_stock_quantity_with_movement(
+            db=db,
+            warehouse_id=item.warehouse_id,
+            product_id=item.product_id,
+            new_quantity=item.quantity,
+            operation_type="adjustment",
+            document_type="StockAdjustmentDoc",
+            document_id=doc.id,
+            document_number=doc.number,
+            user_id=current_user.id if current_user else None,
+            note=f"Qoldiq tuzatish: {doc.number}",
+        )
     
     doc.status = "confirmed"
     db.commit()
@@ -1252,16 +1229,26 @@ async def qoldiqlar_tovar_hujjat_revert(
         raise HTTPException(status_code=404, detail="Hujjat topilmadi")
     if doc.status != "confirmed":
         raise HTTPException(status_code=400, detail="Faqat tasdiqlangan hujjatning tasdiqini bekor qilish mumkin")
-    for item in doc.items:
+    movements = db.query(StockMovement).filter(
+        StockMovement.document_type == "StockAdjustmentDoc",
+        StockMovement.document_id == doc.id,
+        StockMovement.operation_type == "adjustment",
+    ).order_by(StockMovement.id.desc()).all()
+    if not movements:
+        raise HTTPException(status_code=400, detail="Hujjat ombor harakati topilmadi")
+
+    for movement in movements:
         stock = db.query(Stock).filter(
-            Stock.warehouse_id == item.warehouse_id,
-            Stock.product_id == item.product_id,
+            Stock.warehouse_id == movement.warehouse_id,
+            Stock.product_id == movement.product_id,
         ).first()
-        if stock:
-            stock.quantity = (stock.quantity or 0) - item.quantity
-            if stock.quantity < 0:
-                stock.quantity = 0
-            stock.updated_at = datetime.now()
+        if not stock:
+            raise HTTPException(status_code=400, detail="Ombor qoldig'i topilmadi")
+        new_quantity = (stock.quantity or 0) - (movement.quantity_change or 0)
+        if new_quantity < 0:
+            raise HTTPException(status_code=400, detail="Ombor qoldig'i o'zgargan, tasdiqni bekor qilish mumkin emas")
+        stock.quantity = new_quantity
+        stock.updated_at = datetime.now()
     doc.status = "draft"
     db.commit()
     return RedirectResponse(url=f"/qoldiqlar/tovar/hujjat/{doc_id}", status_code=303)
@@ -1731,6 +1718,61 @@ def create_stock_movement(
         quantity_after=quantity_after,
         user_id=user_id,
         note=note
+    )
+    db.add(movement)
+    return movement
+
+
+def set_stock_quantity_with_movement(
+    db: Session,
+    warehouse_id: int,
+    product_id: int,
+    new_quantity: float,
+    operation_type: str,
+    document_type: str,
+    document_id: int,
+    document_number: str = None,
+    user_id: int = None,
+    note: str = None,
+):
+    """Set an absolute stock balance and record the resulting delta once."""
+    new_quantity = max(float(new_quantity or 0), 0)
+    stock = db.query(Stock).filter(
+        Stock.warehouse_id == warehouse_id,
+        Stock.product_id == product_id,
+    ).first()
+    old_quantity = (stock.quantity or 0) if stock else 0
+    quantity_change = new_quantity - old_quantity
+
+    if stock:
+        stock.quantity = new_quantity
+        stock.updated_at = datetime.now()
+        stock_id = stock.id
+    else:
+        stock = Stock(
+            warehouse_id=warehouse_id,
+            product_id=product_id,
+            quantity=new_quantity,
+        )
+        db.add(stock)
+        db.flush()
+        stock_id = stock.id
+
+    if quantity_change == 0:
+        return None
+
+    movement = StockMovement(
+        stock_id=stock_id,
+        warehouse_id=warehouse_id,
+        product_id=product_id,
+        operation_type=operation_type,
+        document_type=document_type,
+        document_id=document_id,
+        document_number=document_number,
+        quantity_change=quantity_change,
+        quantity_after=new_quantity,
+        user_id=user_id,
+        note=note,
     )
     db.add(movement)
     return movement
@@ -4023,17 +4065,7 @@ def _do_complete_production_stock(db, production, recipe):
     cost_per_unit = (total_material_cost / output_units) if output_units > 0 else 0
     out_wh_id = production.output_warehouse_id if production.output_warehouse_id else production.warehouse_id
     
-    # Tayyor mahsulotni qo'shish va StockMovement yozuvini yaratish
-    product_stock = db.query(Stock).filter(
-        Stock.warehouse_id == out_wh_id,
-        Stock.product_id == recipe.product_id
-    ).first()
-    if product_stock:
-        product_stock.quantity += output_units
-    else:
-        db.add(Stock(warehouse_id=out_wh_id, product_id=recipe.product_id, quantity=output_units))
-    
-    # StockMovement yozuvini yaratish (kirim - tayyor mahsulot)
+    # StockMovement yangilashni ham bajaradi; alohida qo'shish qoldiqni ikki marta oshiradi.
     create_stock_movement(
         db=db,
         warehouse_id=out_wh_id,
