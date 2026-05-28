@@ -294,6 +294,7 @@ class StockAdjustmentDocItem(Base):
     product_id = Column(Integer, ForeignKey("products.id"))
     warehouse_id = Column(Integer, ForeignKey("warehouses.id"))
     quantity = Column(Float)
+    previous_quantity = Column(Float, default=None)  # Tasdiqdan oldingi qoldiq (revert uchun)
     cost_price = Column(Float, default=0)   # Tannarx (so'm)
     sale_price = Column(Float, default=0)     # Sotuv narxi (so'm)
 
