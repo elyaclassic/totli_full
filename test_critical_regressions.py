@@ -125,15 +125,17 @@ def test_production_completion_adds_finished_goods_once(db_session):
         Stock(warehouse_id=warehouse.id, product_id=finished.id, quantity=5),
     ])
     db_session.commit()
+    production_id = production.id
 
     result = main._do_complete_production_stock(db_session, production, recipe)
 
     assert result is None
+    db_session.flush()
     raw_stock = db_session.query(Stock).filter_by(warehouse_id=warehouse.id, product_id=raw.id).one()
     finished_stock = db_session.query(Stock).filter_by(warehouse_id=warehouse.id, product_id=finished.id).one()
     output_movement = db_session.query(StockMovement).filter_by(
         document_type="Production",
-        document_id=production.id,
+        document_id=production_id,
         operation_type="production_output",
     ).one()
     assert raw_stock.quantity == 4
