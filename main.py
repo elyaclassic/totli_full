@@ -188,14 +188,7 @@ async def global_safe_middleware(request: Request, call_next):
 # ==========================================
 @app.middleware("http")
 async def csrf_middleware(request: Request, call_next):
-    try:
-        return await _csrf_middleware_impl(request, call_next)
-    except (KeyboardInterrupt, SystemExit):
-        raise
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return await call_next(request)
+    return await _csrf_middleware_impl(request, call_next)
 
 
 async def _csrf_middleware_impl(request: Request, call_next):
@@ -224,8 +217,8 @@ async def _csrf_middleware_impl(request: Request, call_next):
             response.set_cookie("csrf_token", token, path="/", httponly=False, samesite="lax", max_age=86400 * 7)
         return response
 
-    # Himoyalanmaydigan yo'llar (API login, static, PWA location)
-    if path in ("/login", "/api/agent/login", "/api/driver/login") or path.startswith("/static"):
+    # Himoyalanmaydigan yo'llar (API login, static, PWA token-auth location)
+    if path in ("/login", "/api/agent/login", "/api/driver/login", "/api/agent/location", "/api/driver/location") or path.startswith("/static"):
         try:
             setattr(request.state, "csrf_token", request.cookies.get("csrf_token") or generate_csrf_token())
         except Exception:
@@ -1210,17 +1203,7 @@ async def qoldiqlar_tovar_hujjat_tasdiqlash(
         new_quantity = item.quantity
         quantity_change = new_quantity - old_quantity
         
-        if stock:
-            stock.quantity = new_quantity
-            stock.updated_at = datetime.now()
-        else:
-            db.add(Stock(
-                warehouse_id=item.warehouse_id,
-                product_id=item.product_id,
-                quantity=item.quantity,
-            ))
-        
-        # StockMovement yozuvini yaratish (adjustment)
+        # StockMovement yozuvini yaratish (adjustment) va qoldiqni yangilash
         if quantity_change != 0:
             create_stock_movement(
                 db=db,
@@ -1253,15 +1236,26 @@ async def qoldiqlar_tovar_hujjat_revert(
     if doc.status != "confirmed":
         raise HTTPException(status_code=400, detail="Faqat tasdiqlangan hujjatning tasdiqini bekor qilish mumkin")
     for item in doc.items:
-        stock = db.query(Stock).filter(
-            Stock.warehouse_id == item.warehouse_id,
-            Stock.product_id == item.product_id,
-        ).first()
-        if stock:
-            stock.quantity = (stock.quantity or 0) - item.quantity
-            if stock.quantity < 0:
-                stock.quantity = 0
-            stock.updated_at = datetime.now()
+        movement = db.query(StockMovement).filter(
+            StockMovement.warehouse_id == item.warehouse_id,
+            StockMovement.product_id == item.product_id,
+            StockMovement.document_type == "StockAdjustmentDoc",
+            StockMovement.document_id == doc.id,
+            StockMovement.operation_type == "adjustment",
+        ).order_by(StockMovement.id.desc()).first()
+        if movement and movement.quantity_change:
+            create_stock_movement(
+                db=db,
+                warehouse_id=item.warehouse_id,
+                product_id=item.product_id,
+                quantity_change=-(movement.quantity_change or 0),
+                operation_type="adjustment_revert",
+                document_type="StockAdjustmentDoc",
+                document_id=doc.id,
+                document_number=doc.number,
+                user_id=current_user.id if current_user else None,
+                note=f"Qoldiq tuzatish bekor qilindi: {doc.number}"
+            )
     doc.status = "draft"
     db.commit()
     return RedirectResponse(url=f"/qoldiqlar/tovar/hujjat/{doc_id}", status_code=303)
@@ -4023,17 +4017,7 @@ def _do_complete_production_stock(db, production, recipe):
     cost_per_unit = (total_material_cost / output_units) if output_units > 0 else 0
     out_wh_id = production.output_warehouse_id if production.output_warehouse_id else production.warehouse_id
     
-    # Tayyor mahsulotni qo'shish va StockMovement yozuvini yaratish
-    product_stock = db.query(Stock).filter(
-        Stock.warehouse_id == out_wh_id,
-        Stock.product_id == recipe.product_id
-    ).first()
-    if product_stock:
-        product_stock.quantity += output_units
-    else:
-        db.add(Stock(warehouse_id=out_wh_id, product_id=recipe.product_id, quantity=output_units))
-    
-    # StockMovement yozuvini yaratish (kirim - tayyor mahsulot)
+    # StockMovement yozuvini yaratish (kirim - tayyor mahsulot) va qoldiqni yangilash
     create_stock_movement(
         db=db,
         warehouse_id=out_wh_id,
@@ -4704,7 +4688,7 @@ async def add_delivery_order(
 
 
 
-@app.post("/api/driver/location")
+@app.post("/api/driver/location_OLD_DISABLED")
 async def update_driver_location(
     driver_code: str = Form(...),
     latitude: float = Form(...),
@@ -4777,6 +4761,14 @@ async def get_drivers_locations(db: Session = Depends(get_db)):
 # ==========================================
 # PWA API ENDPOINTS
 # ==========================================
+
+def _get_pwa_user_data(token: str, expected_user_type: str):
+    """Validate signed PWA tokens for agent/driver APIs."""
+    user_data = get_user_from_token(token)
+    if not user_data or user_data.get("user_type") != expected_user_type:
+        return None
+    return user_data
+
 
 @app.post("/api/agent/login")
 async def agent_login(
@@ -4855,8 +4847,8 @@ async def agent_location_update_OLD(
 ):
     """Agent location update"""
     try:
-        user_data = get_user_from_token(token)
-        if not user_data or user_data.get("role") != "agent":
+        user_data = _get_pwa_user_data(token, "agent")
+        if not user_data:
             return {"success": False, "error": "Invalid token"}
         
         agent_id = user_data["user_id"]
@@ -4883,13 +4875,14 @@ async def driver_location_update(
     longitude: float = Form(...),
     accuracy: float = Form(None),
     battery: int = Form(None),
+    speed: float = Form(0),
     token: str = Form(...),
     db: Session = Depends(get_db)
 ):
     """Driver location update"""
     try:
-        user_data = get_user_from_token(token)
-        if not user_data or user_data.get("role") != "driver":
+        user_data = _get_pwa_user_data(token, "driver")
+        if not user_data:
             return {"success": False, "error": "Invalid token"}
         
         driver_id = user_data["user_id"]
@@ -4900,6 +4893,7 @@ async def driver_location_update(
             longitude=longitude,
             accuracy=accuracy,
             battery=battery,
+            speed=speed,
         )
         db.add(location)
         db.commit()
@@ -4968,8 +4962,10 @@ async def agent_location_update(
 ):
     """Agent location update"""
     try:
-        # Test mode - agent_id = 1
-        agent_id = 1
+        user_data = _get_pwa_user_data(token, "agent")
+        if not user_data:
+            return {"success": False, "error": "Invalid token"}
+        agent_id = user_data["user_id"]
         
         location = AgentLocation(
             agent_id=agent_id,
