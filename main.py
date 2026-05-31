@@ -38,7 +38,7 @@ from app.models.database import (
     PartnerBalanceDoc, PartnerBalanceDocItem,
 )
 from app.utils.auth import (
-    hash_password, get_user_from_token,
+    hash_password, get_user_from_token, create_session_token,
     generate_csrf_token, verify_csrf_token,
 )
 from app.utils.audit_log import log_audit
@@ -224,8 +224,8 @@ async def _csrf_middleware_impl(request: Request, call_next):
             response.set_cookie("csrf_token", token, path="/", httponly=False, samesite="lax", max_age=86400 * 7)
         return response
 
-    # Himoyalanmaydigan yo'llar (API login, static, PWA location)
-    if path in ("/login", "/api/agent/login", "/api/driver/login") or path.startswith("/static"):
+    # Himoyalanmaydigan yo'llar (API login, static, PWA location token bilan himoyalanadi)
+    if path in ("/login", "/api/agent/login", "/api/driver/login", "/api/agent/location", "/api/driver/location") or path.startswith("/static"):
         try:
             setattr(request.state, "csrf_token", request.cookies.get("csrf_token") or generate_csrf_token())
         except Exception:
@@ -349,6 +349,12 @@ async def _auth_middleware_impl(request: Request, call_next):
     if not user_data:
         if path.startswith("/api/"):
             return JSONResponse(status_code=401, content={"detail": "Session muddati tugadi"})
+        resp = RedirectResponse(url="/login", status_code=303)
+        resp.delete_cookie("session_token")
+        return resp
+    if user_data.get("user_type") in ("agent", "driver"):
+        if path.startswith("/api/"):
+            return JSONResponse(status_code=401, content={"detail": "Web session talab qilindi"})
         resp = RedirectResponse(url="/login", status_code=303)
         resp.delete_cookie("session_token")
         return resp
@@ -1209,18 +1215,8 @@ async def qoldiqlar_tovar_hujjat_tasdiqlash(
         # Yangi qoldiqni hisoblash
         new_quantity = item.quantity
         quantity_change = new_quantity - old_quantity
-        
-        if stock:
-            stock.quantity = new_quantity
-            stock.updated_at = datetime.now()
-        else:
-            db.add(Stock(
-                warehouse_id=item.warehouse_id,
-                product_id=item.product_id,
-                quantity=item.quantity,
-            ))
-        
-        # StockMovement yozuvini yaratish (adjustment)
+
+        # create_stock_movement o'zi Stock.quantity ni quantity_change bo'yicha yangilaydi.
         if quantity_change != 0:
             create_stock_movement(
                 db=db,
@@ -1252,16 +1248,39 @@ async def qoldiqlar_tovar_hujjat_revert(
         raise HTTPException(status_code=404, detail="Hujjat topilmadi")
     if doc.status != "confirmed":
         raise HTTPException(status_code=400, detail="Faqat tasdiqlangan hujjatning tasdiqini bekor qilish mumkin")
-    for item in doc.items:
-        stock = db.query(Stock).filter(
-            Stock.warehouse_id == item.warehouse_id,
-            Stock.product_id == item.product_id,
-        ).first()
-        if stock:
-            stock.quantity = (stock.quantity or 0) - item.quantity
-            if stock.quantity < 0:
-                stock.quantity = 0
-            stock.updated_at = datetime.now()
+    last_revert = (
+        db.query(StockMovement)
+        .filter(
+            StockMovement.document_type == "StockAdjustmentDoc",
+            StockMovement.document_id == doc.id,
+            StockMovement.operation_type == "adjustment_revert",
+        )
+        .order_by(StockMovement.id.desc())
+        .first()
+    )
+    movement_query = db.query(StockMovement).filter(
+        StockMovement.document_type == "StockAdjustmentDoc",
+        StockMovement.document_id == doc.id,
+        StockMovement.operation_type == "adjustment",
+    )
+    if last_revert:
+        movement_query = movement_query.filter(StockMovement.id > last_revert.id)
+    movements = movement_query.order_by(StockMovement.id.desc()).all()
+    if not movements:
+        raise HTTPException(status_code=400, detail="Bekor qilish uchun ombor harakati topilmadi")
+    for movement in movements:
+        create_stock_movement(
+            db=db,
+            warehouse_id=movement.warehouse_id,
+            product_id=movement.product_id,
+            quantity_change=-(movement.quantity_change or 0),
+            operation_type="adjustment_revert",
+            document_type="StockAdjustmentDoc",
+            document_id=doc.id,
+            document_number=doc.number,
+            user_id=current_user.id if current_user else None,
+            note=f"Qoldiq tuzatishni bekor qilish: {doc.number}",
+        )
     doc.status = "draft"
     db.commit()
     return RedirectResponse(url=f"/qoldiqlar/tovar/hujjat/{doc_id}", status_code=303)
@@ -4023,17 +4042,8 @@ def _do_complete_production_stock(db, production, recipe):
     cost_per_unit = (total_material_cost / output_units) if output_units > 0 else 0
     out_wh_id = production.output_warehouse_id if production.output_warehouse_id else production.warehouse_id
     
-    # Tayyor mahsulotni qo'shish va StockMovement yozuvini yaratish
-    product_stock = db.query(Stock).filter(
-        Stock.warehouse_id == out_wh_id,
-        Stock.product_id == recipe.product_id
-    ).first()
-    if product_stock:
-        product_stock.quantity += output_units
-    else:
-        db.add(Stock(warehouse_id=out_wh_id, product_id=recipe.product_id, quantity=output_units))
-    
-    # StockMovement yozuvini yaratish (kirim - tayyor mahsulot)
+    # StockMovement yozuvini yaratish (kirim - tayyor mahsulot).
+    # create_stock_movement o'zi Stock.quantity ni yangilaydi.
     create_stock_movement(
         db=db,
         warehouse_id=out_wh_id,
@@ -4704,7 +4714,7 @@ async def add_delivery_order(
 
 
 
-@app.post("/api/driver/location")
+@app.post("/api/driver/location_OLD_DISABLED")
 async def update_driver_location(
     driver_code: str = Form(...),
     latitude: float = Form(...),
@@ -4888,14 +4898,12 @@ async def driver_location_update(
 ):
     """Driver location update"""
     try:
-        user_data = get_user_from_token(token)
-        if not user_data or user_data.get("role") != "driver":
+        driver = _validate_mobile_token(db, token, "driver")
+        if not driver:
             return {"success": False, "error": "Invalid token"}
         
-        driver_id = user_data["user_id"]
-        
         location = DriverLocation(
-            driver_id=driver_id,
+            driver_id=driver.id,
             latitude=latitude,
             longitude=longitude,
             accuracy=accuracy,
@@ -4914,8 +4922,8 @@ async def driver_location_update(
 async def agent_orders(token: str, db: Session = Depends(get_db)):
     """Agent orders list"""
     try:
-        user_data = get_user_from_token(token)
-        if not user_data:
+        agent = _validate_mobile_token(db, token, "agent")
+        if not agent:
             return {"success": False, "error": "Invalid token"}
         
         # Hozircha bo'sh ro'yxat qaytaramiz
@@ -4928,8 +4936,8 @@ async def agent_orders(token: str, db: Session = Depends(get_db)):
 async def agent_partners(token: str, db: Session = Depends(get_db)):
     """Agent partners list"""
     try:
-        user_data = get_user_from_token(token)
-        if not user_data:
+        agent = _validate_mobile_token(db, token, "agent")
+        if not agent:
             return {"success": False, "error": "Invalid token"}
         
         partners = db.query(Partner).filter(Partner.is_active == True).all()
@@ -4957,6 +4965,17 @@ async def agent_partners(token: str, db: Session = Depends(get_db)):
 # PWA API ENDPOINTS
 # ==========================================
 
+def _validate_mobile_token(db: Session, token: str, user_type: str):
+    user_data = get_user_from_token(token)
+    if not user_data or user_data.get("user_type") != user_type:
+        return None
+    model = Agent if user_type == "agent" else Driver
+    user = db.query(model).filter(model.id == user_data.get("user_id")).first()
+    if not user or not user.is_active:
+        return None
+    return user
+
+
 @app.post("/api/agent/location")
 async def agent_location_update(
     latitude: float = Form(...),
@@ -4968,11 +4987,12 @@ async def agent_location_update(
 ):
     """Agent location update"""
     try:
-        # Test mode - agent_id = 1
-        agent_id = 1
+        agent = _validate_mobile_token(db, token, "agent")
+        if not agent:
+            return {"success": False, "error": "Invalid token"}
         
         location = AgentLocation(
-            agent_id=agent_id,
+            agent_id=agent.id,
             latitude=latitude,
             longitude=longitude,
             accuracy=accuracy,
