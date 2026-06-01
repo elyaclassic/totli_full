@@ -1210,17 +1210,8 @@ async def qoldiqlar_tovar_hujjat_tasdiqlash(
         new_quantity = item.quantity
         quantity_change = new_quantity - old_quantity
         
-        if stock:
-            stock.quantity = new_quantity
-            stock.updated_at = datetime.now()
-        else:
-            db.add(Stock(
-                warehouse_id=item.warehouse_id,
-                product_id=item.product_id,
-                quantity=item.quantity,
-            ))
-        
-        # StockMovement yozuvini yaratish (adjustment)
+        # StockMovement qoldiqni o'zi yangilaydi; bu yerda oldindan
+        # stock.quantity ni o'zgartirsak delta ikki marta qo'llanadi.
         if quantity_change != 0:
             create_stock_movement(
                 db=db,
@@ -1253,15 +1244,26 @@ async def qoldiqlar_tovar_hujjat_revert(
     if doc.status != "confirmed":
         raise HTTPException(status_code=400, detail="Faqat tasdiqlangan hujjatning tasdiqini bekor qilish mumkin")
     for item in doc.items:
-        stock = db.query(Stock).filter(
-            Stock.warehouse_id == item.warehouse_id,
-            Stock.product_id == item.product_id,
-        ).first()
-        if stock:
-            stock.quantity = (stock.quantity or 0) - item.quantity
-            if stock.quantity < 0:
-                stock.quantity = 0
-            stock.updated_at = datetime.now()
+        movement = db.query(StockMovement).filter(
+            StockMovement.document_type == "StockAdjustmentDoc",
+            StockMovement.document_id == doc.id,
+            StockMovement.warehouse_id == item.warehouse_id,
+            StockMovement.product_id == item.product_id,
+            StockMovement.operation_type == "adjustment",
+        ).order_by(StockMovement.created_at.desc(), StockMovement.id.desc()).first()
+        if movement and movement.quantity_change:
+            create_stock_movement(
+                db=db,
+                warehouse_id=item.warehouse_id,
+                product_id=item.product_id,
+                quantity_change=-movement.quantity_change,
+                operation_type="adjustment_revert",
+                document_type="StockAdjustmentDoc",
+                document_id=doc.id,
+                document_number=doc.number,
+                user_id=current_user.id if current_user else None,
+                note=f"Qoldiq tuzatish bekor qilindi: {doc.number}"
+            )
     doc.status = "draft"
     db.commit()
     return RedirectResponse(url=f"/qoldiqlar/tovar/hujjat/{doc_id}", status_code=303)
@@ -4023,17 +4025,7 @@ def _do_complete_production_stock(db, production, recipe):
     cost_per_unit = (total_material_cost / output_units) if output_units > 0 else 0
     out_wh_id = production.output_warehouse_id if production.output_warehouse_id else production.warehouse_id
     
-    # Tayyor mahsulotni qo'shish va StockMovement yozuvini yaratish
-    product_stock = db.query(Stock).filter(
-        Stock.warehouse_id == out_wh_id,
-        Stock.product_id == recipe.product_id
-    ).first()
-    if product_stock:
-        product_stock.quantity += output_units
-    else:
-        db.add(Stock(warehouse_id=out_wh_id, product_id=recipe.product_id, quantity=output_units))
-    
-    # StockMovement yozuvini yaratish (kirim - tayyor mahsulot)
+    # StockMovement yozuvini yaratish (kirim - tayyor mahsulot) va qoldiqni yangilash
     create_stock_movement(
         db=db,
         warehouse_id=out_wh_id,
@@ -4144,6 +4136,8 @@ async def complete_production(prod_id: int, db: Session = Depends(get_db), curre
     recipe = db.query(Recipe).filter(Recipe.id == production.recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Retsept topilmadi")
+    if production.status == "completed":
+        return RedirectResponse(url="/production/orders", status_code=303)
     err = _do_complete_production_stock(db, production, recipe)
     if err:
         return err
