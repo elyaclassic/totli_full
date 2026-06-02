@@ -121,6 +121,7 @@ def test_production_completion_adds_output_once(db):
     db.commit()
 
     result = _do_complete_production_stock(db, production, recipe)
+    db.flush()
 
     stock_rows = db.query(Stock).filter_by(
         warehouse_id=output_warehouse.id,
