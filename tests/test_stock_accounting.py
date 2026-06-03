@@ -160,6 +160,7 @@ def test_production_completion_records_output_once(db_session):
     db_session.refresh(recipe)
 
     result = _do_complete_production_stock(db_session, production, recipe)
+    db_session.flush()
 
     assert result is None
     raw_stock = db_session.query(Stock).filter_by(warehouse_id=raw_warehouse.id, product_id=material.id).one()
