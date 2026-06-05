@@ -114,6 +114,7 @@ def test_production_completion_adds_finished_goods_once(db_session):
     db_session.commit()
 
     response = main._do_complete_production_stock(db_session, production, recipe)
+    db_session.commit()
 
     assert response is None
     material_stock = db_session.query(Stock).filter_by(
@@ -144,6 +145,8 @@ def test_pwa_location_requires_expected_signed_token_type(db_session):
     bad_agent_response = asyncio.run(main.agent_location_update(
         latitude=41.0,
         longitude=69.0,
+        accuracy=None,
+        battery=None,
         token="not-a-token",
         db=db_session,
     ))
@@ -153,6 +156,8 @@ def test_pwa_location_requires_expected_signed_token_type(db_session):
     agent_response = asyncio.run(main.agent_location_update(
         latitude=41.0,
         longitude=69.0,
+        accuracy=None,
+        battery=None,
         token=create_session_token(agent.id, "agent"),
         db=db_session,
     ))
@@ -162,6 +167,8 @@ def test_pwa_location_requires_expected_signed_token_type(db_session):
     wrong_driver_response = asyncio.run(main.driver_location_update(
         latitude=41.0,
         longitude=69.0,
+        accuracy=None,
+        battery=None,
         token=create_session_token(agent.id, "agent"),
         db=db_session,
     ))
@@ -171,6 +178,8 @@ def test_pwa_location_requires_expected_signed_token_type(db_session):
     driver_response = asyncio.run(main.driver_location_update(
         latitude=41.0,
         longitude=69.0,
+        accuracy=None,
+        battery=None,
         token=create_session_token(driver.id, "driver"),
         db=db_session,
     ))
