@@ -1210,17 +1210,7 @@ async def qoldiqlar_tovar_hujjat_tasdiqlash(
         new_quantity = item.quantity
         quantity_change = new_quantity - old_quantity
         
-        if stock:
-            stock.quantity = new_quantity
-            stock.updated_at = datetime.now()
-        else:
-            db.add(Stock(
-                warehouse_id=item.warehouse_id,
-                product_id=item.product_id,
-                quantity=item.quantity,
-            ))
-        
-        # StockMovement yozuvini yaratish (adjustment)
+        # StockMovement yozuvini yaratish (adjustment) va qoldiqni shu helper yangilaydi
         if quantity_change != 0:
             create_stock_movement(
                 db=db,
@@ -1252,16 +1242,31 @@ async def qoldiqlar_tovar_hujjat_revert(
         raise HTTPException(status_code=404, detail="Hujjat topilmadi")
     if doc.status != "confirmed":
         raise HTTPException(status_code=400, detail="Faqat tasdiqlangan hujjatning tasdiqini bekor qilish mumkin")
-    for item in doc.items:
-        stock = db.query(Stock).filter(
-            Stock.warehouse_id == item.warehouse_id,
-            Stock.product_id == item.product_id,
-        ).first()
-        if stock:
-            stock.quantity = (stock.quantity or 0) - item.quantity
-            if stock.quantity < 0:
-                stock.quantity = 0
-            stock.updated_at = datetime.now()
+    movements = db.query(StockMovement).filter(
+        StockMovement.document_type == "StockAdjustmentDoc",
+        StockMovement.document_id == doc.id,
+    ).all()
+    for movement in movements:
+        if movement.quantity_change > 0:
+            stock = db.query(Stock).filter(
+                Stock.warehouse_id == movement.warehouse_id,
+                Stock.product_id == movement.product_id,
+            ).first()
+            if not stock or (stock.quantity or 0) < movement.quantity_change:
+                raise HTTPException(status_code=400, detail="Qoldiq o'zgargan. Tasdiqni bekor qilish mumkin emas")
+    for movement in movements:
+        create_stock_movement(
+            db=db,
+            warehouse_id=movement.warehouse_id,
+            product_id=movement.product_id,
+            quantity_change=-movement.quantity_change,
+            operation_type="adjustment_revert",
+            document_type="StockAdjustmentDoc",
+            document_id=doc.id,
+            document_number=doc.number,
+            user_id=current_user.id if current_user else None,
+            note=f"Qoldiq tuzatish bekor qilindi: {doc.number}",
+        )
     doc.status = "draft"
     db.commit()
     return RedirectResponse(url=f"/qoldiqlar/tovar/hujjat/{doc_id}", status_code=303)
@@ -2371,10 +2376,19 @@ async def warehouse_transfer_revert(
             Stock.warehouse_id == transfer.to_warehouse_id,
             Stock.product_id == item.product_id,
         ).first()
-        if dest:
-            dest.quantity -= item.quantity
-            if dest.quantity < 0:
-                dest.quantity = 0
+        if not dest or (dest.quantity or 0) < item.quantity:
+            prod = db.query(Product).filter(Product.id == item.product_id).first()
+            name = prod.name if prod else f"#{item.product_id}"
+            return RedirectResponse(
+                url="/warehouse/transfers?error=" + quote(f"Qayerga omborda «{name}» yetarli emas. Tasdiqni bekor qilib bo'lmaydi."),
+                status_code=303,
+            )
+    for item in items:
+        dest = db.query(Stock).filter(
+            Stock.warehouse_id == transfer.to_warehouse_id,
+            Stock.product_id == item.product_id,
+        ).first()
+        dest.quantity -= item.quantity
         src = db.query(Stock).filter(
             Stock.warehouse_id == transfer.from_warehouse_id,
             Stock.product_id == item.product_id,
@@ -2624,12 +2638,15 @@ async def purchase_add_item(
     product_id: int = Form(...),
     quantity: float = Form(...),
     price: float = Form(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     """Tovar kirimiga mahsulot qo'shish"""
     purchase = db.query(Purchase).filter(Purchase.id == purchase_id).first()
     if not purchase:
         raise HTTPException(status_code=404, detail="Tovar kirimi topilmadi")
+    if purchase.status != "draft":
+        raise HTTPException(status_code=400, detail="Faqat qoralamani tahrirlash mumkin")
     
     total = quantity * price
     item = PurchaseItem(
@@ -4023,17 +4040,7 @@ def _do_complete_production_stock(db, production, recipe):
     cost_per_unit = (total_material_cost / output_units) if output_units > 0 else 0
     out_wh_id = production.output_warehouse_id if production.output_warehouse_id else production.warehouse_id
     
-    # Tayyor mahsulotni qo'shish va StockMovement yozuvini yaratish
-    product_stock = db.query(Stock).filter(
-        Stock.warehouse_id == out_wh_id,
-        Stock.product_id == recipe.product_id
-    ).first()
-    if product_stock:
-        product_stock.quantity += output_units
-    else:
-        db.add(Stock(warehouse_id=out_wh_id, product_id=recipe.product_id, quantity=output_units))
-    
-    # StockMovement yozuvini yaratish (kirim - tayyor mahsulot)
+    # StockMovement yozuvini yaratish (kirim - tayyor mahsulot) va qoldiqni shu helper yangilaydi
     create_stock_movement(
         db=db,
         warehouse_id=out_wh_id,
@@ -4141,6 +4148,8 @@ async def complete_production(prod_id: int, db: Session = Depends(get_db), curre
     production = db.query(Production).filter(Production.id == prod_id).first()
     if not production:
         raise HTTPException(status_code=404, detail="Topilmadi")
+    if production.status == "completed":
+        return RedirectResponse(url="/production/orders", status_code=303)
     recipe = db.query(Recipe).filter(Recipe.id == production.recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Retsept topilmadi")
@@ -4206,11 +4215,17 @@ async def production_revert(
 
 
 @app.post("/production/{prod_id}/cancel")
-async def cancel_production(prod_id: int, db: Session = Depends(get_db)):
+async def cancel_production(
+    prod_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
     """Ishlab chiqarishni bekor qilish"""
     production = db.query(Production).filter(Production.id == prod_id).first()
     if not production:
         raise HTTPException(status_code=404, detail="Topilmadi")
+    if production.status == "completed":
+        raise HTTPException(status_code=400, detail="Yakunlangan buyurtmani avval revert qiling")
     
     production.status = "cancelled"
     db.commit()
@@ -4227,6 +4242,8 @@ async def delete_production(
     production = db.query(Production).filter(Production.id == prod_id).first()
     if not production:
         raise HTTPException(status_code=404, detail="Buyurtma topilmadi")
+    if production.status == "completed":
+        raise HTTPException(status_code=400, detail="Yakunlangan buyurtmani avval revert qiling")
     db.delete(production)
     db.commit()
     return RedirectResponse(url="/production/orders", status_code=303)
