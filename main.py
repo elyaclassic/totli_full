@@ -38,7 +38,7 @@ from app.models.database import (
     PartnerBalanceDoc, PartnerBalanceDocItem,
 )
 from app.utils.auth import (
-    hash_password, get_user_from_token,
+    hash_password, get_user_from_token, create_session_token,
     generate_csrf_token, verify_csrf_token,
 )
 from app.utils.audit_log import log_audit
@@ -224,8 +224,8 @@ async def _csrf_middleware_impl(request: Request, call_next):
             response.set_cookie("csrf_token", token, path="/", httponly=False, samesite="lax", max_age=86400 * 7)
         return response
 
-    # Himoyalanmaydigan yo'llar (API login, static, PWA location)
-    if path in ("/login", "/api/agent/login", "/api/driver/login") or path.startswith("/static"):
+    # PWA endpoints authenticate with signed form tokens instead of browser CSRF cookies.
+    if path in ("/login", "/api/agent/login", "/api/driver/login", "/api/agent/location", "/api/driver/location") or path.startswith("/static"):
         try:
             setattr(request.state, "csrf_token", request.cookies.get("csrf_token") or generate_csrf_token())
         except Exception:
@@ -1210,17 +1210,7 @@ async def qoldiqlar_tovar_hujjat_tasdiqlash(
         new_quantity = item.quantity
         quantity_change = new_quantity - old_quantity
         
-        if stock:
-            stock.quantity = new_quantity
-            stock.updated_at = datetime.now()
-        else:
-            db.add(Stock(
-                warehouse_id=item.warehouse_id,
-                product_id=item.product_id,
-                quantity=item.quantity,
-            ))
-        
-        # StockMovement yozuvini yaratish (adjustment)
+        # StockMovement helper applies the delta and records quantity_after.
         if quantity_change != 0:
             create_stock_movement(
                 db=db,
@@ -1253,15 +1243,36 @@ async def qoldiqlar_tovar_hujjat_revert(
     if doc.status != "confirmed":
         raise HTTPException(status_code=400, detail="Faqat tasdiqlangan hujjatning tasdiqini bekor qilish mumkin")
     for item in doc.items:
-        stock = db.query(Stock).filter(
-            Stock.warehouse_id == item.warehouse_id,
-            Stock.product_id == item.product_id,
-        ).first()
-        if stock:
-            stock.quantity = (stock.quantity or 0) - item.quantity
-            if stock.quantity < 0:
-                stock.quantity = 0
-            stock.updated_at = datetime.now()
+        movements = db.query(StockMovement).filter(
+            StockMovement.warehouse_id == item.warehouse_id,
+            StockMovement.product_id == item.product_id,
+            StockMovement.document_type == "StockAdjustmentDoc",
+            StockMovement.document_id == doc.id,
+            StockMovement.operation_type == "adjustment",
+        ).all()
+        quantity_change = sum((movement.quantity_change or 0) for movement in movements)
+        if quantity_change == 0:
+            continue
+        reverse_change = -quantity_change
+        if reverse_change < 0:
+            stock = db.query(Stock).filter(
+                Stock.warehouse_id == item.warehouse_id,
+                Stock.product_id == item.product_id,
+            ).first()
+            if not stock or (stock.quantity or 0) < abs(reverse_change):
+                raise HTTPException(status_code=400, detail="Omborda qoldiq yetarli emas. Tasdiqni bekor qilish mumkin emas")
+        create_stock_movement(
+            db=db,
+            warehouse_id=item.warehouse_id,
+            product_id=item.product_id,
+            quantity_change=reverse_change,
+            operation_type="adjustment_revert",
+            document_type="StockAdjustmentDoc",
+            document_id=doc.id,
+            document_number=doc.number,
+            user_id=current_user.id if current_user else None,
+            note=f"Qoldiq tuzatishni bekor qilish: {doc.number}",
+        )
     doc.status = "draft"
     db.commit()
     return RedirectResponse(url=f"/qoldiqlar/tovar/hujjat/{doc_id}", status_code=303)
@@ -2371,18 +2382,36 @@ async def warehouse_transfer_revert(
             Stock.warehouse_id == transfer.to_warehouse_id,
             Stock.product_id == item.product_id,
         ).first()
-        if dest:
-            dest.quantity -= item.quantity
-            if dest.quantity < 0:
-                dest.quantity = 0
-        src = db.query(Stock).filter(
-            Stock.warehouse_id == transfer.from_warehouse_id,
-            Stock.product_id == item.product_id,
-        ).first()
-        if src:
-            src.quantity += item.quantity
-        else:
-            db.add(Stock(warehouse_id=transfer.from_warehouse_id, product_id=item.product_id, quantity=item.quantity))
+        if not dest or (dest.quantity or 0) < item.quantity:
+            return RedirectResponse(
+                url="/warehouse/transfers?error=" + quote("Qabul qiluvchi omborda qoldiq yetarli emas. Tasdiqni bekor qilish mumkin emas."),
+                status_code=303,
+            )
+    for item in items:
+        create_stock_movement(
+            db=db,
+            warehouse_id=transfer.to_warehouse_id,
+            product_id=item.product_id,
+            quantity_change=-item.quantity,
+            operation_type="transfer_revert_out",
+            document_type="WarehouseTransfer",
+            document_id=transfer.id,
+            document_number=transfer.number,
+            user_id=current_user.id if current_user else None,
+            note=f"O'tkazishni bekor qilish (qabuldan chiqim): {transfer.number}",
+        )
+        create_stock_movement(
+            db=db,
+            warehouse_id=transfer.from_warehouse_id,
+            product_id=item.product_id,
+            quantity_change=item.quantity,
+            operation_type="transfer_revert_in",
+            document_type="WarehouseTransfer",
+            document_id=transfer.id,
+            document_number=transfer.number,
+            user_id=current_user.id if current_user else None,
+            note=f"O'tkazishni bekor qilish (manbaga kirim): {transfer.number}",
+        )
     transfer.status = "draft"
     db.commit()
     return RedirectResponse(url="/warehouse/transfers?reverted=1", status_code=303)
@@ -2624,12 +2653,15 @@ async def purchase_add_item(
     product_id: int = Form(...),
     quantity: float = Form(...),
     price: float = Form(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     """Tovar kirimiga mahsulot qo'shish"""
     purchase = db.query(Purchase).filter(Purchase.id == purchase_id).first()
     if not purchase:
         raise HTTPException(status_code=404, detail="Tovar kirimi topilmadi")
+    if purchase.status != "draft":
+        raise HTTPException(status_code=400, detail="Faqat qoralamani tahrirlash mumkin")
     
     total = quantity * price
     item = PurchaseItem(
@@ -4023,16 +4055,6 @@ def _do_complete_production_stock(db, production, recipe):
     cost_per_unit = (total_material_cost / output_units) if output_units > 0 else 0
     out_wh_id = production.output_warehouse_id if production.output_warehouse_id else production.warehouse_id
     
-    # Tayyor mahsulotni qo'shish va StockMovement yozuvini yaratish
-    product_stock = db.query(Stock).filter(
-        Stock.warehouse_id == out_wh_id,
-        Stock.product_id == recipe.product_id
-    ).first()
-    if product_stock:
-        product_stock.quantity += output_units
-    else:
-        db.add(Stock(warehouse_id=out_wh_id, product_id=recipe.product_id, quantity=output_units))
-    
     # StockMovement yozuvini yaratish (kirim - tayyor mahsulot)
     create_stock_movement(
         db=db,
@@ -4141,6 +4163,8 @@ async def complete_production(prod_id: int, db: Session = Depends(get_db), curre
     production = db.query(Production).filter(Production.id == prod_id).first()
     if not production:
         raise HTTPException(status_code=404, detail="Topilmadi")
+    if production.status == "completed":
+        return RedirectResponse(url="/production/orders", status_code=303)
     recipe = db.query(Recipe).filter(Recipe.id == production.recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Retsept topilmadi")
@@ -4704,7 +4728,7 @@ async def add_delivery_order(
 
 
 
-@app.post("/api/driver/location")
+@app.post("/api/driver/location_OLD_DISABLED")
 async def update_driver_location(
     driver_code: str = Form(...),
     latitude: float = Form(...),
@@ -4797,6 +4821,16 @@ async def agent_login(
         
         # Session token yaratish
         token = create_session_token(agent.id, "agent")
+        user = {
+            "agent": {
+                "id": agent.id,
+                "code": agent.code,
+                "full_name": agent.full_name,
+                "phone": agent.phone,
+                "region": agent.region,
+            },
+            "type": "agent",
+        }
         return {
             "success": True,
             "agent": {
@@ -4805,6 +4839,7 @@ async def agent_login(
                 "full_name": agent.full_name,
                 "phone": agent.phone,
             },
+            "user": user,
             "token": token
         }
     except Exception as e:
@@ -4829,6 +4864,16 @@ async def driver_login(
             return {"success": False, "error": "Parol noto'g'ri"}
         
         token = create_session_token(driver.id, "driver")
+        user = {
+            "driver": {
+                "id": driver.id,
+                "code": driver.code,
+                "full_name": driver.full_name,
+                "phone": driver.phone,
+                "vehicle_number": driver.vehicle_number,
+            },
+            "type": "driver",
+        }
         return {
             "success": True,
             "driver": {
@@ -4838,6 +4883,7 @@ async def driver_login(
                 "phone": driver.phone,
                 "vehicle_number": driver.vehicle_number,
             },
+            "user": user,
             "token": token
         }
     except Exception as e:
@@ -4889,10 +4935,13 @@ async def driver_location_update(
     """Driver location update"""
     try:
         user_data = get_user_from_token(token)
-        if not user_data or user_data.get("role") != "driver":
+        if not user_data or user_data.get("user_type") != "driver":
             return {"success": False, "error": "Invalid token"}
         
         driver_id = user_data["user_id"]
+        driver = db.query(Driver).filter(Driver.id == driver_id, Driver.is_active == True).first()
+        if not driver:
+            return {"success": False, "error": "Invalid token"}
         
         location = DriverLocation(
             driver_id=driver_id,
@@ -4968,8 +5017,13 @@ async def agent_location_update(
 ):
     """Agent location update"""
     try:
-        # Test mode - agent_id = 1
-        agent_id = 1
+        user_data = get_user_from_token(token)
+        if not user_data or user_data.get("user_type") != "agent":
+            return {"success": False, "error": "Invalid token"}
+        agent_id = user_data["user_id"]
+        agent = db.query(Agent).filter(Agent.id == agent_id, Agent.is_active == True).first()
+        if not agent:
+            return {"success": False, "error": "Invalid token"}
         
         location = AgentLocation(
             agent_id=agent_id,
