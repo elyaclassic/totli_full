@@ -1,10 +1,14 @@
 import os
+import sys
 import tempfile
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import main
 import app.models.database as dbm
