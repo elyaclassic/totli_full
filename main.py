@@ -224,8 +224,13 @@ async def _csrf_middleware_impl(request: Request, call_next):
             response.set_cookie("csrf_token", token, path="/", httponly=False, samesite="lax", max_age=86400 * 7)
         return response
 
-    # Himoyalanmaydigan yo'llar (API login, static, PWA location)
-    if path in ("/login", "/api/agent/login", "/api/driver/login") or path.startswith("/static"):
+    # Mobile/PWA API endpoints authenticate with signed form tokens instead of browser CSRF cookies.
+    mobile_token_posts = ("/api/agent/location", "/api/driver/location")
+    if (
+        path in ("/login", "/api/agent/login", "/api/driver/login")
+        or (path in mobile_token_posts and method == "POST")
+        or path.startswith("/static")
+    ):
         try:
             setattr(request.state, "csrf_token", request.cookies.get("csrf_token") or generate_csrf_token())
         except Exception:
@@ -4704,7 +4709,7 @@ async def add_delivery_order(
 
 
 
-@app.post("/api/driver/location")
+@app.post("/api/driver/location_OLD_CODE_DISABLED")
 async def update_driver_location(
     driver_code: str = Form(...),
     latitude: float = Form(...),
@@ -4889,10 +4894,13 @@ async def driver_location_update(
     """Driver location update"""
     try:
         user_data = get_user_from_token(token)
-        if not user_data or user_data.get("role") != "driver":
+        if not user_data or user_data.get("user_type") != "driver":
             return {"success": False, "error": "Invalid token"}
         
         driver_id = user_data["user_id"]
+        driver = db.query(Driver).filter(Driver.id == driver_id, Driver.is_active == True).first()
+        if not driver:
+            return {"success": False, "error": "Haydovchi topilmadi yoki faol emas"}
         
         location = DriverLocation(
             driver_id=driver_id,
@@ -4915,8 +4923,11 @@ async def agent_orders(token: str, db: Session = Depends(get_db)):
     """Agent orders list"""
     try:
         user_data = get_user_from_token(token)
-        if not user_data:
+        if not user_data or user_data.get("user_type") != "agent":
             return {"success": False, "error": "Invalid token"}
+        agent = db.query(Agent).filter(Agent.id == user_data["user_id"], Agent.is_active == True).first()
+        if not agent:
+            return {"success": False, "error": "Agent topilmadi yoki faol emas"}
         
         # Hozircha bo'sh ro'yxat qaytaramiz
         return {"success": True, "orders": []}
@@ -4929,8 +4940,11 @@ async def agent_partners(token: str, db: Session = Depends(get_db)):
     """Agent partners list"""
     try:
         user_data = get_user_from_token(token)
-        if not user_data:
+        if not user_data or user_data.get("user_type") != "agent":
             return {"success": False, "error": "Invalid token"}
+        agent = db.query(Agent).filter(Agent.id == user_data["user_id"], Agent.is_active == True).first()
+        if not agent:
+            return {"success": False, "error": "Agent topilmadi yoki faol emas"}
         
         partners = db.query(Partner).filter(Partner.is_active == True).all()
         return {
@@ -4968,8 +4982,14 @@ async def agent_location_update(
 ):
     """Agent location update"""
     try:
-        # Test mode - agent_id = 1
-        agent_id = 1
+        user_data = get_user_from_token(token)
+        if not user_data or user_data.get("user_type") != "agent":
+            return {"success": False, "error": "Invalid token"}
+        
+        agent_id = user_data["user_id"]
+        agent = db.query(Agent).filter(Agent.id == agent_id, Agent.is_active == True).first()
+        if not agent:
+            return {"success": False, "error": "Agent topilmadi yoki faol emas"}
         
         location = AgentLocation(
             agent_id=agent_id,
