@@ -129,6 +129,7 @@ def test_production_completion_adds_finished_goods_once():
     db.commit()
 
     result = _do_complete_production_stock(db, production, recipe)
+    db.flush()
 
     assert result is None
     raw_stock = db.query(Stock).filter_by(warehouse_id=warehouse.id, product_id=raw_product.id).one()
