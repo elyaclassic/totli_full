@@ -1216,17 +1216,7 @@ async def qoldiqlar_tovar_hujjat_tasdiqlash(
         new_quantity = item.quantity
         quantity_change = new_quantity - old_quantity
         
-        if stock:
-            stock.quantity = new_quantity
-            stock.updated_at = datetime.now()
-        else:
-            db.add(Stock(
-                warehouse_id=item.warehouse_id,
-                product_id=item.product_id,
-                quantity=item.quantity,
-            ))
-        
-        # StockMovement yozuvini yaratish (adjustment)
+        # StockMovement qoldiqni ham yangilaydi; bu hujjatda quantity yangi absolyut qoldiq.
         if quantity_change != 0:
             create_stock_movement(
                 db=db,
@@ -1264,7 +1254,17 @@ async def qoldiqlar_tovar_hujjat_revert(
             Stock.product_id == item.product_id,
         ).first()
         if stock:
-            stock.quantity = (stock.quantity or 0) - item.quantity
+            movement = db.query(StockMovement).filter(
+                StockMovement.document_type == "StockAdjustmentDoc",
+                StockMovement.document_id == doc.id,
+                StockMovement.operation_type == "adjustment",
+                StockMovement.warehouse_id == item.warehouse_id,
+                StockMovement.product_id == item.product_id,
+            ).order_by(StockMovement.id.desc()).first()
+            if movement:
+                stock.quantity = (stock.quantity or 0) - (movement.quantity_change or 0)
+            else:
+                stock.quantity = (stock.quantity or 0) - item.quantity
             if stock.quantity < 0:
                 stock.quantity = 0
             stock.updated_at = datetime.now()
@@ -4029,17 +4029,7 @@ def _do_complete_production_stock(db, production, recipe):
     cost_per_unit = (total_material_cost / output_units) if output_units > 0 else 0
     out_wh_id = production.output_warehouse_id if production.output_warehouse_id else production.warehouse_id
     
-    # Tayyor mahsulotni qo'shish va StockMovement yozuvini yaratish
-    product_stock = db.query(Stock).filter(
-        Stock.warehouse_id == out_wh_id,
-        Stock.product_id == recipe.product_id
-    ).first()
-    if product_stock:
-        product_stock.quantity += output_units
-    else:
-        db.add(Stock(warehouse_id=out_wh_id, product_id=recipe.product_id, quantity=output_units))
-    
-    # StockMovement yozuvini yaratish (kirim - tayyor mahsulot)
+    # StockMovement tayyor mahsulot qoldig'ini ham yangilaydi.
     create_stock_movement(
         db=db,
         warehouse_id=out_wh_id,
@@ -4212,11 +4202,17 @@ async def production_revert(
 
 
 @app.post("/production/{prod_id}/cancel")
-async def cancel_production(prod_id: int, db: Session = Depends(get_db)):
+async def cancel_production(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     """Ishlab chiqarishni bekor qilish"""
+    from urllib.parse import quote
     production = db.query(Production).filter(Production.id == prod_id).first()
     if not production:
         raise HTTPException(status_code=404, detail="Topilmadi")
+    if production.status == "completed":
+        return RedirectResponse(
+            url="/production/orders?error=cancel&detail=" + quote("Yakunlangan buyurtmani bekor qilib bo'lmaydi. Avval tasdiqni bekor qiling."),
+            status_code=303
+        )
     
     production.status = "cancelled"
     db.commit()
@@ -4233,6 +4229,12 @@ async def delete_production(
     production = db.query(Production).filter(Production.id == prod_id).first()
     if not production:
         raise HTTPException(status_code=404, detail="Buyurtma topilmadi")
+    if production.status != "draft":
+        from urllib.parse import quote
+        return RedirectResponse(
+            url="/production/orders?error=delete&detail=" + quote("Faqat qoralama holatidagi ishlab chiqarish buyurtmasini o'chirish mumkin."),
+            status_code=303
+        )
     db.delete(production)
     db.commit()
     return RedirectResponse(url="/production/orders", status_code=303)
