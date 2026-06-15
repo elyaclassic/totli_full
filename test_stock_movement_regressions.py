@@ -7,7 +7,12 @@ from sqlalchemy.pool import StaticPool
 
 import main
 from app.models.database import (
+    Agent,
+    AgentLocation,
     Base,
+    Driver,
+    DriverLocation,
+    Partner,
     Product,
     Production,
     Recipe,
@@ -57,6 +62,97 @@ def _product(db, code, name=None):
     db.add(product)
     db.flush()
     return product
+
+
+def test_agent_login_creates_token_and_location_uses_token_owner(db_session):
+    agent_one = Agent(code="AG001", full_name="Agent One", phone="111", is_active=True)
+    agent_two = Agent(code="AG002", full_name="Agent Two", phone="222", is_active=True)
+    db_session.add_all([agent_one, agent_two])
+    db_session.commit()
+
+    login = asyncio.run(main.agent_login("222", "222", db_session))
+    assert login["success"] is True
+    token = login["token"]
+
+    response = asyncio.run(
+        main.agent_location_update(
+            latitude=41.0,
+            longitude=69.0,
+            accuracy=None,
+            battery=None,
+            token=token,
+            db=db_session,
+        )
+    )
+
+    location = db_session.query(AgentLocation).one()
+    assert response["success"] is True
+    assert location.agent_id == agent_two.id
+
+
+def test_agent_location_rejects_driver_token(db_session):
+    driver = Driver(code="DR001", full_name="Driver", phone="333", is_active=True)
+    db_session.add(driver)
+    db_session.commit()
+    token = main.create_session_token(driver.id, "driver")
+
+    response = asyncio.run(
+        main.agent_location_update(
+            latitude=41.0,
+            longitude=69.0,
+            accuracy=None,
+            battery=None,
+            token=token,
+            db=db_session,
+        )
+    )
+
+    assert response == {"success": False, "error": "Invalid token"}
+    assert db_session.query(AgentLocation).count() == 0
+
+
+def test_driver_location_route_uses_token_endpoint(db_session):
+    routes = [
+        route for route in main.app.routes
+        if getattr(route, "path", None) == "/api/driver/location"
+        and "POST" in getattr(route, "methods", set())
+    ]
+    assert len(routes) == 1
+    assert routes[0].endpoint is main.driver_location_update
+
+
+def test_driver_location_requires_driver_token(db_session):
+    driver = Driver(code="DR001", full_name="Driver", phone="333", is_active=True)
+    db_session.add(driver)
+    db_session.commit()
+    token = main.create_session_token(driver.id, "driver")
+
+    response = asyncio.run(
+        main.driver_location_update(
+            latitude=41.0,
+            longitude=69.0,
+            accuracy=None,
+            battery=80,
+            token=token,
+            db=db_session,
+        )
+    )
+
+    location = db_session.query(DriverLocation).one()
+    assert response["success"] is True
+    assert location.driver_id == driver.id
+
+
+def test_agent_partners_rejects_driver_token(db_session):
+    driver = Driver(code="DR001", full_name="Driver", phone="333", is_active=True)
+    partner = Partner(code="P001", name="Partner", type="customer", is_active=True)
+    db_session.add_all([driver, partner])
+    db_session.commit()
+    token = main.create_session_token(driver.id, "driver")
+
+    response = asyncio.run(main.agent_partners(token, db_session))
+
+    assert response == {"success": False, "error": "Invalid token"}
 
 
 def test_stock_adjustment_confirm_applies_delta_once(db_session):
