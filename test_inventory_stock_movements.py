@@ -6,6 +6,8 @@ from sqlalchemy.orm import sessionmaker
 
 from app.models.database import (
     Base,
+    Department,
+    Employee,
     Product,
     Recipe,
     RecipeItem,
@@ -16,11 +18,14 @@ from app.models.database import (
     StockMovement,
     User,
     Warehouse,
+    WarehouseTransfer,
+    WarehouseTransferItem,
 )
 from main import (
     _do_complete_production_stock,
     qoldiqlar_tovar_hujjat_revert,
     qoldiqlar_tovar_hujjat_tasdiqlash,
+    warehouse_transfer_confirm,
 )
 
 
@@ -38,9 +43,9 @@ def db():
         engine.dispose()
 
 
-def add_user(db, role="admin"):
+def add_user(db, role="admin", username=None):
     user = User(
-        username=f"{role}_user",
+        username=username or f"{role}_user",
         password_hash="hash",
         full_name=f"{role.title()} User",
         role=role,
@@ -56,6 +61,13 @@ def add_warehouse(db, code="WH", name="Warehouse"):
     db.add(warehouse)
     db.flush()
     return warehouse
+
+
+def add_department(db, code="DEPT", name="Department"):
+    department = Department(code=code, name=name, is_active=True)
+    db.add(department)
+    db.flush()
+    return department
 
 
 def add_product(db, code="P1", name="Product", product_type="product", purchase_price=0):
@@ -172,3 +184,48 @@ def test_production_completion_adds_finished_goods_once(db):
     assert finished_stock.quantity == 15
     assert output_movement.quantity_change == 5
     assert output_movement.quantity_after == 15
+
+
+def test_transfer_confirm_rejects_user_outside_warehouse_departments(db):
+    source_department = add_department(db, code="SRC", name="Source")
+    destination_department = add_department(db, code="DST", name="Destination")
+    unrelated_department = add_department(db, code="OTHER", name="Other")
+    user = add_user(db, role="user")
+    db.add(
+        Employee(
+            code="EMP-001",
+            full_name="Other Department User",
+            department_id=unrelated_department.id,
+            user_id=user.id,
+            is_active=True,
+        )
+    )
+    source = add_warehouse(db, code="SRC-WH", name="Source Warehouse")
+    destination = add_warehouse(db, code="DST-WH", name="Destination Warehouse")
+    source.department_id = source_department.id
+    destination.department_id = destination_department.id
+    product = add_product(db)
+    db.add(Stock(warehouse_id=source.id, product_id=product.id, quantity=20))
+    transfer = WarehouseTransfer(
+        number="TR-001",
+        from_warehouse_id=source.id,
+        to_warehouse_id=destination.id,
+        status="pending_approval",
+        user_id=user.id,
+    )
+    db.add(transfer)
+    db.flush()
+    db.add(WarehouseTransferItem(transfer_id=transfer.id, product_id=product.id, quantity=5))
+    db.commit()
+
+    response = asyncio.run(warehouse_transfer_confirm(transfer.id, db=db, current_user=user))
+
+    source_stock = db.query(Stock).filter_by(warehouse_id=source.id, product_id=product.id).one()
+    destination_stock = db.query(Stock).filter_by(warehouse_id=destination.id, product_id=product.id).first()
+    movements = db.query(StockMovement).filter_by(document_id=transfer.id, document_type="WarehouseTransfer").all()
+    assert response.status_code == 303
+    assert "ruxsat" in response.headers["location"]
+    assert transfer.status == "pending_approval"
+    assert source_stock.quantity == 20
+    assert destination_stock is None
+    assert movements == []

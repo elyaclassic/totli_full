@@ -2276,6 +2276,31 @@ async def warehouse_transfer_save(
     return RedirectResponse(url="/warehouse/transfers?saved=1", status_code=303)
 
 
+def _can_approve_warehouse_transfer(db: Session, current_user: User, transfer: WarehouseTransfer) -> bool:
+    if not current_user:
+        return False
+    if current_user.role == "admin":
+        return True
+
+    warehouses = [transfer.from_warehouse, transfer.to_warehouse]
+    if any(wh and wh.responsible_id == current_user.id for wh in warehouses):
+        return True
+
+    department_ids = {
+        wh.department_id
+        for wh in warehouses
+        if wh and wh.department_id is not None
+    }
+    if not department_ids:
+        return False
+
+    return db.query(Employee.id).filter(
+        Employee.user_id == current_user.id,
+        Employee.is_active == True,
+        Employee.department_id.in_(department_ids),
+    ).first() is not None
+
+
 @app.post("/warehouse/transfers/{transfer_id}/confirm")
 async def warehouse_transfer_confirm(
     transfer_id: int,
@@ -2294,6 +2319,11 @@ async def warehouse_transfer_confirm(
         return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Hujjat allaqachon tasdiqlangan."), status_code=303)
     if transfer.status != "pending_approval":
         return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Hujjatni avval saqlang (pending_approval holatiga o'tkazish kerak)."), status_code=303)
+    if not _can_approve_warehouse_transfer(db, current_user, transfer):
+        return RedirectResponse(
+            url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Bu o'tkazishni tasdiqlash uchun ruxsat yo'q."),
+            status_code=303,
+        )
     items = db.query(WarehouseTransferItem).filter(WarehouseTransferItem.transfer_id == transfer_id).all()
     if not items:
         return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Kamida bitta mahsulot qo'shing."), status_code=303)
