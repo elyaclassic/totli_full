@@ -4704,7 +4704,7 @@ async def add_delivery_order(
 
 
 
-@app.post("/api/driver/location")
+@app.post("/api/driver/location_OLD_DISABLED")
 async def update_driver_location(
     driver_code: str = Form(...),
     latitude: float = Form(...),
@@ -4777,6 +4777,20 @@ async def get_drivers_locations(db: Session = Depends(get_db)):
 # ==========================================
 # PWA API ENDPOINTS
 # ==========================================
+
+def _get_mobile_principal(token: str, expected_user_type: str, db: Session):
+    """Validate signed PWA tokens and return the active agent/driver row."""
+    user_data = get_user_from_token(token)
+    if not user_data or user_data.get("user_type") != expected_user_type:
+        return None
+
+    user_id = user_data.get("user_id")
+    if expected_user_type == "agent":
+        return db.query(Agent).filter(Agent.id == user_id, Agent.is_active == True).first()
+    if expected_user_type == "driver":
+        return db.query(Driver).filter(Driver.id == user_id, Driver.is_active == True).first()
+    return None
+
 
 @app.post("/api/agent/login")
 async def agent_login(
@@ -4888,14 +4902,12 @@ async def driver_location_update(
 ):
     """Driver location update"""
     try:
-        user_data = get_user_from_token(token)
-        if not user_data or user_data.get("role") != "driver":
+        driver = _get_mobile_principal(token, "driver", db)
+        if not driver:
             return {"success": False, "error": "Invalid token"}
         
-        driver_id = user_data["user_id"]
-        
         location = DriverLocation(
-            driver_id=driver_id,
+            driver_id=driver.id,
             latitude=latitude,
             longitude=longitude,
             accuracy=accuracy,
@@ -4914,8 +4926,8 @@ async def driver_location_update(
 async def agent_orders(token: str, db: Session = Depends(get_db)):
     """Agent orders list"""
     try:
-        user_data = get_user_from_token(token)
-        if not user_data:
+        agent = _get_mobile_principal(token, "agent", db)
+        if not agent:
             return {"success": False, "error": "Invalid token"}
         
         # Hozircha bo'sh ro'yxat qaytaramiz
@@ -4928,8 +4940,8 @@ async def agent_orders(token: str, db: Session = Depends(get_db)):
 async def agent_partners(token: str, db: Session = Depends(get_db)):
     """Agent partners list"""
     try:
-        user_data = get_user_from_token(token)
-        if not user_data:
+        agent = _get_mobile_principal(token, "agent", db)
+        if not agent:
             return {"success": False, "error": "Invalid token"}
         
         partners = db.query(Partner).filter(Partner.is_active == True).all()
@@ -4968,11 +4980,12 @@ async def agent_location_update(
 ):
     """Agent location update"""
     try:
-        # Test mode - agent_id = 1
-        agent_id = 1
-        
+        agent = _get_mobile_principal(token, "agent", db)
+        if not agent:
+            return {"success": False, "error": "Invalid token"}
+
         location = AgentLocation(
-            agent_id=agent_id,
+            agent_id=agent.id,
             latitude=latitude,
             longitude=longitude,
             accuracy=accuracy,
