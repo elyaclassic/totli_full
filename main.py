@@ -225,7 +225,13 @@ async def _csrf_middleware_impl(request: Request, call_next):
         return response
 
     # Himoyalanmaydigan yo'llar (API login, static, PWA location)
-    if path in ("/login", "/api/agent/login", "/api/driver/login") or path.startswith("/static"):
+    if path in (
+        "/login",
+        "/api/agent/login",
+        "/api/driver/login",
+        "/api/agent/location",
+        "/api/driver/location",
+    ) or path.startswith("/static"):
         try:
             setattr(request.state, "csrf_token", request.cookies.get("csrf_token") or generate_csrf_token())
         except Exception:
