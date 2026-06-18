@@ -22,6 +22,8 @@ from app.models.database import (
     StockMovement,
     User,
     Warehouse,
+    WarehouseTransfer,
+    WarehouseTransferItem,
 )
 from app.utils.auth import create_session_token
 
@@ -111,6 +113,44 @@ def test_production_completion_counts_output_once():
         output_movement = db.query(StockMovement).filter_by(operation_type="production_output").one()
         assert output_movement.quantity_change == 10
         assert output_movement.quantity_after == 15
+    finally:
+        db.close()
+
+
+def test_warehouse_transfer_confirm_requires_authorized_user():
+    db = _new_session()
+    try:
+        user = User(username="user", full_name="User", role="user", is_active=True)
+        source = Warehouse(code="SRC", name="Source")
+        destination = Warehouse(code="DST", name="Destination")
+        product = Product(code="P2", name="Product")
+        transfer = WarehouseTransfer(
+            number="WT-1",
+            from_warehouse=source,
+            to_warehouse=destination,
+            status="pending_approval",
+            user=user,
+        )
+        item = WarehouseTransferItem(transfer=transfer, product=product, quantity=5)
+        db.add_all([
+            user,
+            source,
+            destination,
+            product,
+            transfer,
+            item,
+            Stock(warehouse=source, product=product, quantity=20),
+        ])
+        db.commit()
+
+        asyncio.run(main.warehouse_transfer_confirm(transfer.id, db, user))
+
+        db.expire_all()
+        transfer = db.query(WarehouseTransfer).filter_by(id=transfer.id).one()
+        source_stock = db.query(Stock).filter_by(warehouse_id=source.id, product_id=product.id).one()
+        assert transfer.status == "pending_approval"
+        assert source_stock.quantity == 20
+        assert db.query(StockMovement).count() == 0
     finally:
         db.close()
 

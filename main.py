@@ -2296,6 +2296,30 @@ async def warehouse_transfer_confirm(
     transfer = db.query(WarehouseTransfer).filter(WarehouseTransfer.id == transfer_id).first()
     if not transfer:
         raise HTTPException(status_code=404, detail="Hujjat topilmadi")
+    from_warehouse = db.query(Warehouse).filter(Warehouse.id == transfer.from_warehouse_id).first()
+    to_warehouse = db.query(Warehouse).filter(Warehouse.id == transfer.to_warehouse_id).first()
+    if not from_warehouse or not to_warehouse:
+        raise HTTPException(status_code=404, detail="Ombor topilmadi")
+    allowed = current_user.role == "admin" or current_user.id in (
+        from_warehouse.responsible_id,
+        to_warehouse.responsible_id,
+    )
+    if not allowed:
+        department_ids = [
+            dep_id for dep_id in (from_warehouse.department_id, to_warehouse.department_id)
+            if dep_id is not None
+        ]
+        if department_ids:
+            allowed = db.query(Employee).filter(
+                Employee.user_id == current_user.id,
+                Employee.is_active == True,
+                Employee.department_id.in_(department_ids),
+            ).first() is not None
+    if not allowed:
+        return RedirectResponse(
+            url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Ushbu ombor o'tkazmasini tasdiqlashga ruxsat yo'q."),
+            status_code=303
+        )
     # Faqat pending_approval holatidagi hujjatni tasdiqlash mumkin
     if transfer.status == "confirmed":
         return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Hujjat allaqachon tasdiqlangan."), status_code=303)
@@ -2317,6 +2341,17 @@ async def warehouse_transfer_confirm(
                 url=f"/warehouse/transfers/{transfer_id}?error=" + quote(f"Qayerdan omborda «{name}» yetarli emas (kerak: {item.quantity}, mavjud: {avail})"),
                 status_code=303
             )
+    claimed = db.query(WarehouseTransfer).filter(
+        WarehouseTransfer.id == transfer_id,
+        WarehouseTransfer.status == "pending_approval",
+    ).update({WarehouseTransfer.status: "confirming"}, synchronize_session=False)
+    if claimed != 1:
+        db.rollback()
+        return RedirectResponse(
+            url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Hujjat allaqachon tasdiqlangan yoki holati o'zgargan."),
+            status_code=303
+        )
+    transfer.status = "confirming"
     # Qoldiqlarni yangilash - faqat tasdiqlanganda
     for item in items:
         # Qayerdan ombordan ayirish - StockMovement yozuvini yaratish
