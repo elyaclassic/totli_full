@@ -1636,7 +1636,7 @@ async def product_edit(
 async def product_delete(
     product_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_auth)
+    current_user: User = Depends(require_admin)
 ):
     """Tovarni o'chirish (soft delete: is_active=False)"""
     product = db.query(Product).filter(Product.id == product_id).first()
@@ -2982,7 +2982,7 @@ async def partner_edit(
 
 
 @app.post("/partners/delete/{partner_id}")
-async def partner_delete(partner_id: int, db: Session = Depends(get_db)):
+async def partner_delete(partner_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     """Kontragentni o'chirish"""
     partner = db.query(Partner).filter(Partner.id == partner_id).first()
     if not partner:
@@ -4203,7 +4203,11 @@ async def production_revert(
 
 
 @app.post("/production/{prod_id}/cancel")
-async def cancel_production(prod_id: int, db: Session = Depends(get_db)):
+async def cancel_production(
+    prod_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
     """Ishlab chiqarishni bekor qilish"""
     production = db.query(Production).filter(Production.id == prod_id).first()
     if not production:

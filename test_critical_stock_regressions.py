@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 
 import pytest
 from fastapi import HTTPException
@@ -6,6 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 import main
+from app.routes import info as info_routes
 from app.models.database import (
     Base,
     Product,
@@ -214,3 +216,18 @@ def test_confirmed_purchase_rejects_late_item_mutation(db_session):
     assert db_session.query(PurchaseItem).filter_by(purchase_id=purchase.id).count() == 0
     db_session.refresh(purchase)
     assert purchase.total == 100
+
+
+def test_destructive_routes_require_admin_dependency():
+    endpoints = [
+        main.product_delete,
+        main.partner_delete,
+        main.cancel_production,
+        info_routes.info_warehouses_delete,
+        info_routes.info_cash_delete,
+        info_routes.region_delete,
+    ]
+
+    for endpoint in endpoints:
+        current_user = inspect.signature(endpoint).parameters["current_user"]
+        assert current_user.default.dependency is main.require_admin
