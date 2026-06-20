@@ -101,7 +101,7 @@ async def info_warehouses_edit(
 
 
 @router.post("/warehouses/delete/{warehouse_id}")
-async def info_warehouses_delete(warehouse_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+async def info_warehouses_delete(warehouse_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     warehouse = db.query(Warehouse).filter(Warehouse.id == warehouse_id).first()
     if not warehouse:
         raise HTTPException(status_code=404, detail="Ombor topilmadi")
@@ -585,7 +585,7 @@ async def info_cash_edit(
 
 
 @router.post("/cash/delete/{cash_id}")
-async def info_cash_delete(cash_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+async def info_cash_delete(cash_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     cash = db.query(CashRegister).filter(CashRegister.id == cash_id).first()
     if not cash:
         raise HTTPException(status_code=404, detail="Kassa topilmadi")
@@ -1052,7 +1052,7 @@ async def region_edit(
 
 
 @router.post("/regions/delete/{region_id}")
-async def region_delete(region_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
+async def region_delete(region_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     region = db.query(Region).filter(Region.id == region_id).first()
     if not region:
         raise HTTPException(status_code=404, detail="Hudud topilmadi")

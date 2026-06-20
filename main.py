@@ -1199,28 +1199,14 @@ async def qoldiqlar_tovar_hujjat_tasdiqlash(
         raise HTTPException(status_code=400, detail="Kamida bitta qator bo'lishi kerak")
 
     for item in doc.items:
-        # Eski qoldiqni olish
         stock = db.query(Stock).filter(
             Stock.warehouse_id == item.warehouse_id,
             Stock.product_id == item.product_id,
         ).first()
         old_quantity = stock.quantity if stock else 0
-        
-        # Yangi qoldiqni hisoblash
-        new_quantity = item.quantity
-        quantity_change = new_quantity - old_quantity
-        
-        if stock:
-            stock.quantity = new_quantity
-            stock.updated_at = datetime.now()
-        else:
-            db.add(Stock(
-                warehouse_id=item.warehouse_id,
-                product_id=item.product_id,
-                quantity=item.quantity,
-            ))
-        
-        # StockMovement yozuvini yaratish (adjustment)
+        quantity_change = item.quantity - old_quantity
+
+        # create_stock_movement qoldiqni ham yangilaydi; bu yerda faqat delta beramiz.
         if quantity_change != 0:
             create_stock_movement(
                 db=db,
@@ -1252,16 +1238,32 @@ async def qoldiqlar_tovar_hujjat_revert(
         raise HTTPException(status_code=404, detail="Hujjat topilmadi")
     if doc.status != "confirmed":
         raise HTTPException(status_code=400, detail="Faqat tasdiqlangan hujjatning tasdiqini bekor qilish mumkin")
-    for item in doc.items:
-        stock = db.query(Stock).filter(
-            Stock.warehouse_id == item.warehouse_id,
-            Stock.product_id == item.product_id,
-        ).first()
-        if stock:
-            stock.quantity = (stock.quantity or 0) - item.quantity
-            if stock.quantity < 0:
-                stock.quantity = 0
-            stock.updated_at = datetime.now()
+    last_revert_id = db.query(func.max(StockMovement.id)).filter(
+        StockMovement.document_type == "StockAdjustmentDoc",
+        StockMovement.document_id == doc.id,
+        StockMovement.operation_type == "adjustment_revert",
+    ).scalar() or 0
+    movements = db.query(StockMovement).filter(
+        StockMovement.document_type == "StockAdjustmentDoc",
+        StockMovement.document_id == doc.id,
+        StockMovement.operation_type == "adjustment",
+        StockMovement.id > last_revert_id,
+    ).order_by(StockMovement.id.desc()).all()
+    if not movements:
+        raise HTTPException(status_code=400, detail="Bekor qilish uchun ombor harakati topilmadi")
+    for movement in movements:
+        create_stock_movement(
+            db=db,
+            warehouse_id=movement.warehouse_id,
+            product_id=movement.product_id,
+            quantity_change=-(movement.quantity_change or 0),
+            operation_type="adjustment_revert",
+            document_type="StockAdjustmentDoc",
+            document_id=doc.id,
+            document_number=doc.number,
+            user_id=current_user.id if current_user else None,
+            note=f"Qoldiq tuzatishni bekor qilish: {doc.number}",
+        )
     doc.status = "draft"
     db.commit()
     return RedirectResponse(url=f"/qoldiqlar/tovar/hujjat/{doc_id}", status_code=303)
@@ -1634,7 +1636,7 @@ async def product_edit(
 async def product_delete(
     product_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_auth)
+    current_user: User = Depends(require_admin)
 ):
     """Tovarni o'chirish (soft delete: is_active=False)"""
     product = db.query(Product).filter(Product.id == product_id).first()
@@ -2624,12 +2626,15 @@ async def purchase_add_item(
     product_id: int = Form(...),
     quantity: float = Form(...),
     price: float = Form(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     """Tovar kirimiga mahsulot qo'shish"""
     purchase = db.query(Purchase).filter(Purchase.id == purchase_id).first()
-    if not purchase:
-        raise HTTPException(status_code=404, detail="Tovar kirimi topilmadi")
+    if not purchase or purchase.status != "draft":
+        if not purchase:
+            raise HTTPException(status_code=404, detail="Tovar kirimi topilmadi")
+        raise HTTPException(status_code=400, detail="Faqat qoralamani tahrirlash mumkin")
     
     total = quantity * price
     item = PurchaseItem(
@@ -2977,7 +2982,7 @@ async def partner_edit(
 
 
 @app.post("/partners/delete/{partner_id}")
-async def partner_delete(partner_id: int, db: Session = Depends(get_db)):
+async def partner_delete(partner_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     """Kontragentni o'chirish"""
     partner = db.query(Partner).filter(Partner.id == partner_id).first()
     if not partner:
@@ -4023,16 +4028,6 @@ def _do_complete_production_stock(db, production, recipe):
     cost_per_unit = (total_material_cost / output_units) if output_units > 0 else 0
     out_wh_id = production.output_warehouse_id if production.output_warehouse_id else production.warehouse_id
     
-    # Tayyor mahsulotni qo'shish va StockMovement yozuvini yaratish
-    product_stock = db.query(Stock).filter(
-        Stock.warehouse_id == out_wh_id,
-        Stock.product_id == recipe.product_id
-    ).first()
-    if product_stock:
-        product_stock.quantity += output_units
-    else:
-        db.add(Stock(warehouse_id=out_wh_id, product_id=recipe.product_id, quantity=output_units))
-    
     # StockMovement yozuvini yaratish (kirim - tayyor mahsulot)
     create_stock_movement(
         db=db,
@@ -4144,6 +4139,8 @@ async def complete_production(prod_id: int, db: Session = Depends(get_db), curre
     recipe = db.query(Recipe).filter(Recipe.id == production.recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Retsept topilmadi")
+    if production.status == "completed":
+        return RedirectResponse(url="/production/orders", status_code=303)
     err = _do_complete_production_stock(db, production, recipe)
     if err:
         return err
@@ -4206,7 +4203,11 @@ async def production_revert(
 
 
 @app.post("/production/{prod_id}/cancel")
-async def cancel_production(prod_id: int, db: Session = Depends(get_db)):
+async def cancel_production(
+    prod_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
     """Ishlab chiqarishni bekor qilish"""
     production = db.query(Production).filter(Production.id == prod_id).first()
     if not production:
