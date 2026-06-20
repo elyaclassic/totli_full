@@ -59,7 +59,7 @@ async def login(
                 "error": "Sizning hisobingiz faol emas. Administrator bilan bog'laning.",
                 "csrf_token": csrf_token,
             })
-        token = create_session_token(user.id, user.username)
+        token = create_session_token(user.id, "web")
         log_audit(user.id, user.username, "login_success", None)
         use_https = os.getenv("HTTPS", "").lower() in ("1", "true", "yes")
         # Rolga qarab bosh sahifaga yo'naltirish
