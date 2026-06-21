@@ -20,6 +20,8 @@ def get_current_user(
     user_data = get_user_from_token(session_token)
     if not user_data:
         return None
+    if user_data.get("user_type", "user") != "user":
+        return None
     user = db.query(User).filter(User.id == user_data["user_id"]).first()
     if not user or not user.is_active:
         return None
