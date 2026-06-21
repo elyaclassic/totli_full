@@ -174,6 +174,8 @@ def test_agent_location_requires_agent_token_and_uses_token_subject(db_session):
         main.agent_location_update(
             latitude=41.0,
             longitude=69.0,
+            accuracy=None,
+            battery=None,
             token=driver_token,
             db=db_session,
         )
@@ -184,6 +186,8 @@ def test_agent_location_requires_agent_token_and_uses_token_subject(db_session):
         main.agent_location_update(
             latitude=41.0,
             longitude=69.0,
+            accuracy=None,
+            battery=None,
             token=agent_token,
             db=db_session,
         )
