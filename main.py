@@ -1189,7 +1189,7 @@ async def qoldiqlar_tovar_hujjat_tasdiqlash(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
-    """Hujjatni tasdiqlash — ombor qoldiqlariga qo'shiladi"""
+    """Hujjatni tasdiqlash — ombor qoldiqlari hujjatdagi mutlaq miqdorga tenglanadi"""
     doc = db.query(StockAdjustmentDoc).filter(StockAdjustmentDoc.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Hujjat topilmadi")
@@ -1213,26 +1213,35 @@ async def qoldiqlar_tovar_hujjat_tasdiqlash(
         if stock:
             stock.quantity = new_quantity
             stock.updated_at = datetime.now()
+            stock_id = stock.id
+            quantity_after = new_quantity
         else:
-            db.add(Stock(
+            stock = Stock(
                 warehouse_id=item.warehouse_id,
                 product_id=item.product_id,
-                quantity=item.quantity,
-            ))
+                quantity=new_quantity,
+            )
+            db.add(stock)
+            db.flush()
+            stock_id = stock.id
+            quantity_after = new_quantity
         
-        # StockMovement yozuvini yaratish (adjustment)
+        # Adjustment mutlaq qoldiqni belgilaydi, shuning uchun movement faqat tarix uchun yoziladi.
         if quantity_change != 0:
-            create_stock_movement(
-                db=db,
+            db.add(StockMovement(
+                stock_id=stock_id,
                 warehouse_id=item.warehouse_id,
                 product_id=item.product_id,
-                quantity_change=quantity_change,  # O'zgarish (+ yoki -)
+                quantity_change=quantity_change,
+                quantity_after=quantity_after,
                 operation_type="adjustment",
                 document_type="StockAdjustmentDoc",
                 document_id=doc.id,
                 document_number=doc.number,
                 user_id=current_user.id if current_user else None,
-                note=f"Qoldiq tuzatish: {doc.number}"
+                note=f"Qoldiq tuzatish: {doc.number}",
+                created_at=datetime.now()
+            )
             )
     
     doc.status = "confirmed"
@@ -1246,22 +1255,44 @@ async def qoldiqlar_tovar_hujjat_revert(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """Tovar qoldiq hujjati tasdiqini bekor qilish (faqat admin) — ombor qoldig'ini kamaytirish"""
+    """Tovar qoldiq hujjati tasdiqini bekor qilish (faqat admin) — adjustment deltasini teskari qo'llash"""
+    from urllib.parse import quote
     doc = db.query(StockAdjustmentDoc).filter(StockAdjustmentDoc.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Hujjat topilmadi")
     if doc.status != "confirmed":
         raise HTTPException(status_code=400, detail="Faqat tasdiqlangan hujjatning tasdiqini bekor qilish mumkin")
-    for item in doc.items:
+    movements = db.query(StockMovement).filter(
+        StockMovement.document_type == "StockAdjustmentDoc",
+        StockMovement.document_id == doc.id,
+        StockMovement.operation_type == "adjustment",
+    ).order_by(StockMovement.id.asc()).all()
+    for movement in movements:
+        inverse_change = -(movement.quantity_change or 0)
         stock = db.query(Stock).filter(
-            Stock.warehouse_id == item.warehouse_id,
-            Stock.product_id == item.product_id,
+            Stock.warehouse_id == movement.warehouse_id,
+            Stock.product_id == movement.product_id,
         ).first()
-        if stock:
-            stock.quantity = (stock.quantity or 0) - item.quantity
-            if stock.quantity < 0:
-                stock.quantity = 0
-            stock.updated_at = datetime.now()
+        current_quantity = stock.quantity if stock else 0
+        if current_quantity + inverse_change < 0:
+            db.rollback()
+            return RedirectResponse(
+                url=f"/qoldiqlar/tovar/hujjat/{doc_id}?error=revert&detail=" + quote("Ombor qoldig'i o'zgargan. Tasdiqni bekor qilish mumkin emas."),
+                status_code=303
+            )
+        if inverse_change != 0:
+            create_stock_movement(
+                db=db,
+                warehouse_id=movement.warehouse_id,
+                product_id=movement.product_id,
+                quantity_change=inverse_change,
+                operation_type="adjustment_revert",
+                document_type="StockAdjustmentDoc",
+                document_id=doc.id,
+                document_number=doc.number,
+                user_id=current_user.id if current_user else None,
+                note=f"Qoldiq tuzatishni bekor qilish: {doc.number}"
+            )
     doc.status = "draft"
     db.commit()
     return RedirectResponse(url=f"/qoldiqlar/tovar/hujjat/{doc_id}", status_code=303)
@@ -4023,17 +4054,7 @@ def _do_complete_production_stock(db, production, recipe):
     cost_per_unit = (total_material_cost / output_units) if output_units > 0 else 0
     out_wh_id = production.output_warehouse_id if production.output_warehouse_id else production.warehouse_id
     
-    # Tayyor mahsulotni qo'shish va StockMovement yozuvini yaratish
-    product_stock = db.query(Stock).filter(
-        Stock.warehouse_id == out_wh_id,
-        Stock.product_id == recipe.product_id
-    ).first()
-    if product_stock:
-        product_stock.quantity += output_units
-    else:
-        db.add(Stock(warehouse_id=out_wh_id, product_id=recipe.product_id, quantity=output_units))
-    
-    # StockMovement yozuvini yaratish (kirim - tayyor mahsulot)
+    # StockMovement tayyor mahsulot qoldig'ini ham yangilaydi.
     create_stock_movement(
         db=db,
         warehouse_id=out_wh_id,
@@ -4144,6 +4165,10 @@ async def complete_production(prod_id: int, db: Session = Depends(get_db), curre
     recipe = db.query(Recipe).filter(Recipe.id == production.recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Retsept topilmadi")
+    if production.status == "completed":
+        return RedirectResponse(url="/production/orders", status_code=303)
+    if production.status == "cancelled":
+        return RedirectResponse(url="/production/orders", status_code=303)
     err = _do_complete_production_stock(db, production, recipe)
     if err:
         return err
@@ -4227,6 +4252,12 @@ async def delete_production(
     production = db.query(Production).filter(Production.id == prod_id).first()
     if not production:
         raise HTTPException(status_code=404, detail="Buyurtma topilmadi")
+    if production.status == "completed":
+        from urllib.parse import quote
+        return RedirectResponse(
+            url="/production/orders?error=delete&detail=" + quote("Yakunlangan buyurtmani o'chirib bo'lmaydi. Avval tasdiqni bekor qiling."),
+            status_code=303
+        )
     db.delete(production)
     db.commit()
     return RedirectResponse(url="/production/orders", status_code=303)
