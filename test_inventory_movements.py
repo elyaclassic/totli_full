@@ -146,6 +146,7 @@ def test_production_completion_adds_finished_goods_once(db_session):
     error_response = _do_complete_production_stock(db_session, production, recipe)
 
     assert error_response is None
+    db_session.flush()
     db_session.refresh(raw_stock)
     db_session.refresh(finished_stock)
     assert raw_stock.quantity == 70
