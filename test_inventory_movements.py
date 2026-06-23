@@ -128,7 +128,7 @@ def test_production_completion_adds_finished_goods_once(db_session):
     recipe = Recipe(product_id=finished_product.id, name="Recipe", output_quantity=2)
     db_session.add(recipe)
     db_session.flush()
-    db_session.add(RecipeItem(recipe_id=recipe.id, product_id=raw_product.id, quantity=3))
+    recipe.items.append(RecipeItem(product_id=raw_product.id, quantity=3))
     production = Production(
         number="PR-1",
         recipe_id=recipe.id,
@@ -165,7 +165,7 @@ def test_completed_production_cannot_be_completed_again_or_deleted(db_session):
     recipe = Recipe(product_id=finished_product.id, name="Recipe", output_quantity=1)
     db_session.add(recipe)
     db_session.flush()
-    db_session.add(RecipeItem(recipe_id=recipe.id, product_id=raw_product.id, quantity=1))
+    recipe.items.append(RecipeItem(product_id=raw_product.id, quantity=1))
     production = Production(
         number="PR-2",
         recipe_id=recipe.id,
