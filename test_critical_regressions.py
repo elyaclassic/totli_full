@@ -151,6 +151,34 @@ def test_production_completion_adds_finished_goods_once(db_session):
     assert output_movement.quantity_after == 15
 
 
+def test_completed_production_cannot_be_cancelled_or_deleted_before_revert(db_session):
+    user = _user(db_session)
+    warehouse = _warehouse(db_session)
+    output = _product(db_session, "OUT", "Finished product")
+    recipe = Recipe(product_id=output.id, name="Recipe", output_quantity=1, is_active=True)
+    production = Production(
+        number="PR-DONE",
+        recipe_id=recipe.id,
+        warehouse_id=warehouse.id,
+        quantity=3,
+        status="completed",
+        user_id=user.id,
+    )
+    db_session.add_all([recipe, production])
+    db_session.commit()
+
+    response = asyncio.run(main.cancel_production(production.id, db_session, user))
+
+    assert response.status_code == 303
+    db_session.refresh(production)
+    assert production.status == "completed"
+
+    response = asyncio.run(main.delete_production(production.id, db_session, user))
+
+    assert response.status_code == 303
+    assert db_session.query(Production).filter_by(id=production.id).one().status == "completed"
+
+
 def test_mobile_tokens_cannot_authenticate_as_web_sessions(db_session):
     web_user = _user(db_session, username="web", role="admin")
     agent = Agent(code="AG1", full_name="Agent One", phone="100", is_active=True)
@@ -205,6 +233,7 @@ def test_location_updates_require_matching_active_mobile_token(db_session):
             longitude=70.0,
             accuracy=None,
             battery=None,
+            speed=25.5,
             token=driver_token,
             db=db_session,
         )
@@ -212,6 +241,7 @@ def test_location_updates_require_matching_active_mobile_token(db_session):
     assert driver_result["success"] is True
     driver_location = db_session.query(DriverLocation).one()
     assert driver_location.driver_id == driver.id
+    assert driver_location.speed == 25.5
 
 
 def test_only_token_driver_location_route_is_active():

@@ -4287,11 +4287,17 @@ async def production_revert(
 
 
 @app.post("/production/{prod_id}/cancel")
-async def cancel_production(prod_id: int, db: Session = Depends(get_db)):
+async def cancel_production(
+    prod_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
     """Ishlab chiqarishni bekor qilish"""
     production = db.query(Production).filter(Production.id == prod_id).first()
     if not production:
         raise HTTPException(status_code=404, detail="Topilmadi")
+    if production.status == "completed":
+        return RedirectResponse(url="/production/orders?error=cancel_completed", status_code=303)
     
     production.status = "cancelled"
     db.commit()
@@ -4966,6 +4972,7 @@ async def driver_location_update(
     longitude: float = Form(...),
     accuracy: float = Form(None),
     battery: int = Form(None),
+    speed: float = Form(None),
     token: str = Form(...),
     db: Session = Depends(get_db)
 ):
@@ -4988,6 +4995,7 @@ async def driver_location_update(
             longitude=longitude,
             accuracy=accuracy,
             battery=battery,
+            speed=speed,
         )
         db.add(location)
         db.commit()
