@@ -2290,6 +2290,32 @@ async def warehouse_transfer_save(
     return RedirectResponse(url="/warehouse/transfers?saved=1", status_code=303)
 
 
+def _can_confirm_warehouse_transfer(db: Session, transfer: WarehouseTransfer, user: User) -> bool:
+    """Admin, warehouse responsible user, or active employee in either warehouse department may confirm."""
+    if not user:
+        return False
+    if user.role == "admin":
+        return True
+    warehouses = [
+        db.query(Warehouse).filter(Warehouse.id == transfer.from_warehouse_id).first(),
+        db.query(Warehouse).filter(Warehouse.id == transfer.to_warehouse_id).first(),
+    ]
+    if any(warehouse and warehouse.responsible_id == user.id for warehouse in warehouses):
+        return True
+    department_ids = {
+        warehouse.department_id
+        for warehouse in warehouses
+        if warehouse and warehouse.department_id is not None
+    }
+    if not department_ids:
+        return False
+    return db.query(Employee).filter(
+        Employee.user_id == user.id,
+        Employee.is_active == True,
+        Employee.department_id.in_(department_ids),
+    ).first() is not None
+
+
 @app.post("/warehouse/transfers/{transfer_id}/confirm")
 async def warehouse_transfer_confirm(
     transfer_id: int,
@@ -2308,6 +2334,11 @@ async def warehouse_transfer_confirm(
         return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Hujjat allaqachon tasdiqlangan."), status_code=303)
     if transfer.status != "pending_approval":
         return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Hujjatni avval saqlang (pending_approval holatiga o'tkazish kerak)."), status_code=303)
+    if not _can_confirm_warehouse_transfer(db, transfer, current_user):
+        return RedirectResponse(
+            url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Bu o'tkazishni tasdiqlashga ruxsat yo'q."),
+            status_code=303,
+        )
     items = db.query(WarehouseTransferItem).filter(WarehouseTransferItem.transfer_id == transfer_id).all()
     if not items:
         return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Kamida bitta mahsulot qo'shing."), status_code=303)
@@ -2324,6 +2355,22 @@ async def warehouse_transfer_confirm(
                 url=f"/warehouse/transfers/{transfer_id}?error=" + quote(f"Qayerdan omborda «{name}» yetarli emas (kerak: {item.quantity}, mavjud: {avail})"),
                 status_code=303
             )
+    approved_at = datetime.now()
+    claimed = db.query(WarehouseTransfer).filter(
+        WarehouseTransfer.id == transfer_id,
+        WarehouseTransfer.status == "pending_approval",
+    ).update(
+        {
+            "status": "confirmed",
+            "approved_by_user_id": current_user.id,
+            "approved_at": approved_at,
+        },
+        synchronize_session=False,
+    )
+    if claimed != 1:
+        db.rollback()
+        return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Hujjat allaqachon tasdiqlangan."), status_code=303)
+    db.refresh(transfer)
     # Qoldiqlarni yangilash - faqat tasdiqlanganda
     for item in items:
         # Qayerdan ombordan ayirish - StockMovement yozuvini yaratish
@@ -2353,12 +2400,7 @@ async def warehouse_transfer_confirm(
             user_id=current_user.id if current_user else None,
             note=f"O'tkazish (kirim): {transfer.number}"
         )
-    
-    # Tasdiqlash ma'lumotlarini saqlash
-    transfer.status = "confirmed"
-    transfer.approved_by_user_id = current_user.id
     log_audit(current_user.id, current_user.username, "warehouse_transfer_confirm", transfer.number)
-    transfer.approved_at = datetime.now()
     db.commit()
     return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?confirmed=1", status_code=303)
 

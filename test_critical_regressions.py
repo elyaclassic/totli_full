@@ -10,6 +10,7 @@ from app.models.database import (
     Agent,
     AgentLocation,
     Base,
+    Department,
     Driver,
     DriverLocation,
     Product,
@@ -22,6 +23,8 @@ from app.models.database import (
     StockMovement,
     User,
     Warehouse,
+    WarehouseTransfer,
+    WarehouseTransferItem,
 )
 from app.utils.auth import create_session_token
 
@@ -210,3 +213,61 @@ def test_mobile_location_routes_validate_signed_active_subject_tokens(db_session
     driver_location = db_session.query(DriverLocation).one()
     assert driver_location.driver_id == driver.id
     assert driver_location.speed == pytest.approx(42)
+
+
+def test_warehouse_transfer_confirm_requires_permission_and_is_idempotent(db_session):
+    admin = _user(db_session, "admin", "admin")
+    stranger = _user(db_session, "stranger", "user")
+    department = Department(code="DPT", name="Warehouse", is_active=True)
+    db_session.add(department)
+    db_session.commit()
+    source = Warehouse(code="SRC", name="Source", is_active=True, department_id=department.id)
+    dest = Warehouse(code="DST", name="Dest", is_active=True, department_id=department.id)
+    product = _product(db_session, "MOVE-P", "Movable")
+    db_session.add_all([source, dest])
+    db_session.commit()
+    transfer = WarehouseTransfer(
+        number="TR-1",
+        from_warehouse_id=source.id,
+        to_warehouse_id=dest.id,
+        status="pending_approval",
+        user_id=admin.id,
+    )
+    db_session.add(transfer)
+    db_session.commit()
+    db_session.add_all(
+        [
+            Stock(warehouse_id=source.id, product_id=product.id, quantity=10),
+            Stock(warehouse_id=dest.id, product_id=product.id, quantity=1),
+            WarehouseTransferItem(transfer_id=transfer.id, product_id=product.id, quantity=4),
+        ]
+    )
+    db_session.commit()
+
+    asyncio.run(main.warehouse_transfer_confirm(transfer.id, db_session, stranger))
+
+    source_stock = db_session.query(Stock).filter_by(warehouse_id=source.id, product_id=product.id).one()
+    dest_stock = db_session.query(Stock).filter_by(warehouse_id=dest.id, product_id=product.id).one()
+    db_session.refresh(transfer)
+    assert transfer.status == "pending_approval"
+    assert source_stock.quantity == pytest.approx(10)
+    assert dest_stock.quantity == pytest.approx(1)
+    assert db_session.query(StockMovement).filter_by(document_type="WarehouseTransfer").count() == 0
+
+    asyncio.run(main.warehouse_transfer_confirm(transfer.id, db_session, admin))
+
+    db_session.refresh(source_stock)
+    db_session.refresh(dest_stock)
+    db_session.refresh(transfer)
+    assert transfer.status == "confirmed"
+    assert source_stock.quantity == pytest.approx(6)
+    assert dest_stock.quantity == pytest.approx(5)
+    assert db_session.query(StockMovement).filter_by(document_type="WarehouseTransfer").count() == 2
+
+    asyncio.run(main.warehouse_transfer_confirm(transfer.id, db_session, admin))
+
+    db_session.refresh(source_stock)
+    db_session.refresh(dest_stock)
+    assert source_stock.quantity == pytest.approx(6)
+    assert dest_stock.quantity == pytest.approx(5)
+    assert db_session.query(StockMovement).filter_by(document_type="WarehouseTransfer").count() == 2
