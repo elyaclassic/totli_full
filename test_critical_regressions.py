@@ -163,7 +163,7 @@ def test_stock_adjustment_sets_absolute_quantity_and_reverts_delta(app_with_db):
         db.add(StockAdjustmentDocItem(doc_id=doc.id, warehouse_id=warehouse.id, product_id=product.id, quantity=5))
         db.commit()
 
-        asyncio.run(main.qoldiqlar_tovar_hujjat_confirm(doc.id, db=db, current_user=user))
+        asyncio.run(main.qoldiqlar_tovar_hujjat_tasdiqlash(doc.id, db=db, current_user=user))
         stock = db.query(Stock).filter_by(warehouse_id=warehouse.id, product_id=product.id).one()
         movement = db.query(StockMovement).filter_by(
             document_type="StockAdjustmentDoc",
