@@ -59,7 +59,7 @@ async def login(
                 "error": "Sizning hisobingiz faol emas. Administrator bilan bog'laning.",
                 "csrf_token": csrf_token,
             })
-        token = create_session_token(user.id, user.username)
+        token = create_session_token(user.id, "user")
         log_audit(user.id, user.username, "login_success", None)
         use_https = os.getenv("HTTPS", "").lower() in ("1", "true", "yes")
         # Rolga qarab bosh sahifaga yo'naltirish
@@ -88,5 +88,5 @@ async def login(
 @router.get("/logout")
 async def logout():
     resp = RedirectResponse(url="/login", status_code=303)
-    resp.delete_cookie("session_token")
+    resp.delete_cookie("session_token", path="/")
     return resp
