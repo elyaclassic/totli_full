@@ -175,6 +175,8 @@ def test_signed_mobile_location_routes_bind_active_token_subjects(db_session):
         main.agent_location_update(
             latitude=1,
             longitude=2,
+            accuracy=None,
+            battery=None,
             token=create_session_token(agent.id, "user"),
             db=db_session,
         )
@@ -185,6 +187,8 @@ def test_signed_mobile_location_routes_bind_active_token_subjects(db_session):
         main.agent_location_update(
             latitude=1,
             longitude=2,
+            accuracy=None,
+            battery=None,
             token=create_session_token(agent.id, "agent"),
             db=db_session,
         )
@@ -196,6 +200,8 @@ def test_signed_mobile_location_routes_bind_active_token_subjects(db_session):
         main.driver_location_update(
             latitude=3,
             longitude=4,
+            accuracy=None,
+            battery=None,
             speed=55,
             token=create_session_token(driver.id, "driver"),
             db=db_session,
