@@ -38,7 +38,7 @@ from app.models.database import (
     PartnerBalanceDoc, PartnerBalanceDocItem,
 )
 from app.utils.auth import (
-    hash_password, get_user_from_token,
+    hash_password, create_session_token, get_user_from_token,
     generate_csrf_token, verify_csrf_token,
 )
 from app.utils.audit_log import log_audit
@@ -195,7 +195,7 @@ async def csrf_middleware(request: Request, call_next):
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return await call_next(request)
+        return JSONResponse(status_code=403, content={"detail": "CSRF tekshiruvda xatolik"})
 
 
 async def _csrf_middleware_impl(request: Request, call_next):
@@ -226,6 +226,12 @@ async def _csrf_middleware_impl(request: Request, call_next):
 
     # Himoyalanmaydigan yo'llar (API login, static, PWA location)
     if path in ("/login", "/api/agent/login", "/api/driver/login") or path.startswith("/static"):
+        try:
+            setattr(request.state, "csrf_token", request.cookies.get("csrf_token") or generate_csrf_token())
+        except Exception:
+            pass
+        return await call_next(request)
+    if path in ("/api/agent/location", "/api/driver/location"):
         try:
             setattr(request.state, "csrf_token", request.cookies.get("csrf_token") or generate_csrf_token())
         except Exception:
@@ -349,6 +355,12 @@ async def _auth_middleware_impl(request: Request, call_next):
     if not user_data:
         if path.startswith("/api/"):
             return JSONResponse(status_code=401, content={"detail": "Session muddati tugadi"})
+        resp = RedirectResponse(url="/login", status_code=303)
+        resp.delete_cookie("session_token")
+        return resp
+    if user_data.get("user_type") != "user":
+        if path.startswith("/api/"):
+            return JSONResponse(status_code=401, content={"detail": "Session turi noto'g'ri"})
         resp = RedirectResponse(url="/login", status_code=303)
         resp.delete_cookie("session_token")
         return resp
@@ -1214,26 +1226,33 @@ async def qoldiqlar_tovar_hujjat_tasdiqlash(
             stock.quantity = new_quantity
             stock.updated_at = datetime.now()
         else:
-            db.add(Stock(
+            stock = Stock(
                 warehouse_id=item.warehouse_id,
                 product_id=item.product_id,
                 quantity=item.quantity,
-            ))
+            )
+            db.add(stock)
+            db.flush()
         
-        # StockMovement yozuvini yaratish (adjustment)
+        stock_id = stock.id if stock else None
+        # StockMovement yozuvini yaratish (adjustment). Qoldiq yuqorida
+        # absolute qiymatga o'rnatildi, shuning uchun create_stock_movement
+        # chaqirilmaydi (u delta miqdorni yana bir marta qo'shadi).
         if quantity_change != 0:
-            create_stock_movement(
-                db=db,
+            movement = StockMovement(
+                stock_id=stock_id,
                 warehouse_id=item.warehouse_id,
                 product_id=item.product_id,
-                quantity_change=quantity_change,  # O'zgarish (+ yoki -)
                 operation_type="adjustment",
                 document_type="StockAdjustmentDoc",
                 document_id=doc.id,
                 document_number=doc.number,
+                quantity_change=quantity_change,  # O'zgarish (+ yoki -)
+                quantity_after=new_quantity,
                 user_id=current_user.id if current_user else None,
                 note=f"Qoldiq tuzatish: {doc.number}"
             )
+            db.add(movement)
     
     doc.status = "confirmed"
     db.commit()
@@ -1252,16 +1271,29 @@ async def qoldiqlar_tovar_hujjat_revert(
         raise HTTPException(status_code=404, detail="Hujjat topilmadi")
     if doc.status != "confirmed":
         raise HTTPException(status_code=400, detail="Faqat tasdiqlangan hujjatning tasdiqini bekor qilish mumkin")
-    for item in doc.items:
-        stock = db.query(Stock).filter(
-            Stock.warehouse_id == item.warehouse_id,
-            Stock.product_id == item.product_id,
-        ).first()
-        if stock:
-            stock.quantity = (stock.quantity or 0) - item.quantity
-            if stock.quantity < 0:
-                stock.quantity = 0
-            stock.updated_at = datetime.now()
+    movements = db.query(StockMovement).filter(
+        StockMovement.document_type == "StockAdjustmentDoc",
+        StockMovement.document_id == doc.id,
+    ).all()
+    deltas = {}
+    for movement in movements:
+        key = (movement.warehouse_id, movement.product_id)
+        deltas[key] = deltas.get(key, 0) + (movement.quantity_change or 0)
+    for (warehouse_id, product_id), delta in deltas.items():
+        if delta == 0:
+            continue
+        create_stock_movement(
+            db=db,
+            warehouse_id=warehouse_id,
+            product_id=product_id,
+            quantity_change=-delta,
+            operation_type="adjustment_revert",
+            document_type="StockAdjustmentDoc",
+            document_id=doc.id,
+            document_number=doc.number,
+            user_id=current_user.id if current_user else None,
+            note=f"Qoldiq tuzatish bekor qilindi: {doc.number}",
+        )
     doc.status = "draft"
     db.commit()
     return RedirectResponse(url=f"/qoldiqlar/tovar/hujjat/{doc_id}", status_code=303)
@@ -2292,13 +2324,48 @@ async def warehouse_transfer_confirm(
     transfer = db.query(WarehouseTransfer).filter(WarehouseTransfer.id == transfer_id).first()
     if not transfer:
         raise HTTPException(status_code=404, detail="Hujjat topilmadi")
+    from_wh = db.query(Warehouse).filter(Warehouse.id == transfer.from_warehouse_id).first()
+    to_wh = db.query(Warehouse).filter(Warehouse.id == transfer.to_warehouse_id).first()
+    allowed = current_user.role == "admin"
+    allowed = allowed or (from_wh and from_wh.responsible_id == current_user.id)
+    allowed = allowed or (to_wh and to_wh.responsible_id == current_user.id)
+    department_ids = [wid for wid in (
+        from_wh.department_id if from_wh else None,
+        to_wh.department_id if to_wh else None,
+    ) if wid]
+    if not allowed and department_ids:
+        employee = db.query(Employee).filter(
+            Employee.user_id == current_user.id,
+            Employee.is_active == True,
+            Employee.department_id.in_(department_ids),
+        ).first()
+        allowed = employee is not None
+    if not allowed:
+        return RedirectResponse(
+            url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Bu o'tkazishni tasdiqlash uchun ruxsat yo'q."),
+            status_code=303,
+        )
     # Faqat pending_approval holatidagi hujjatni tasdiqlash mumkin
     if transfer.status == "confirmed":
         return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Hujjat allaqachon tasdiqlangan."), status_code=303)
     if transfer.status != "pending_approval":
         return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Hujjatni avval saqlang (pending_approval holatiga o'tkazish kerak)."), status_code=303)
+    claimed = db.query(WarehouseTransfer).filter(
+        WarehouseTransfer.id == transfer_id,
+        WarehouseTransfer.status == "pending_approval",
+    ).update({"status": "processing"}, synchronize_session=False)
+    if claimed != 1:
+        db.rollback()
+        transfer = db.query(WarehouseTransfer).filter(WarehouseTransfer.id == transfer_id).first()
+        if transfer and transfer.status == "confirmed":
+            return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?confirmed=1", status_code=303)
+        return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Hujjat hozir tasdiqlanmoqda."), status_code=303)
+    db.commit()
+    transfer = db.query(WarehouseTransfer).filter(WarehouseTransfer.id == transfer_id).first()
     items = db.query(WarehouseTransferItem).filter(WarehouseTransferItem.transfer_id == transfer_id).all()
     if not items:
+        transfer.status = "pending_approval"
+        db.commit()
         return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Kamida bitta mahsulot qo'shing."), status_code=303)
     for item in items:
         src = db.query(Stock).filter(
@@ -2309,6 +2376,8 @@ async def warehouse_transfer_confirm(
             prod = db.query(Product).filter(Product.id == item.product_id).first()
             name = prod.name if prod else f"#{item.product_id}"
             avail = src.quantity if src else 0
+            transfer.status = "pending_approval"
+            db.commit()
             return RedirectResponse(
                 url=f"/warehouse/transfers/{transfer_id}?error=" + quote(f"Qayerdan omborda «{name}» yetarli emas (kerak: {item.quantity}, mavjud: {avail})"),
                 status_code=303
@@ -2371,18 +2440,39 @@ async def warehouse_transfer_revert(
             Stock.warehouse_id == transfer.to_warehouse_id,
             Stock.product_id == item.product_id,
         ).first()
-        if dest:
-            dest.quantity -= item.quantity
-            if dest.quantity < 0:
-                dest.quantity = 0
-        src = db.query(Stock).filter(
-            Stock.warehouse_id == transfer.from_warehouse_id,
-            Stock.product_id == item.product_id,
-        ).first()
-        if src:
-            src.quantity += item.quantity
-        else:
-            db.add(Stock(warehouse_id=transfer.from_warehouse_id, product_id=item.product_id, quantity=item.quantity))
+        if not dest or dest.quantity < item.quantity:
+            prod = db.query(Product).filter(Product.id == item.product_id).first()
+            name = prod.name if prod else f"#{item.product_id}"
+            avail = dest.quantity if dest else 0
+            return RedirectResponse(
+                url="/warehouse/transfers?error=" + quote(f"Qaytarish uchun «{name}» qabul qiluvchi omborda yetarli emas (kerak: {item.quantity}, mavjud: {avail})."),
+                status_code=303,
+            )
+    for item in items:
+        create_stock_movement(
+            db=db,
+            warehouse_id=transfer.to_warehouse_id,
+            product_id=item.product_id,
+            quantity_change=-item.quantity,
+            operation_type="transfer_revert_out",
+            document_type="WarehouseTransfer",
+            document_id=transfer.id,
+            document_number=transfer.number,
+            user_id=current_user.id if current_user else None,
+            note=f"O'tkazish bekor qilindi (qabul omboridan): {transfer.number}",
+        )
+        create_stock_movement(
+            db=db,
+            warehouse_id=transfer.from_warehouse_id,
+            product_id=item.product_id,
+            quantity_change=item.quantity,
+            operation_type="transfer_revert_in",
+            document_type="WarehouseTransfer",
+            document_id=transfer.id,
+            document_number=transfer.number,
+            user_id=current_user.id if current_user else None,
+            note=f"O'tkazish bekor qilindi (manba omborga): {transfer.number}",
+        )
     transfer.status = "draft"
     db.commit()
     return RedirectResponse(url="/warehouse/transfers?reverted=1", status_code=303)
@@ -2426,35 +2516,7 @@ async def warehouse_transfer(
     current_user: User = Depends(require_auth)
 ):
     """Ombordan omborga o'tkazish: bir ombordan ayirib, ikkinchisiga qo'shish"""
-    from urllib.parse import quote
-    if not current_user:
-        return RedirectResponse(url="/login", status_code=303)
-    if from_warehouse_id == to_warehouse_id:
-        return RedirectResponse(url="/warehouse/movement?error=1&detail=" + quote("Qayerdan va qayerga ombor bir xil bo'lmasin."), status_code=303)
-    if quantity <= 0:
-        return RedirectResponse(url="/warehouse/movement?error=1&detail=" + quote("Miqdor 0 dan katta bo'lishi kerak."), status_code=303)
-    source = db.query(Stock).filter(
-        Stock.warehouse_id == from_warehouse_id,
-        Stock.product_id == product_id
-    ).first()
-    if not source or source.quantity < quantity:
-        product = db.query(Product).filter(Product.id == product_id).first()
-        name = product.name if product else f"#{product_id}"
-        avail = source.quantity if source else 0
-        return RedirectResponse(url="/warehouse/movement?error=1&detail=" + quote(f"Qayerdan omborda «{name}» yetarli emas (kerak: {quantity}, mavjud: {avail})"), status_code=303)
-    source.quantity -= quantity
-    if source.quantity <= 0:
-        source.quantity = 0
-    dest = db.query(Stock).filter(
-        Stock.warehouse_id == to_warehouse_id,
-        Stock.product_id == product_id
-    ).first()
-    if dest:
-        dest.quantity += quantity
-    else:
-        db.add(Stock(warehouse_id=to_warehouse_id, product_id=product_id, quantity=quantity))
-    db.commit()
-    return RedirectResponse(url="/warehouse/movement?success=1", status_code=303)
+    return RedirectResponse(url="/warehouse/transfers", status_code=303)
 
 
 # ==========================================
@@ -4023,17 +4085,7 @@ def _do_complete_production_stock(db, production, recipe):
     cost_per_unit = (total_material_cost / output_units) if output_units > 0 else 0
     out_wh_id = production.output_warehouse_id if production.output_warehouse_id else production.warehouse_id
     
-    # Tayyor mahsulotni qo'shish va StockMovement yozuvini yaratish
-    product_stock = db.query(Stock).filter(
-        Stock.warehouse_id == out_wh_id,
-        Stock.product_id == recipe.product_id
-    ).first()
-    if product_stock:
-        product_stock.quantity += output_units
-    else:
-        db.add(Stock(warehouse_id=out_wh_id, product_id=recipe.product_id, quantity=output_units))
-    
-    # StockMovement yozuvini yaratish (kirim - tayyor mahsulot)
+    # StockMovement tayyor mahsulot qoldig'ini ham yangilaydi.
     create_stock_movement(
         db=db,
         warehouse_id=out_wh_id,
@@ -4091,7 +4143,7 @@ async def complete_production_stage(
     max_stage = _recipe_max_stage(recipe)
     if stage_number < 1 or stage_number > max_stage:
         raise HTTPException(status_code=400, detail=f"Bosqich 1–{max_stage} oralig'ida bo'lishi kerak")
-    if production.status == "completed":
+    if production.status in ("completed", "cancelled"):
         return RedirectResponse(url="/production/orders", status_code=303)
     current = getattr(production, "current_stage", None) or 1
     # Eski buyurtma 4 bosqichda qolgan, retsept endi 2 bosqich — bosqichni bosganda darhol yakunlash
@@ -4144,6 +4196,8 @@ async def complete_production(prod_id: int, db: Session = Depends(get_db), curre
     recipe = db.query(Recipe).filter(Recipe.id == production.recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Retsept topilmadi")
+    if production.status in ("completed", "cancelled"):
+        return RedirectResponse(url="/production/orders", status_code=303)
     err = _do_complete_production_stock(db, production, recipe)
     if err:
         return err
@@ -4206,12 +4260,24 @@ async def production_revert(
 
 
 @app.post("/production/{prod_id}/cancel")
-async def cancel_production(prod_id: int, db: Session = Depends(get_db)):
+async def cancel_production(
+    prod_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
     """Ishlab chiqarishni bekor qilish"""
     production = db.query(Production).filter(Production.id == prod_id).first()
     if not production:
         raise HTTPException(status_code=404, detail="Topilmadi")
-    
+    if production.status == "completed":
+        from urllib.parse import quote
+        return RedirectResponse(
+            url="/production/orders?error=cancel&detail=" + quote("Yakunlangan buyurtmani bekor qilib bo'lmaydi. Avval tasdiqni bekor qiling."),
+            status_code=303,
+        )
+    if production.status == "cancelled":
+        return RedirectResponse(url="/production/orders", status_code=303)
+
     production.status = "cancelled"
     db.commit()
     return RedirectResponse(url="/production/orders", status_code=303)
@@ -4227,6 +4293,12 @@ async def delete_production(
     production = db.query(Production).filter(Production.id == prod_id).first()
     if not production:
         raise HTTPException(status_code=404, detail="Buyurtma topilmadi")
+    if production.status == "completed":
+        from urllib.parse import quote
+        return RedirectResponse(
+            url="/production/orders?error=delete&detail=" + quote("Yakunlangan buyurtmani o'chirib bo'lmaydi. Avval tasdiqni bekor qiling."),
+            status_code=303,
+        )
     db.delete(production)
     db.commit()
     return RedirectResponse(url="/production/orders", status_code=303)
@@ -4704,7 +4776,7 @@ async def add_delivery_order(
 
 
 
-@app.post("/api/driver/location")
+@app.post("/api/driver/location_OLD_DISABLED")
 async def update_driver_location(
     driver_code: str = Form(...),
     latitude: float = Form(...),
@@ -4883,16 +4955,20 @@ async def driver_location_update(
     longitude: float = Form(...),
     accuracy: float = Form(None),
     battery: int = Form(None),
+    speed: float = Form(0),
     token: str = Form(...),
     db: Session = Depends(get_db)
 ):
     """Driver location update"""
     try:
         user_data = get_user_from_token(token)
-        if not user_data or user_data.get("role") != "driver":
+        if not user_data or user_data.get("user_type") != "driver":
             return {"success": False, "error": "Invalid token"}
         
-        driver_id = user_data["user_id"]
+        driver_id = user_data.get("user_id")
+        driver = db.query(Driver).filter(Driver.id == driver_id, Driver.is_active == True).first()
+        if not driver:
+            return {"success": False, "error": "Driver topilmadi yoki faol emas"}
         
         location = DriverLocation(
             driver_id=driver_id,
@@ -4900,6 +4976,7 @@ async def driver_location_update(
             longitude=longitude,
             accuracy=accuracy,
             battery=battery,
+            speed=speed,
         )
         db.add(location)
         db.commit()
@@ -4915,8 +4992,11 @@ async def agent_orders(token: str, db: Session = Depends(get_db)):
     """Agent orders list"""
     try:
         user_data = get_user_from_token(token)
-        if not user_data:
+        if not user_data or user_data.get("user_type") != "agent":
             return {"success": False, "error": "Invalid token"}
+        agent = db.query(Agent).filter(Agent.id == user_data.get("user_id"), Agent.is_active == True).first()
+        if not agent:
+            return {"success": False, "error": "Agent topilmadi yoki faol emas"}
         
         # Hozircha bo'sh ro'yxat qaytaramiz
         return {"success": True, "orders": []}
@@ -4929,8 +5009,11 @@ async def agent_partners(token: str, db: Session = Depends(get_db)):
     """Agent partners list"""
     try:
         user_data = get_user_from_token(token)
-        if not user_data:
+        if not user_data or user_data.get("user_type") != "agent":
             return {"success": False, "error": "Invalid token"}
+        agent = db.query(Agent).filter(Agent.id == user_data.get("user_id"), Agent.is_active == True).first()
+        if not agent:
+            return {"success": False, "error": "Agent topilmadi yoki faol emas"}
         
         partners = db.query(Partner).filter(Partner.is_active == True).all()
         return {
@@ -4968,8 +5051,13 @@ async def agent_location_update(
 ):
     """Agent location update"""
     try:
-        # Test mode - agent_id = 1
-        agent_id = 1
+        user_data = get_user_from_token(token)
+        if not user_data or user_data.get("user_type") != "agent":
+            return {"success": False, "error": "Invalid token"}
+        agent_id = user_data.get("user_id")
+        agent = db.query(Agent).filter(Agent.id == agent_id, Agent.is_active == True).first()
+        if not agent:
+            return {"success": False, "error": "Agent topilmadi yoki faol emas"}
         
         location = AgentLocation(
             agent_id=agent_id,
