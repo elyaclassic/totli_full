@@ -5066,7 +5066,7 @@ async def agent_location_update(
         user_data = get_user_from_token(token)
         if not user_data or user_data.get("user_type") != "agent":
             return {"success": False, "error": "Invalid token"}
-        
+
         agent_id = user_data["user_id"]
         agent = db.query(Agent).filter(Agent.id == agent_id, Agent.is_active == True).first()
         if not agent:
