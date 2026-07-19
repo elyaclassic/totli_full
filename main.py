@@ -4948,7 +4948,7 @@ async def agent_location_update_OLD(
         user_data = get_user_from_token(token)
         if not user_data or user_data.get("role") != "agent":
             return {"success": False, "error": "Invalid token"}
-        
+
         agent_id = user_data["user_id"]
         
         location = AgentLocation(
