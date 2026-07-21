@@ -3,7 +3,9 @@ Baza backup: totli_holva.db ni backups/ papkasiga vaqt belgisi bilan nusxalash.
 main.py dan avtomatik (kuniga 1 marta) yoki scripts/backup_db.py orqali chaqiriladi.
 """
 import os
-import shutil
+import sqlite3
+import tempfile
+from contextlib import closing
 from datetime import datetime
 
 
@@ -26,5 +28,24 @@ def run_backup():
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     base, ext = os.path.splitext(os.path.basename(db_path))
     dest = os.path.join(backup_dir, f"{base}_{ts}{ext}")
-    shutil.copy2(db_path, dest)
+
+    # A filesystem copy can miss committed data still stored in SQLite's WAL,
+    # or capture the database midway through a write.  SQLite's backup API
+    # takes a transactionally consistent snapshot of the live database.
+    fd, temp_dest = tempfile.mkstemp(
+        prefix=f".{base}_",
+        suffix=f"{ext}.tmp",
+        dir=backup_dir,
+    )
+    os.close(fd)
+    try:
+        with closing(sqlite3.connect(db_path)) as source:
+            with closing(sqlite3.connect(temp_dest)) as target:
+                source.backup(target)
+        os.replace(temp_dest, dest)
+    except Exception:
+        if os.path.exists(temp_dest):
+            os.remove(temp_dest)
+        raise
+
     return dest
