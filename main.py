@@ -612,10 +612,12 @@ async def qoldiqlar_kassa_hujjat_revert(
         raise HTTPException(status_code=404, detail="Hujjat topilmadi")
     if doc.status != "confirmed":
         raise HTTPException(status_code=400, detail="Faqat tasdiqlangan hujjatning tasdiqini bekor qilish mumkin")
+    # Undo only the absolute jump this document applied; preserve later ledger changes.
     for item in doc.items:
         cash = db.query(CashRegister).filter(CashRegister.id == item.cash_register_id).first()
         if cash and item.previous_balance is not None:
-            cash.balance = item.previous_balance
+            applied_delta = (item.balance or 0) - (item.previous_balance or 0)
+            cash.balance = (cash.balance or 0) - applied_delta
     doc.status = "draft"
     db.commit()
     return RedirectResponse(url=f"/qoldiqlar/kassa/hujjat/{doc_id}", status_code=303)
@@ -761,10 +763,12 @@ async def qoldiqlar_kontragent_hujjat_revert(
         raise HTTPException(status_code=404, detail="Hujjat topilmadi")
     if doc.status != "confirmed":
         raise HTTPException(status_code=400, detail="Faqat tasdiqlangan hujjatning tasdiqini bekor qilish mumkin")
+    # Undo only the absolute jump this document applied; preserve later ledger changes.
     for item in doc.items:
         partner = db.query(Partner).filter(Partner.id == item.partner_id).first()
         if partner and item.previous_balance is not None:
-            partner.balance = item.previous_balance
+            applied_delta = (item.balance or 0) - (item.previous_balance or 0)
+            partner.balance = (partner.balance or 0) - applied_delta
     doc.status = "draft"
     db.commit()
     return RedirectResponse(url=f"/qoldiqlar/kontragent/hujjat/{doc_id}", status_code=303)
@@ -2624,13 +2628,16 @@ async def purchase_add_item(
     product_id: int = Form(...),
     quantity: float = Form(...),
     price: float = Form(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
-    """Tovar kirimiga mahsulot qo'shish"""
+    """Tovar kirimiga mahsulot qo'shish (faqat qoralama)"""
     purchase = db.query(Purchase).filter(Purchase.id == purchase_id).first()
     if not purchase:
         raise HTTPException(status_code=404, detail="Tovar kirimi topilmadi")
-    
+    if purchase.status != "draft":
+        raise HTTPException(status_code=400, detail="Faqat qoralamani tahrirlash mumkin")
+
     total = quantity * price
     item = PurchaseItem(
         purchase_id=purchase_id,
@@ -2640,12 +2647,11 @@ async def purchase_add_item(
         total=total
     )
     db.add(item)
-    
+    # Autoflush includes the new row in SUM — do not add `total` again.
     purchase.total = db.query(PurchaseItem).filter(
         PurchaseItem.purchase_id == purchase_id
     ).with_entities(func.sum(PurchaseItem.total)).scalar() or 0
-    purchase.total += total
-    
+
     db.commit()
     return RedirectResponse(url=f"/purchases/edit/{purchase_id}", status_code=303)
 
@@ -3334,6 +3340,11 @@ async def sales_confirm(
                 note=f"Sotuv: {order.number}"
             )
     order.status = "completed"
+    # Positive balance = customer owes us (debts report / purchase confirm convention).
+    if order.partner_id:
+        partner = db.query(Partner).filter(Partner.id == order.partner_id).first()
+        if partner:
+            partner.balance = (partner.balance or 0) + (order.total or 0)
     db.commit()
     log_audit(
         current_user.id if current_user else None,
@@ -3388,6 +3399,10 @@ async def sales_revert(
         ).first()
         if stock:
             stock.quantity = (stock.quantity or 0) + item.quantity
+    if order.partner_id:
+        partner = db.query(Partner).filter(Partner.id == order.partner_id).first()
+        if partner:
+            partner.balance = (partner.balance or 0) - (order.total or 0)
     order.status = "draft"
     db.commit()
     return RedirectResponse(url=f"/sales/edit/{order_id}", status_code=303)
