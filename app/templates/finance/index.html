@@ -143,6 +143,7 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <form action="/finance/payment" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-cash"></i> To'lov kiritish</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
