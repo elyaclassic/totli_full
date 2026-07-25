@@ -1062,6 +1062,12 @@ async def qoldiqlar_tovar_import_excel(
                 url="/qoldiqlar?error=import&detail=" + quote("Hech qanday to'g'ri qator topilmadi. Ombor va mahsulot nomi/kodi to'g'ri ekanligini tekshiring.") + "#tovar",
                 status_code=303,
             )
+        # Keep last row per (warehouse, product) to avoid confirm applying
+        # multiple absolute quantities for the same stock cell.
+        merged = {}
+        for pid, wid, qty, cp, sp in items_data:
+            merged[(wid, pid)] = (pid, wid, qty, cp, sp)
+        items_data = list(merged.values())
         today = datetime.now()
         count = db.query(StockAdjustmentDoc).filter(
             StockAdjustmentDoc.date >= today.replace(hour=0, minute=0, second=0)
@@ -1993,7 +1999,7 @@ async def warehouse_import(
                 skip_no_prod += 1
                 continue
             
-            # Mahsulotni hujjatga qo'shish
+            # Mahsulotni hujjatga qo'shish (keyin bir xil ombor+mahsulot bo'yicha birlashtiriladi)
             items_data.append((product.id, warehouse.id, qty, tannarx, sotuv_narxi))
             
             # Mahsulot narxlarini yangilash
@@ -2009,6 +2015,13 @@ async def warehouse_import(
                 if len(missing_products) > 10:
                     detail += f" va yana {len(missing_products) - 10} ta"
             return RedirectResponse(url="/warehouse?error=import&detail=" + quote(detail), status_code=303)
+
+        # Duplicate (warehouse, product) rows: keep last quantity so auto-confirm
+        # does not apply sequential absolute sets that silently wipe stock.
+        merged = {}
+        for pid, wid, qty, cp, sp in items_data:
+            merged[(wid, pid)] = (pid, wid, qty, cp, sp)
+        items_data = list(merged.values())
         
         # Bitta hujjat yaratish
         today = datetime.now()
@@ -3302,14 +3315,23 @@ async def sales_confirm(
         raise HTTPException(status_code=404, detail="Sotuv topilmadi")
     if order.status != "draft":
         return RedirectResponse(url=f"/sales/edit/{order_id}", status_code=303)
+    # Aggregate by product so duplicate lines cannot bypass stock checks.
+    from collections import defaultdict
+    needed_by_product = defaultdict(float)
+    sample_item_by_product = {}
     for item in order.items:
+        pid = item.product_id
+        needed_by_product[pid] += float(item.quantity or 0)
+        sample_item_by_product.setdefault(pid, item)
+    for product_id, needed in needed_by_product.items():
         stock = db.query(Stock).filter(
             Stock.warehouse_id == order.warehouse_id,
-            Stock.product_id == item.product_id
+            Stock.product_id == product_id
         ).first()
-        if not stock or stock.quantity < item.quantity:
+        if not stock or (stock.quantity or 0) < needed:
             from urllib.parse import quote
-            name = item.product.name if item.product else f"#{item.product_id}"
+            sample = sample_item_by_product.get(product_id)
+            name = sample.product.name if sample and sample.product else f"#{product_id}"
             return RedirectResponse(
                 url=f"/sales/edit/{order_id}?error=stock&detail=" + quote(f"Yetarli yo'q: {name}"),
                 status_code=303
@@ -3450,6 +3472,80 @@ async def finance(request: Request, db: Session = Depends(get_db), current_user:
         "current_user": current_user,
         "page_title": "Moliya"
     })
+
+
+@app.post("/finance/payment")
+async def finance_payment(
+    request: Request,
+    type: str = Form(...),
+    amount: float = Form(...),
+    cash_register_id: Optional[int] = Form(None),
+    description: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Kassa kirim/chiqim to'lovini yozish va kassa balansini yangilash."""
+    from urllib.parse import quote
+    pay_type = (type or "").strip().lower()
+    if pay_type not in ("income", "expense"):
+        return RedirectResponse(
+            url="/finance?error=payment&detail=" + quote("To'lov turi noto'g'ri"),
+            status_code=303,
+        )
+    try:
+        amount = float(amount)
+    except (TypeError, ValueError):
+        amount = 0
+    if amount <= 0:
+        return RedirectResponse(
+            url="/finance?error=payment&detail=" + quote("Summa 0 dan katta bo'lishi kerak"),
+            status_code=303,
+        )
+
+    cash = None
+    if cash_register_id:
+        cash = db.query(CashRegister).filter(CashRegister.id == cash_register_id).first()
+    if not cash:
+        cash = db.query(CashRegister).filter(CashRegister.is_active == True).first()
+    if not cash:
+        return RedirectResponse(
+            url="/finance?error=payment&detail=" + quote("Kassa topilmadi"),
+            status_code=303,
+        )
+
+    if pay_type == "expense" and (cash.balance or 0) < amount:
+        return RedirectResponse(
+            url="/finance?error=payment&detail=" + quote("Kassada yetarli mablag' yo'q"),
+            status_code=303,
+        )
+
+    today = datetime.now()
+    count = db.query(Payment).filter(Payment.date >= today.replace(hour=0, minute=0, second=0, microsecond=0)).count()
+    number = f"P-{today.strftime('%Y%m%d')}-{str(count + 1).zfill(4)}"
+    payment = Payment(
+        number=number,
+        date=today,
+        type=pay_type,
+        cash_register_id=cash.id,
+        amount=amount,
+        payment_type="cash",
+        category="other",
+        description=(description or "").strip() or None,
+        user_id=current_user.id if current_user else None,
+    )
+    db.add(payment)
+    if pay_type == "income":
+        cash.balance = (cash.balance or 0) + amount
+    else:
+        cash.balance = (cash.balance or 0) - amount
+    db.commit()
+    log_audit(
+        current_user.id if current_user else None,
+        current_user.username if current_user else None,
+        "finance_payment",
+        number,
+    )
+    return RedirectResponse(url="/finance?success=payment", status_code=303)
 
 
 # ==========================================
@@ -3979,10 +4075,16 @@ async def create_production(
 def _do_complete_production_stock(db, production, recipe):
     """Xom ashyo ayirish, tayyor mahsulot qo'shish. RedirectResponse qaytaradi xato bo'lsa."""
     from urllib.parse import quote
+    from collections import defaultdict
     if production.production_items:
-        items_to_use = [(pi.product_id, pi.quantity) for pi in production.production_items]
+        raw_items = [(pi.product_id, pi.quantity) for pi in production.production_items]
     else:
-        items_to_use = [(item.product_id, item.quantity * production.quantity) for item in recipe.items]
+        raw_items = [(item.product_id, item.quantity * production.quantity) for item in recipe.items]
+    # Aggregate duplicate material rows so total demand is validated once.
+    needed = defaultdict(float)
+    for product_id, required in raw_items:
+        needed[product_id] += float(required or 0)
+    items_to_use = list(needed.items())
     for product_id, required in items_to_use:
         stock = db.query(Stock).filter(
             Stock.warehouse_id == production.warehouse_id,
