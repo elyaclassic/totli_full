@@ -2726,53 +2726,69 @@ async def purchase_confirm(purchase_id: int, db: Session = Depends(get_db), curr
     purchase = db.query(Purchase).filter(Purchase.id == purchase_id).first()
     if not purchase:
         raise HTTPException(status_code=404, detail="Tovar kirimi topilmadi")
-    
-    if purchase.status != "draft":
-        raise HTTPException(status_code=400, detail="Faqat qoralama holatidagi kirimlarni tasdiqlash mumkin")
-    
+
     if not purchase.items:
         raise HTTPException(status_code=400, detail="Tasdiqlash uchun kamida bitta mahsulot qo'shing. Kirimda mahsulotlar bo'lishi kerak.")
-    
+
+    # Atomically claim draft → confirming so concurrent/double POSTs cannot double-post stock/AP.
+    claimed = db.query(Purchase).filter(
+        Purchase.id == purchase_id,
+        Purchase.status == "draft",
+    ).update({Purchase.status: "confirming"}, synchronize_session=False)
+    if claimed != 1:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Faqat qoralama holatidagi kirimlarni tasdiqlash mumkin")
+    db.refresh(purchase)
+
     total_expenses = purchase.total_expenses or 0
     items_total = purchase.total or 0
-    for item in purchase.items:
-        # StockMovement yozuvini yaratish - har bir operatsiya uchun alohida hujjat
-        create_stock_movement(
-            db=db,
-            warehouse_id=purchase.warehouse_id,
-            product_id=item.product_id,
-            quantity_change=item.quantity,
-            operation_type="purchase",
-            document_type="Purchase",
-            document_id=purchase.id,
-            document_number=purchase.number,
-            user_id=current_user.id if current_user else None,
-            note=f"Tovar kirimi: {purchase.number}"
-        )
-        
-        # Tannarx = qator narxi + xarajat ulushi (tovar kirimi summasi + xarajat = tannarx)
-        product = db.query(Product).filter(Product.id == item.product_id).first()
-        if product:
-            cost_per_unit = item.price
-            if total_expenses > 0 and items_total > 0 and item.total and item.quantity:
-                expense_share = (item.total / items_total) * total_expenses
-                cost_per_unit = item.price + (expense_share / item.quantity)
-            product.purchase_price = cost_per_unit
-    
-    purchase.status = "confirmed"
-    log_audit(
-        current_user.id if current_user else None,
-        current_user.username if current_user else None,
-        "purchase_confirm",
-        purchase.number,
-    )
-    total_with_expenses = items_total + total_expenses
-    if purchase.partner_id:
-        partner = db.query(Partner).filter(Partner.id == purchase.partner_id).first()
-        if partner:
-            partner.balance -= total_with_expenses
+    try:
+        for item in purchase.items:
+            # StockMovement yozuvini yaratish - har bir operatsiya uchun alohida hujjat
+            create_stock_movement(
+                db=db,
+                warehouse_id=purchase.warehouse_id,
+                product_id=item.product_id,
+                quantity_change=item.quantity,
+                operation_type="purchase",
+                document_type="Purchase",
+                document_id=purchase.id,
+                document_number=purchase.number,
+                user_id=current_user.id if current_user else None,
+                note=f"Tovar kirimi: {purchase.number}"
+            )
 
-    db.commit()
+            # Tannarx = qator narxi + xarajat ulushi (tovar kirimi summasi + xarajat = tannarx)
+            product = db.query(Product).filter(Product.id == item.product_id).first()
+            if product:
+                cost_per_unit = item.price
+                if total_expenses > 0 and items_total > 0 and item.total and item.quantity:
+                    expense_share = (item.total / items_total) * total_expenses
+                    cost_per_unit = item.price + (expense_share / item.quantity)
+                product.purchase_price = cost_per_unit
+
+        purchase.status = "confirmed"
+        log_audit(
+            current_user.id if current_user else None,
+            current_user.username if current_user else None,
+            "purchase_confirm",
+            purchase.number,
+        )
+        total_with_expenses = items_total + total_expenses
+        if purchase.partner_id:
+            partner = db.query(Partner).filter(Partner.id == purchase.partner_id).first()
+            if partner:
+                partner.balance -= total_with_expenses
+
+        db.commit()
+    except Exception:
+        db.rollback()
+        # Release claim if posting failed mid-flight.
+        stuck = db.query(Purchase).filter(Purchase.id == purchase_id, Purchase.status == "confirming").first()
+        if stuck:
+            stuck.status = "draft"
+            db.commit()
+        raise
     check_low_stock_and_notify(db)
     return RedirectResponse(url=f"/purchases", status_code=303)
 
@@ -3297,44 +3313,64 @@ async def sales_confirm(
     current_user: User = Depends(require_auth)
 ):
     """Sotuvni tasdiqlash — ombor qoldig'ini kamaytirish"""
+    from urllib.parse import quote
     order = db.query(Order).filter(Order.id == order_id, Order.type == "sale").first()
     if not order:
         raise HTTPException(status_code=404, detail="Sotuv topilmadi")
-    if order.status != "draft":
+
+    # Atomically claim draft → confirming so concurrent/double POSTs cannot double-subtract stock.
+    claimed = db.query(Order).filter(
+        Order.id == order_id,
+        Order.type == "sale",
+        Order.status == "draft",
+    ).update({Order.status: "confirming"}, synchronize_session=False)
+    if claimed != 1:
+        db.rollback()
         return RedirectResponse(url=f"/sales/edit/{order_id}", status_code=303)
+    db.refresh(order)
+
     for item in order.items:
         stock = db.query(Stock).filter(
             Stock.warehouse_id == order.warehouse_id,
             Stock.product_id == item.product_id
         ).first()
         if not stock or stock.quantity < item.quantity:
-            from urllib.parse import quote
             name = item.product.name if item.product else f"#{item.product_id}"
+            order.status = "draft"
+            db.commit()
             return RedirectResponse(
                 url=f"/sales/edit/{order_id}?error=stock&detail=" + quote(f"Yetarli yo'q: {name}"),
                 status_code=303
             )
-    for item in order.items:
-        stock = db.query(Stock).filter(
-            Stock.warehouse_id == order.warehouse_id,
-            Stock.product_id == item.product_id
-        ).first()
-        if stock:
-            # StockMovement yozuvini yaratish (chiqim - sotuv)
-            create_stock_movement(
-                db=db,
-                warehouse_id=order.warehouse_id,
-                product_id=item.product_id,
-                quantity_change=-item.quantity,  # Chiqim
-                operation_type="sale",
-                document_type="Sale",
-                document_id=order.id,
-                document_number=order.number,
-                user_id=current_user.id if current_user else None,
-                note=f"Sotuv: {order.number}"
-            )
-    order.status = "completed"
-    db.commit()
+    try:
+        for item in order.items:
+            stock = db.query(Stock).filter(
+                Stock.warehouse_id == order.warehouse_id,
+                Stock.product_id == item.product_id
+            ).first()
+            if stock:
+                # StockMovement yozuvini yaratish (chiqim - sotuv)
+                create_stock_movement(
+                    db=db,
+                    warehouse_id=order.warehouse_id,
+                    product_id=item.product_id,
+                    quantity_change=-item.quantity,  # Chiqim
+                    operation_type="sale",
+                    document_type="Sale",
+                    document_id=order.id,
+                    document_number=order.number,
+                    user_id=current_user.id if current_user else None,
+                    note=f"Sotuv: {order.number}"
+                )
+        order.status = "completed"
+        db.commit()
+    except Exception:
+        db.rollback()
+        stuck = db.query(Order).filter(Order.id == order_id, Order.status == "confirming").first()
+        if stuck:
+            stuck.status = "draft"
+            db.commit()
+        raise
     log_audit(
         current_user.id if current_user else None,
         current_user.username if current_user else None,
