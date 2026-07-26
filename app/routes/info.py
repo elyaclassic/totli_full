@@ -105,9 +105,11 @@ async def info_warehouses_delete(warehouse_id: int, db: Session = Depends(get_db
     warehouse = db.query(Warehouse).filter(Warehouse.id == warehouse_id).first()
     if not warehouse:
         raise HTTPException(status_code=404, detail="Ombor topilmadi")
-    db.delete(warehouse)
+    # Soft-delete only: hard delete can wipe or orphan Stock/StockMovement rows
+    # (SQLite FK enforcement is off), silently destroying warehouse inventory.
+    warehouse.is_active = False
     db.commit()
-    return RedirectResponse(url="/info/warehouses", status_code=303)
+    return RedirectResponse(url="/info/warehouses?deactivated=1", status_code=303)
 
 
 @router.get("/warehouses/export")
@@ -589,9 +591,11 @@ async def info_cash_delete(cash_id: int, db: Session = Depends(get_db), current_
     cash = db.query(CashRegister).filter(CashRegister.id == cash_id).first()
     if not cash:
         raise HTTPException(status_code=404, detail="Kassa topilmadi")
-    db.delete(cash)
+    # Soft-delete only: hard delete orphans Payment / cash-balance-doc history and
+    # can silently drop a non-zero cash balance from the ledger.
+    cash.is_active = False
     db.commit()
-    return RedirectResponse(url="/info/cash", status_code=303)
+    return RedirectResponse(url="/info/cash?deactivated=1", status_code=303)
 
 
 # ---------- Departments ----------
