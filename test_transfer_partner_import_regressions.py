@@ -110,7 +110,8 @@ def test_transfer_confirm_rejects_duplicate_lines_that_invent_stock(db, monkeypa
     assert transfer.status == "pending_approval"
     assert src_stock.quantity == 10
     assert dst_stock is None or (dst_stock.quantity or 0) == 0
-    assert "yetarli emas" in (resp.headers.get("location") or "")
+    from urllib.parse import unquote
+    assert "yetarli emas" in unquote(resp.headers.get("location") or "")
 
 
 def test_partner_delete_soft_deletes_and_blocks_balance(db):
