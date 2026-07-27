@@ -11,7 +11,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 
 from app.core import templates
-from app.models.database import get_db, Order, Stock, Product, Partner, Warehouse, User
+from app.models.database import get_db, Order, Stock, StockMovement, Product, Partner, Warehouse, User
 from app.deps import get_current_user, require_auth
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -196,13 +196,19 @@ async def report_stock_import(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
-    """Exceldan qoldiqlarni yuklash. Ustunlar: Ombor nomi (yoki kodi), Mahsulot nomi (yoki kodi), Qoldiq; ixtiyoriy: Tannarx, Sotuv narxi."""
+    """Exceldan qoldiqlarni yuklash. Ustunlar: Ombor nomi (yoki kodi), Mahsulot nomi (yoki kodi), Qoldiq; ixtiyoriy: Tannarx, Sotuv narxi.
+
+    Duplicate (warehouse, product) rows keep the last quantity so sequential absolute
+    sets cannot silently wipe stock. Each change is recorded as a StockMovement.
+    """
     if not current_user:
         return RedirectResponse(url="/login", status_code=303)
     contents = await file.read()
     wb = load_workbook(io.BytesIO(contents))
     ws = wb.active
     rows = list(ws.iter_rows(min_row=2, values_only=True))
+    # Merge last-wins before applying absolute quantities.
+    merged = {}
     for row in rows:
         if not row or (row[0] is None or row[0] == "") or (row[1] is None or row[1] == ""):
             continue
@@ -241,20 +247,46 @@ async def report_stock_import(
             ).first()
         if not wh or not product:
             continue
+        merged[(wh.id, product.id)] = (wh.id, product.id, qty, tannarx, sotuv_narxi)
+
+    for warehouse_id, product_id, qty, tannarx, sotuv_narxi in merged.values():
         stock = db.query(Stock).filter(
-            Stock.warehouse_id == wh.id,
-            Stock.product_id == product.id,
+            Stock.warehouse_id == warehouse_id,
+            Stock.product_id == product_id,
         ).first()
+        old_quantity = float(stock.quantity or 0) if stock else 0.0
         if stock:
             stock.quantity = qty
+            stock.updated_at = datetime.now()
+            stock_id = stock.id
         else:
-            stock = Stock(warehouse_id=wh.id, product_id=product.id, quantity=qty)
+            stock = Stock(warehouse_id=warehouse_id, product_id=product_id, quantity=qty)
             db.add(stock)
-        if tannarx is not None:
-            product.purchase_price = tannarx
-        if sotuv_narxi is not None:
-            product.sale_price = sotuv_narxi
-        db.commit()
+            db.flush()
+            stock_id = stock.id
+        delta = float(qty) - old_quantity
+        if abs(delta) > 1e-9:
+            db.add(StockMovement(
+                stock_id=stock_id,
+                warehouse_id=warehouse_id,
+                product_id=product_id,
+                operation_type="adjustment",
+                document_type="ReportStockImport",
+                document_id=0,
+                document_number=None,
+                quantity_change=delta,
+                quantity_after=float(qty),
+                user_id=current_user.id if current_user else None,
+                note="Hisobotlar Excel import",
+                created_at=datetime.now(),
+            ))
+        product = db.query(Product).filter(Product.id == product_id).first()
+        if product:
+            if tannarx is not None:
+                product.purchase_price = tannarx
+            if sotuv_narxi is not None:
+                product.sale_price = sotuv_narxi
+    db.commit()
     return RedirectResponse(url="/reports/stock", status_code=303)
 
 

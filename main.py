@@ -2300,27 +2300,33 @@ async def warehouse_transfer_confirm(
     items = db.query(WarehouseTransferItem).filter(WarehouseTransferItem.transfer_id == transfer_id).all()
     if not items:
         return RedirectResponse(url=f"/warehouse/transfers/{transfer_id}?error=" + quote("Kamida bitta mahsulot qo'shing."), status_code=303)
+    # Aggregate by product so duplicate lines cannot invent stock when
+    # create_stock_movement clamps source negatives to 0 while still crediting destination.
+    from collections import defaultdict
+    needed_by_product = defaultdict(float)
     for item in items:
+        needed_by_product[item.product_id] += float(item.quantity or 0)
+    for product_id, needed in needed_by_product.items():
         src = db.query(Stock).filter(
             Stock.warehouse_id == transfer.from_warehouse_id,
-            Stock.product_id == item.product_id
+            Stock.product_id == product_id
         ).first()
-        if not src or src.quantity < item.quantity:
-            prod = db.query(Product).filter(Product.id == item.product_id).first()
-            name = prod.name if prod else f"#{item.product_id}"
+        if not src or (src.quantity or 0) < needed:
+            prod = db.query(Product).filter(Product.id == product_id).first()
+            name = prod.name if prod else f"#{product_id}"
             avail = src.quantity if src else 0
             return RedirectResponse(
-                url=f"/warehouse/transfers/{transfer_id}?error=" + quote(f"Qayerdan omborda «{name}» yetarli emas (kerak: {item.quantity}, mavjud: {avail})"),
+                url=f"/warehouse/transfers/{transfer_id}?error=" + quote(f"Qayerdan omborda «{name}» yetarli emas (kerak: {needed}, mavjud: {avail})"),
                 status_code=303
             )
-    # Qoldiqlarni yangilash - faqat tasdiqlanganda
-    for item in items:
+    # Qoldiqlarni yangilash - faqat tasdiqlanganda (one movement pair per product total)
+    for product_id, needed in needed_by_product.items():
         # Qayerdan ombordan ayirish - StockMovement yozuvini yaratish
         create_stock_movement(
             db=db,
             warehouse_id=transfer.from_warehouse_id,
-            product_id=item.product_id,
-            quantity_change=-item.quantity,  # Chiqim
+            product_id=product_id,
+            quantity_change=-needed,  # Chiqim
             operation_type="transfer_out",
             document_type="WarehouseTransfer",
             document_id=transfer.id,
@@ -2333,8 +2339,8 @@ async def warehouse_transfer_confirm(
         create_stock_movement(
             db=db,
             warehouse_id=transfer.to_warehouse_id,
-            product_id=item.product_id,
-            quantity_change=item.quantity,  # Kirim
+            product_id=product_id,
+            quantity_change=needed,  # Kirim
             operation_type="transfer_in",
             document_type="WarehouseTransfer",
             document_id=transfer.id,
@@ -2977,8 +2983,14 @@ async def partner_edit(
 
 
 @app.post("/partners/delete/{partner_id}")
-async def partner_delete(partner_id: int, db: Session = Depends(get_db)):
-    """Kontragentni o'chirish"""
+async def partner_delete(
+    partner_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
+):
+    """Kontragentni o'chirish (soft delete: is_active=False) — balans/tarix yo'qolmasin."""
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
     partner = db.query(Partner).filter(Partner.id == partner_id).first()
     if not partner:
         raise HTTPException(status_code=404, detail="Kontragent topilmadi")
@@ -2986,14 +2998,23 @@ async def partner_delete(partner_id: int, db: Session = Depends(get_db)):
     # Kontragent bilan bog'liq buyurtmalar borligini tekshirish
     has_orders = db.query(Order).filter(Order.partner_id == partner_id).first()
     has_purchases = db.query(Purchase).filter(Purchase.partner_id == partner_id).first()
+    has_balance_items = db.query(PartnerBalanceDocItem).filter(
+        PartnerBalanceDocItem.partner_id == partner_id
+    ).first()
+    has_payments = db.query(Payment).filter(Payment.partner_id == partner_id).first()
     
-    if has_orders or has_purchases:
+    if has_orders or has_purchases or has_balance_items or has_payments:
         raise HTTPException(
             status_code=400, 
-            detail="Bu kontragent bilan bog'liq buyurtmalar yoki kirimlar mavjud. O'chirish mumkin emas."
+            detail="Bu kontragent bilan bog'liq buyurtmalar, kirimlar, balans hujjatlari yoki to'lovlar mavjud. O'chirish mumkin emas."
+        )
+    if partner.balance and abs(float(partner.balance)) > 1e-9:
+        raise HTTPException(
+            status_code=400,
+            detail="Bu kontragentda balans mavjud. Avval balansni nolga tushiring.",
         )
     
-    db.delete(partner)
+    partner.is_active = False
     db.commit()
     return RedirectResponse(url="/partners", status_code=303)
 
