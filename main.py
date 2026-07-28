@@ -2359,6 +2359,7 @@ async def warehouse_transfer_revert(
     current_user: User = Depends(require_admin),
 ):
     """Tasdiqlashni bekor qilish: ombor harakatini teskari qilish, hujjat qoralamaga o'tadi (faqat admin)."""
+    from collections import defaultdict
     from urllib.parse import quote
     transfer = db.query(WarehouseTransfer).filter(WarehouseTransfer.id == transfer_id).first()
     if not transfer:
@@ -2366,23 +2367,40 @@ async def warehouse_transfer_revert(
     if transfer.status != "confirmed":
         return RedirectResponse(url=f"/warehouse/transfers?error=" + quote("Faqat tasdiqlangan hujjatning tasdiqini bekor qilish mumkin."), status_code=303)
     items = db.query(WarehouseTransferItem).filter(WarehouseTransferItem.transfer_id == transfer_id).all()
+    # Aggregate by product so duplicate lines and post-transfer consumption are checked once.
+    needed_by_product = defaultdict(float)
     for item in items:
+        needed_by_product[item.product_id] += item.quantity or 0
+    for product_id, qty in needed_by_product.items():
         dest = db.query(Stock).filter(
             Stock.warehouse_id == transfer.to_warehouse_id,
-            Stock.product_id == item.product_id,
+            Stock.product_id == product_id,
         ).first()
-        if dest:
-            dest.quantity -= item.quantity
-            if dest.quantity < 0:
-                dest.quantity = 0
+        avail = dest.quantity if dest else 0
+        if not dest or avail < qty:
+            prod = db.query(Product).filter(Product.id == product_id).first()
+            name = prod.name if prod else f"#{product_id}"
+            return RedirectResponse(
+                url="/warehouse/transfers?error=" + quote(
+                    f"Tasdiqni bekor qilib bo'lmaydi: qayerga omborda «{name}» yetarli emas "
+                    f"(kerak: {qty}, mavjud: {avail}). Avval shu ombordan chiqim qilingan bo'lishi mumkin."
+                ),
+                status_code=303,
+            )
+    for product_id, qty in needed_by_product.items():
+        dest = db.query(Stock).filter(
+            Stock.warehouse_id == transfer.to_warehouse_id,
+            Stock.product_id == product_id,
+        ).first()
+        dest.quantity -= qty
         src = db.query(Stock).filter(
             Stock.warehouse_id == transfer.from_warehouse_id,
-            Stock.product_id == item.product_id,
+            Stock.product_id == product_id,
         ).first()
         if src:
-            src.quantity += item.quantity
+            src.quantity += qty
         else:
-            db.add(Stock(warehouse_id=transfer.from_warehouse_id, product_id=item.product_id, quantity=item.quantity))
+            db.add(Stock(warehouse_id=transfer.from_warehouse_id, product_id=product_id, quantity=qty))
     transfer.status = "draft"
     db.commit()
     return RedirectResponse(url="/warehouse/transfers?reverted=1", status_code=303)
@@ -2766,11 +2784,12 @@ async def purchase_confirm(purchase_id: int, db: Session = Depends(get_db), curr
         "purchase_confirm",
         purchase.number,
     )
-    total_with_expenses = items_total + total_expenses
+    # Supplier AP is goods total only. Free-text expenses (Yo'l/Yuk/Boj) are landed
+    # costs allocated into product.purchase_price above — not amounts owed to this partner.
     if purchase.partner_id:
         partner = db.query(Partner).filter(Partner.id == purchase.partner_id).first()
         if partner:
-            partner.balance -= total_with_expenses
+            partner.balance -= items_total
 
     db.commit()
     check_low_stock_and_notify(db)
@@ -2812,11 +2831,10 @@ async def purchase_revert(
                 url=f"/purchases/edit/{purchase_id}?error=revert&detail=" + quote("Ombor qoldig'i yetarli emas (qoldiq o'zgartirilgan). Tasdiqni bekor qilish mumkin emas."),
                 status_code=303
             )
-    total_with_expenses = purchase.total + (purchase.total_expenses or 0)
     if purchase.partner_id:
         partner = db.query(Partner).filter(Partner.id == purchase.partner_id).first()
         if partner:
-            partner.balance += total_with_expenses
+            partner.balance += purchase.total or 0
     purchase.status = "draft"
     db.commit()
     return RedirectResponse(url=f"/purchases/edit/{purchase_id}", status_code=303)
