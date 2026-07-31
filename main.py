@@ -1430,14 +1430,22 @@ async def import_products(
             else:
                 type_ = "tayyor"
             unit_name = cell(5) or None
-            try:
-                sale_price = float((cell(6) or "0").replace(" ", "").replace(",", "."))
-            except (ValueError, TypeError):
-                sale_price = 0
-            try:
-                purchase_price = float((cell(7) or "0").replace(" ", "").replace(",", "."))
-            except (ValueError, TypeError):
-                purchase_price = 0
+            # Bo'sh narx kataklari mavjud tovar narxlarini nolga tushirmasligi kerak.
+            # Faqat Excelda aniq qiymat berilganda yangilanadi (0 ham aniq qiymat).
+            sale_price = None
+            purchase_price = None
+            raw_sale = ws.cell(row=row_num, column=6).value
+            raw_purchase = ws.cell(row=row_num, column=7).value
+            if raw_sale is not None and str(raw_sale).strip() != "":
+                try:
+                    sale_price = float(str(raw_sale).strip().replace(" ", "").replace(",", "."))
+                except (ValueError, TypeError):
+                    sale_price = None
+            if raw_purchase is not None and str(raw_purchase).strip() != "":
+                try:
+                    purchase_price = float(str(raw_purchase).strip().replace(" ", "").replace(",", "."))
+                except (ValueError, TypeError):
+                    purchase_price = None
             try:
                 unit = db.query(Unit).filter(Unit.name == unit_name).first() if unit_name else None
                 if not unit and unit_name:
@@ -1447,7 +1455,7 @@ async def import_products(
                     db.refresh(unit)
                 product = db.query(Product).filter(Product.code == code).first()
                 if not product:
-                    product = Product(code=code, is_active=True)
+                    product = Product(code=code, is_active=True, sale_price=0, purchase_price=0)
                     db.add(product)
                     added += 1
                 else:
@@ -1457,8 +1465,10 @@ async def import_products(
                 product.is_active = True
                 product.category_id = None
                 product.unit_id = unit.id if unit else None
-                product.sale_price = sale_price
-                product.purchase_price = purchase_price
+                if sale_price is not None:
+                    product.sale_price = sale_price
+                if purchase_price is not None:
+                    product.purchase_price = purchase_price
                 db.commit()
             except Exception:
                 db.rollback()
