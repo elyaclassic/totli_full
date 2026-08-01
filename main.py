@@ -482,13 +482,14 @@ async def qoldiqlar_kassa_save(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
-    """Kassa qoldig'ini yangilash (eski tezkor forma uchun qolgan)"""
-    cash = db.query(CashRegister).filter(CashRegister.id == cash_id).first()
-    if not cash:
-        raise HTTPException(status_code=404, detail="Kassa topilmadi")
-    cash.balance = balance
-    db.commit()
-    return RedirectResponse(url="/qoldiqlar#kassa", status_code=303)
+    """Eski tezkor forma o'chirilgan — kassa qoldig'ini faqat hujjat orqali kiriting."""
+    from urllib.parse import quote
+    return RedirectResponse(
+        url="/qoldiqlar?error=legacy&detail="
+        + quote("Tezkor forma o'chirilgan. Kassa qoldig'ini hujjat orqali kiriting.")
+        + "#kassa",
+        status_code=303,
+    )
 
 
 # --- Kassa qoldiq HUJJATLARI (1C uslubida) ---
@@ -795,21 +796,14 @@ async def qoldiqlar_tovar_save(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
-    """Tovar qoldig'ini kiritish yoki qo'shish (omborda mavjud bo'lsa qo'shiladi)"""
-    if quantity < 0:
-        return RedirectResponse(url="/qoldiqlar#tovar", status_code=303)
-    stock = db.query(Stock).filter(
-        Stock.warehouse_id == warehouse_id,
-        Stock.product_id == product_id,
-    ).first()
-    if stock:
-        stock.quantity = (stock.quantity or 0) + quantity
-        stock.updated_at = datetime.now()
-    else:
-        stock = Stock(warehouse_id=warehouse_id, product_id=product_id, quantity=quantity)
-        db.add(stock)
-    db.commit()
-    return RedirectResponse(url="/qoldiqlar#tovar", status_code=303)
+    """Eski tezkor forma o'chirilgan — tovar qoldig'ini faqat hujjat orqali kiriting."""
+    from urllib.parse import quote
+    return RedirectResponse(
+        url="/qoldiqlar?error=legacy&detail="
+        + quote("Tezkor forma o'chirilgan. Tovar qoldig'ini hujjat orqali kiriting.")
+        + "#tovar",
+        status_code=303,
+    )
 
 
 @app.post("/qoldiqlar/kontragent/{partner_id}")
@@ -819,19 +813,14 @@ async def qoldiqlar_kontragent_save(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
-    """Kontragent balansini yangilash"""
-    partner = db.query(Partner).filter(Partner.id == partner_id).first()
-    if not partner:
-        raise HTTPException(status_code=404, detail="Kontragent topilmadi")
-    balance_str = (balance or "").strip()
-    if not balance_str:
-        return RedirectResponse(url="/qoldiqlar#kontragent", status_code=303)
-    try:
-        partner.balance = float(balance_str)
-    except (TypeError, ValueError):
-        return RedirectResponse(url="/qoldiqlar#kontragent", status_code=303)
-    db.commit()
-    return RedirectResponse(url="/qoldiqlar#kontragent", status_code=303)
+    """Eski tezkor forma o'chirilgan — kontragent balansini faqat hujjat orqali kiriting."""
+    from urllib.parse import quote
+    return RedirectResponse(
+        url="/qoldiqlar?error=legacy&detail="
+        + quote("Tezkor forma o'chirilgan. Kontragent balansini hujjat orqali kiriting.")
+        + "#kontragent",
+        status_code=303,
+    )
 
 
 @app.get("/qoldiqlar/export")
@@ -1949,10 +1938,20 @@ async def warehouse_import(
                 prod_key = str(int(float(raw_prod)))
             else:
                 prod_key = str(raw_prod or "").strip()
+            # Bo'sh/noto'g'ri miqdor — mavjud qoldiqni 0 ga o'chirmaslik uchun o'tkazib yuborish.
+            # Aniq 0 yozilgan bo'lsa (hisob-kitob), qoldiqni 0 ga qo'yishga ruxsat.
+            raw_qty = row[2] if len(row) > 2 else None
+            if raw_qty is None or raw_qty == "":
+                skip_empty += 1
+                continue
             try:
-                qty = float(row[2]) if len(row) > 2 and row[2] is not None else 0
+                qty = float(raw_qty)
             except (TypeError, ValueError):
-                qty = 0
+                skip_empty += 1
+                continue
+            if qty < 0:
+                skip_empty += 1
+                continue
             tannarx = 0.0
             sotuv_narxi = 0.0
             if len(row) > 3 and row[3] is not None and row[3] != "":
@@ -1969,8 +1968,6 @@ async def warehouse_import(
             if not wh_key or not prod_key:
                 skip_empty += 1
                 continue
-            # Miqdor 0 yoki manfiy bo'lsa ham, hujjatga yozish (adjustment uchun)
-            # Lekin qoldiqni yangilashda 0 bo'lishi mumkin
             warehouse = db.query(Warehouse).filter(
                 (func.lower(Warehouse.name) == wh_key.lower()) | (Warehouse.code == wh_key)
             ).first()
@@ -3980,9 +3977,14 @@ def _do_complete_production_stock(db, production, recipe):
     """Xom ashyo ayirish, tayyor mahsulot qo'shish. RedirectResponse qaytaradi xato bo'lsa."""
     from urllib.parse import quote
     if production.production_items:
-        items_to_use = [(pi.product_id, pi.quantity) for pi in production.production_items]
+        items_to_use = [(pi.product_id, float(pi.quantity or 0)) for pi in production.production_items]
     else:
-        items_to_use = [(item.product_id, item.quantity * production.quantity) for item in recipe.items]
+        items_to_use = [(item.product_id, float(item.quantity or 0) * float(production.quantity or 0)) for item in recipe.items]
+    # Barcha xom ashyo 0 bo'lsa tayyor mahsulot "yaratib" inventar soxtalashtiriladi — bloklash
+    if items_to_use and all(required <= 0 for _, required in items_to_use):
+        msg = quote("Xom ashyo miqdori 0 — ishlab chiqarishni yakunlab bo'lmaydi", safe="")
+        return RedirectResponse(url=f"/production/orders?error=no_materials&detail={msg}", status_code=303)
+    items_to_use = [(pid, req) for pid, req in items_to_use if req > 0]
     for product_id, required in items_to_use:
         stock = db.query(Stock).filter(
             Stock.warehouse_id == production.warehouse_id,
