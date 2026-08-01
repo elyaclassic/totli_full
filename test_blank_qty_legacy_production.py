@@ -155,7 +155,7 @@ def test_legacy_qoldiqlar_tovar_does_not_mutate_stock(db):
 
 def test_legacy_qoldiqlar_kassa_and_partner_do_not_wipe_balances(db):
     user = User(username="u1", full_name="User", password_hash="x", role="user", is_active=True)
-    cash = CashRegister(name="Kassa 1", code="C1", balance=1000, is_active=True)
+    cash = CashRegister(name="Kassa 1", balance=1000, is_active=True)
     partner = Partner(name="Klient", code="K1", balance=8000, is_active=True)
     db.add_all([user, cash, partner])
     db.commit()
