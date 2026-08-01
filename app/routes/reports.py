@@ -212,10 +212,17 @@ async def report_stock_import(
             product_key = str(int(float(raw_prod)))
         else:
             product_key = str(raw_prod or "").strip()
+        # Bo'sh/noto'g'ri miqdor — mavjud qoldiqni 0 ga o'chirmaslik uchun o'tkazib yuborish.
+        # Aniq 0 yozilgan bo'lsa, qoldiqni 0 ga qo'yishga ruxsat.
+        raw_qty = row[2] if len(row) > 2 else None
+        if raw_qty is None or raw_qty == "":
+            continue
         try:
-            qty = float(row[2]) if row[2] is not None and row[2] != "" else 0
+            qty = float(raw_qty)
         except (TypeError, ValueError):
-            qty = 0
+            continue
+        if qty < 0:
+            continue
         tannarx = None
         sotuv_narxi = None
         if len(row) > 3 and row[3] is not None and row[3] != "":
