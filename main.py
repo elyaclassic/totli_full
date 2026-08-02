@@ -2624,12 +2624,22 @@ async def purchase_add_item(
     product_id: int = Form(...),
     quantity: float = Form(...),
     price: float = Form(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     """Tovar kirimiga mahsulot qo'shish"""
+    from urllib.parse import quote
     purchase = db.query(Purchase).filter(Purchase.id == purchase_id).first()
     if not purchase:
         raise HTTPException(status_code=404, detail="Tovar kirimi topilmadi")
+    if purchase.status != "draft":
+        return RedirectResponse(url=f"/purchases/edit/{purchase_id}", status_code=303)
+    # Manfiy miqdor tasdiqlashda omborni kamaytiradi / AP ni buzadi
+    if quantity <= 0:
+        return RedirectResponse(
+            url=f"/purchases/edit/{purchase_id}?error=item&detail=" + quote("Miqdor 0 dan katta bo'lishi kerak."),
+            status_code=303,
+        )
     
     total = quantity * price
     item = PurchaseItem(
@@ -2732,6 +2742,9 @@ async def purchase_confirm(purchase_id: int, db: Session = Depends(get_db), curr
     
     if not purchase.items:
         raise HTTPException(status_code=400, detail="Tasdiqlash uchun kamida bitta mahsulot qo'shing. Kirimda mahsulotlar bo'lishi kerak.")
+    for item in purchase.items:
+        if (item.quantity or 0) <= 0:
+            raise HTTPException(status_code=400, detail="Kirim qatorlarida miqdor 0 dan katta bo'lishi kerak")
     
     total_expenses = purchase.total_expenses or 0
     items_total = purchase.total or 0
@@ -3227,11 +3240,18 @@ async def sales_add_item(
     current_user: User = Depends(require_auth)
 ):
     """Sotuvga mahsulot qo'shish"""
+    from urllib.parse import quote
     order = db.query(Order).filter(Order.id == order_id, Order.type == "sale").first()
     if not order:
         raise HTTPException(status_code=404, detail="Sotuv topilmadi")
     if order.status != "draft":
         return RedirectResponse(url=f"/sales/edit/{order_id}", status_code=303)
+    # Manfiy miqdor tasdiqlashda omborga qo'shiladi (quantity_change=-qty) — inventni oldini olish
+    if quantity <= 0:
+        return RedirectResponse(
+            url=f"/sales/edit/{order_id}?error=stock&detail=" + quote("Miqdor 0 dan katta bo'lishi kerak."),
+            status_code=303,
+        )
     price = 0
     pp = db.query(ProductPrice).filter(ProductPrice.product_id == product_id, ProductPrice.price_type_id == order.price_type_id).first()
     if pp:
@@ -3297,18 +3317,31 @@ async def sales_confirm(
     current_user: User = Depends(require_auth)
 ):
     """Sotuvni tasdiqlash — ombor qoldig'ini kamaytirish"""
+    from urllib.parse import quote
     order = db.query(Order).filter(Order.id == order_id, Order.type == "sale").first()
     if not order:
         raise HTTPException(status_code=404, detail="Sotuv topilmadi")
     if order.status != "draft":
         return RedirectResponse(url=f"/sales/edit/{order_id}", status_code=303)
+    if not order.items:
+        return RedirectResponse(
+            url=f"/sales/edit/{order_id}?error=stock&detail=" + quote("Kamida bitta mahsulot qo'shing."),
+            status_code=303,
+        )
+    # Manfiy qator: create_stock_movement(-(-n)) omborga qo'shadi — invent
+    for item in order.items:
+        if (item.quantity or 0) <= 0:
+            name = item.product.name if item.product else f"#{item.product_id}"
+            return RedirectResponse(
+                url=f"/sales/edit/{order_id}?error=stock&detail=" + quote(f"Noto'g'ri miqdor: {name}"),
+                status_code=303,
+            )
     for item in order.items:
         stock = db.query(Stock).filter(
             Stock.warehouse_id == order.warehouse_id,
             Stock.product_id == item.product_id
         ).first()
         if not stock or stock.quantity < item.quantity:
-            from urllib.parse import quote
             name = item.product.name if item.product else f"#{item.product_id}"
             return RedirectResponse(
                 url=f"/sales/edit/{order_id}?error=stock&detail=" + quote(f"Yetarli yo'q: {name}"),
@@ -3701,9 +3734,16 @@ async def add_recipe_item(
     current_user: User = Depends(require_auth)
 ):
     """Retseptga xom ashyo qo'shish"""
+    from urllib.parse import quote
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Retsept topilmadi")
+    # Manfiy miqdor yakunlashda xom ashyoni oshiradi (quantity_change=-required)
+    if quantity <= 0:
+        return RedirectResponse(
+            url=f"/production/recipes/{recipe_id}?error=qty&detail=" + quote("Xom ashyo miqdori 0 dan katta bo'lishi kerak."),
+            status_code=303,
+        )
     item = RecipeItem(
         recipe_id=recipe_id,
         product_id=product_id,
@@ -3724,12 +3764,18 @@ async def edit_recipe_item(
     current_user: User = Depends(require_auth)
 ):
     """Retsept tarkibidagi qatorni tahrirlash"""
+    from urllib.parse import quote
     item = db.query(RecipeItem).filter(
         RecipeItem.id == item_id,
         RecipeItem.recipe_id == recipe_id
     ).first()
     if not item:
         raise HTTPException(status_code=404, detail="Tarkib qatori topilmadi")
+    if quantity <= 0:
+        return RedirectResponse(
+            url=f"/production/recipes/{recipe_id}?error=qty&detail=" + quote("Xom ashyo miqdori 0 dan katta bo'lishi kerak."),
+            status_code=303,
+        )
     item.product_id = product_id
     item.quantity = quantity
     db.commit()
@@ -3927,8 +3973,14 @@ async def create_production(
     current_user: User = Depends(get_current_user)
 ):
     """Ishlab chiqarish yaratish: 1-ombor (xom ashyo) dan oladi, 2-ombor (yarim tayyor) ga yozadi."""
+    from urllib.parse import quote
     if output_warehouse_id is None:
         output_warehouse_id = warehouse_id
+    if quantity <= 0:
+        return RedirectResponse(
+            url="/production/orders?error=qty&detail=" + quote("Ishlab chiqarish miqdori 0 dan katta bo'lishi kerak."),
+            status_code=303,
+        )
     from sqlalchemy.orm import joinedload
     recipe = db.query(Recipe).options(joinedload(Recipe.stages)).filter(Recipe.id == recipe_id).first()
     if not recipe:
@@ -3983,6 +4035,13 @@ def _do_complete_production_stock(db, production, recipe):
         items_to_use = [(pi.product_id, pi.quantity) for pi in production.production_items]
     else:
         items_to_use = [(item.product_id, item.quantity * production.quantity) for item in recipe.items]
+    # Manfiy required: stock.quantity < required o'tadi, quantity_change=-required omborga qo'shadi
+    for product_id, required in items_to_use:
+        if (required or 0) < 0:
+            product_name = db.query(Product).filter(Product.id == product_id).first()
+            name = product_name.name if product_name else f"#{product_id}"
+            msg = quote(f"Noto'g'ri xom ashyo miqdori: {name} ({required})", safe="")
+            return RedirectResponse(url=f"/production/orders?error=insufficient_stock&detail={msg}", status_code=303)
     for product_id, required in items_to_use:
         stock = db.query(Stock).filter(
             Stock.warehouse_id == production.warehouse_id,
