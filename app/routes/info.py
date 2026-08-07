@@ -569,16 +569,17 @@ async def info_cash_add(
 async def info_cash_edit(
     cash_id: int,
     name: str = Form(...),
-    balance: float = Form(0),
     department_id: int = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
+    """Kassani tahrirlash — nom/bo'lim. Balans faqat qoldiqlar hujjati orqali o'zgaradi."""
     cash = db.query(CashRegister).filter(CashRegister.id == cash_id).first()
     if not cash:
         raise HTTPException(status_code=404, detail="Kassa topilmadi")
     cash.name = name
-    cash.balance = balance
+    # Do not accept balance here: absolute overwrite wiped ledgers with no CashBalanceDoc/Payment trail.
+    # Opening balance remains settable only on create; later changes use /qoldiqlar/kassa/hujjat.
     cash.department_id = department_id if department_id else None
     db.commit()
     return RedirectResponse(url="/info/cash", status_code=303)
