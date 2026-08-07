@@ -148,10 +148,9 @@
                         <small class="text-muted">Kassa qaysi bo'limga tegishli ekanligini belgilang</small>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Balans</label>
-                        <input type="number" class="form-control" name="balance" id="edit_balance" step="0.01">
-                        <small class="text-danger">⚠️ Diqqat: Balansni o'zgartirish moliyaviy hisobotlarga ta'sir
-                            qiladi!</small>
+                        <label class="form-label">Joriy balans</label>
+                        <input type="number" class="form-control" id="edit_balance" step="0.01" readonly disabled>
+                        <small class="text-muted">Balansni o'zgartirish uchun <a href="/qoldiqlar/kassa/hujjat/new">Qoldiqlar → Kassa hujjati</a> dan foydalaning.</small>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -213,6 +212,7 @@
         document.getElementById('edit_name').value = name;
         document.getElementById('edit_balance').value = balance;
         document.getElementById('edit_department_id').value = departmentId || '';
+        // Balance is display-only; server ignores any crafted balance on edit.
         new bootstrap.Modal(document.getElementById('editCashModal')).show();
     }
 
