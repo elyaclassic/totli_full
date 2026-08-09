@@ -1851,11 +1851,35 @@ async def warehouse_stock_zero(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """Qoldiqni nolga tushirish (faqat admin). Ro'yxatdan o'sha qator yo'qoladi."""
+    """Qoldiqni nolga tushirish (faqat admin). Ro'yxatdan o'sha qator yo'qoladi.
+
+    Must go through create_stock_movement so the ledger retains an audit trail.
+    Do not assign Stock.quantity=0 directly — that silently wipes inventory.
+    """
     stock = db.query(Stock).filter(Stock.id == stock_id).first()
     if not stock:
         raise HTTPException(status_code=404, detail="Qoldiq topilmadi")
-    stock.quantity = 0
+    qty = float(stock.quantity or 0)
+    if qty != 0:
+        # create_stock_movement applies the delta (and clamps at 0).
+        create_stock_movement(
+            db=db,
+            warehouse_id=stock.warehouse_id,
+            product_id=stock.product_id,
+            quantity_change=-qty,
+            operation_type="adjustment",
+            document_type="StockZero",
+            document_id=stock.id,
+            document_number=f"ZERO-{stock.id}",
+            user_id=current_user.id if current_user else None,
+            note=f"Qoldiqni nolga tushirish (stock #{stock.id})",
+        )
+        log_audit(
+            current_user.id if current_user else None,
+            current_user.username if current_user else None,
+            "stock_zero",
+            f"stock#{stock.id}:{-qty}",
+        )
     db.commit()
     return RedirectResponse(url="/warehouse", status_code=303)
 
