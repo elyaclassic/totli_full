@@ -3677,9 +3677,18 @@ async def add_recipe(
     product_id: int = Form(...),
     output_quantity: float = Form(1),
     description: str = Form(""),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_auth),
 ):
     """Yangi retsept qo'shish"""
+    from urllib.parse import quote
+    if not current_user:
+        return RedirectResponse(url="/login", status_code=303)
+    if output_quantity <= 0:
+        return RedirectResponse(
+            url="/production/recipes?error=qty&detail=" + quote("Chiqish miqdori 0 dan katta bo'lishi kerak."),
+            status_code=303,
+        )
     recipe = Recipe(
         name=name,
         product_id=product_id,
@@ -3980,9 +3989,23 @@ def _do_complete_production_stock(db, production, recipe):
     """Xom ashyo ayirish, tayyor mahsulot qo'shish. RedirectResponse qaytaradi xato bo'lsa."""
     from urllib.parse import quote
     if production.production_items:
-        items_to_use = [(pi.product_id, pi.quantity) for pi in production.production_items]
+        items_to_use = [(pi.product_id, float(pi.quantity or 0)) for pi in production.production_items]
     else:
-        items_to_use = [(item.product_id, item.quantity * production.quantity) for item in recipe.items]
+        items_to_use = [
+            (item.product_id, float(item.quantity or 0) * float(production.quantity or 0))
+            for item in recipe.items
+        ]
+    # Bo'sh retsept yoki barcha xom ashyo ≤0 — tayyor mahsulotni "yaratib" inventar soxtalashtiriladi
+    items_to_use = [(pid, req) for pid, req in items_to_use if req > 0]
+    if not items_to_use:
+        msg = quote("Xom ashyo yo'q yoki miqdor 0 — ishlab chiqarishni yakunlab bo'lmaydi", safe="")
+        return RedirectResponse(url=f"/production/orders?error=no_materials&detail={msg}", status_code=303)
+    # None → 1 (eski default); aniq 0 yoki manfiy chiqish — invent/yemirishni bloklash
+    recipe_output = recipe.output_quantity if recipe.output_quantity is not None else 1
+    output_units = float(production.quantity or 0) * float(recipe_output)
+    if output_units <= 0:
+        msg = quote("Chiqish miqdori 0 dan katta bo'lishi kerak", safe="")
+        return RedirectResponse(url=f"/production/orders?error=qty&detail={msg}", status_code=303)
     for product_id, required in items_to_use:
         stock = db.query(Stock).filter(
             Stock.warehouse_id == production.warehouse_id,
@@ -4019,7 +4042,6 @@ def _do_complete_production_stock(db, production, recipe):
         product = db.query(Product).filter(Product.id == product_id).first()
         if product and getattr(product, "purchase_price", None) is not None:
             total_material_cost += required * (product.purchase_price or 0)
-    output_units = production.quantity * (recipe.output_quantity or 1)
     cost_per_unit = (total_material_cost / output_units) if output_units > 0 else 0
     out_wh_id = production.output_warehouse_id if production.output_warehouse_id else production.warehouse_id
     
