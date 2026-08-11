@@ -2532,6 +2532,9 @@ async def purchase_create(
             continue
         if qty <= 0:
             continue
+        # Manfiy narx AP/tannarxni buzadi (partner.balance -= total)
+        if pr < 0:
+            raise HTTPException(status_code=400, detail="Mahsulot narxi manfiy bo'lishi mumkin emas.")
         try:
             items_data.append((int(pid), qty, pr))
         except ValueError:
@@ -2627,9 +2630,17 @@ async def purchase_add_item(
     db: Session = Depends(get_db)
 ):
     """Tovar kirimiga mahsulot qo'shish"""
+    from urllib.parse import quote
     purchase = db.query(Purchase).filter(Purchase.id == purchase_id).first()
     if not purchase:
         raise HTTPException(status_code=404, detail="Tovar kirimi topilmadi")
+    # Manfiy narx: total manfiy bo'ladi, tasdiqlashda partner.balance -= total
+    # ta'minotchi qarzini kamaytiradi / kredit invent qiladi; tannarx ham buziladi.
+    if price < 0:
+        return RedirectResponse(
+            url=f"/purchases/edit/{purchase_id}?error=item&detail=" + quote("Narx manfiy bo'lishi mumkin emas."),
+            status_code=303,
+        )
     
     total = quantity * price
     item = PurchaseItem(
@@ -2732,6 +2743,12 @@ async def purchase_confirm(purchase_id: int, db: Session = Depends(get_db), curr
     
     if not purchase.items:
         raise HTTPException(status_code=400, detail="Tasdiqlash uchun kamida bitta mahsulot qo'shing. Kirimda mahsulotlar bo'lishi kerak.")
+    for item in purchase.items:
+        if (item.price or 0) < 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Kirim qatorlarida narx manfiy bo'lishi mumkin emas (ta'minotchi balansi va tannarx buziladi).",
+            )
     
     total_expenses = purchase.total_expenses or 0
     items_total = purchase.total or 0
