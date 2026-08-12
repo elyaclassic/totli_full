@@ -123,6 +123,41 @@ async def report_stock(request: Request, db: Session = Depends(get_db), current_
     })
 
 
+def _stock_import_column_map(ws):
+    """
+    Locate header + column indices for stock import.
+    Andoza/import layout: Ombor, Mahsulot, Qoldiq [, Tannarx, Sotuv].
+    Legacy report export put Kod before Qoldiq — detect by header names so
+    re-importing an export cannot treat barcodes as quantities.
+    Returns (data_start_row_1based, wh_i, prod_i, qty_i, tannarx_i|None, sotuv_i|None).
+    """
+    default = (2, 0, 1, 2, 3, 4)
+    for r in range(1, 6):
+        raw = next(ws.iter_rows(min_row=r, max_row=r, values_only=True), None)
+        if not raw:
+            continue
+        headers = [str(c or "").strip().lower() for c in raw]
+        if not any(headers):
+            continue
+        qty_i = next((i for i, h in enumerate(headers) if "qoldiq" in h), None)
+        wh_i = next((i for i, h in enumerate(headers) if "ombor" in h), None)
+        if qty_i is None or wh_i is None:
+            continue
+        prod_i = next(
+            (i for i, h in enumerate(headers) if "mahsulot" in h or "tovar" in h or h == "nomi"),
+            None,
+        )
+        if prod_i is None:
+            prod_i = wh_i + 1 if wh_i + 1 != qty_i else wh_i + 2
+        tannarx_i = next((i for i, h in enumerate(headers) if "tannarx" in h), None)
+        if tannarx_i is None:
+            # Legacy export labeled purchase price as "Narx" (not min stock / summa).
+            tannarx_i = next((i for i, h in enumerate(headers) if h == "narx"), None)
+        sotuv_i = next((i for i, h in enumerate(headers) if "sotuv" in h), None)
+        return (r + 1, wh_i, prod_i, qty_i, tannarx_i, sotuv_i)
+    return default
+
+
 @router.get("/stock/export")
 async def report_stock_export(db: Session = Depends(get_db), current_user: User = Depends(require_auth)):
     if not current_user:
@@ -141,23 +176,37 @@ async def report_stock_export(db: Session = Depends(get_db), current_user: User 
     ws["A1"] = "Qoldiq hisoboti"
     ws["A1"].font = Font(bold=True, size=14)
     ws["A2"] = datetime.now().strftime("%d.%m.%Y %H:%M")
-    ws.append(["Ombor", "Mahsulot", "Kod", "Qoldiq", "Minimal", "Narx", "Summa"])
-    for c in range(1, 8):
+    # First five columns match /reports/stock/import (and andoza) so Excel→Import
+    # cannot treat Kod/barcode as Qoldiq. Extra report columns follow.
+    ws.append([
+        "Ombor",
+        "Mahsulot",
+        "Qoldiq",
+        "Tannarx (so'm)",
+        "Sotuv narxi (so'm)",
+        "Kod",
+        "Minimal",
+        "Summa",
+    ])
+    for c in range(1, 9):
         ws.cell(row=4, column=c).fill = header_fill
         ws.cell(row=4, column=c).font = Font(bold=True, color="FFFFFF")
     for s in stocks:
         p = s.product
         wh = s.warehouse
         min_s = getattr(p, "min_stock", 0) or 0
-        price = getattr(p, "purchase_price", 0) or 0
+        purchase = getattr(p, "purchase_price", 0) or 0
+        sale = getattr(p, "sale_price", 0) or 0
+        qty = float(s.quantity or 0)
         ws.append([
             wh.name if wh else "",
             p.name if p else "",
+            qty,
+            float(purchase),
+            float(sale),
             (p.barcode or p.code or "") if p else "",
-            float(s.quantity or 0),
             float(min_s),
-            float(price),
-            float((s.quantity or 0) * price),
+            float(qty * purchase),
         ])
     buf = io.BytesIO()
     wb.save(buf)
@@ -202,30 +251,40 @@ async def report_stock_import(
     contents = await file.read()
     wb = load_workbook(io.BytesIO(contents))
     ws = wb.active
-    rows = list(ws.iter_rows(min_row=2, values_only=True))
+    data_start, wh_i, prod_i, qty_i, tannarx_i, sotuv_i = _stock_import_column_map(ws)
+    rows = list(ws.iter_rows(min_row=data_start, values_only=True))
     for row in rows:
-        if not row or (row[0] is None or row[0] == "") or (row[1] is None or row[1] == ""):
+        if not row:
             continue
-        wh_key = str(row[0] or "").strip()
-        raw_prod = row[1]
+        wh_cell = row[wh_i] if len(row) > wh_i else None
+        prod_cell = row[prod_i] if len(row) > prod_i else None
+        if wh_cell is None or wh_cell == "" or prod_cell is None or prod_cell == "":
+            continue
+        wh_key = str(wh_cell or "").strip()
+        raw_prod = prod_cell
         if raw_prod is not None and isinstance(raw_prod, (int, float)) and float(raw_prod) == int(float(raw_prod)):
             product_key = str(int(float(raw_prod)))
         else:
             product_key = str(raw_prod or "").strip()
+        raw_qty = row[qty_i] if len(row) > qty_i else None
+        if raw_qty is None or raw_qty == "":
+            continue
         try:
-            qty = float(row[2]) if row[2] is not None and row[2] != "" else 0
+            qty = float(raw_qty)
         except (TypeError, ValueError):
-            qty = 0
+            continue
+        if qty < 0:
+            continue
         tannarx = None
         sotuv_narxi = None
-        if len(row) > 3 and row[3] is not None and row[3] != "":
+        if tannarx_i is not None and len(row) > tannarx_i and row[tannarx_i] is not None and row[tannarx_i] != "":
             try:
-                tannarx = float(row[3])
+                tannarx = float(row[tannarx_i])
             except (TypeError, ValueError):
                 pass
-        if len(row) > 4 and row[4] is not None and row[4] != "":
+        if sotuv_i is not None and len(row) > sotuv_i and row[sotuv_i] is not None and row[sotuv_i] != "":
             try:
-                sotuv_narxi = float(row[4])
+                sotuv_narxi = float(row[sotuv_i])
             except (TypeError, ValueError):
                 pass
         wh = db.query(Warehouse).filter(
@@ -250,9 +309,10 @@ async def report_stock_import(
         else:
             stock = Stock(warehouse_id=wh.id, product_id=product.id, quantity=qty)
             db.add(stock)
-        if tannarx is not None:
+        # Only apply positive prices (blank/0 must not wipe catalog costs like warehouse import).
+        if tannarx is not None and tannarx > 0:
             product.purchase_price = tannarx
-        if sotuv_narxi is not None:
+        if sotuv_narxi is not None and sotuv_narxi > 0:
             product.sale_price = sotuv_narxi
         db.commit()
     return RedirectResponse(url="/reports/stock", status_code=303)
