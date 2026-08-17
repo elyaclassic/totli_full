@@ -1189,7 +1189,7 @@ async def qoldiqlar_tovar_hujjat_tasdiqlash(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_auth),
 ):
-    """Hujjatni tasdiqlash — ombor qoldiqlariga qo'shiladi"""
+    """Hujjatni tasdiqlash — ombor qoldig'ini hujjatdagi abs. qiymatga keltirish"""
     doc = db.query(StockAdjustmentDoc).filter(StockAdjustmentDoc.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Hujjat topilmadi")
@@ -1199,34 +1199,22 @@ async def qoldiqlar_tovar_hujjat_tasdiqlash(
         raise HTTPException(status_code=400, detail="Kamida bitta qator bo'lishi kerak")
 
     for item in doc.items:
-        # Eski qoldiqni olish
+        # Eski qoldiqni olish. Hujjat qatori ABSOLYUT qoldiq (1C sanash), qo'shimcha emas.
+        # create_stock_movement o'zi Stock.quantity ni yangilaydi — oldin belgilab
+        # qo'yilsa delta ikki marta qo'llanadi.
         stock = db.query(Stock).filter(
             Stock.warehouse_id == item.warehouse_id,
             Stock.product_id == item.product_id,
         ).first()
         old_quantity = stock.quantity if stock else 0
-        
-        # Yangi qoldiqni hisoblash
-        new_quantity = item.quantity
+        new_quantity = item.quantity if item.quantity is not None else 0
         quantity_change = new_quantity - old_quantity
-        
-        if stock:
-            stock.quantity = new_quantity
-            stock.updated_at = datetime.now()
-        else:
-            db.add(Stock(
-                warehouse_id=item.warehouse_id,
-                product_id=item.product_id,
-                quantity=item.quantity,
-            ))
-        
-        # StockMovement yozuvini yaratish (adjustment)
         if quantity_change != 0:
             create_stock_movement(
                 db=db,
                 warehouse_id=item.warehouse_id,
                 product_id=item.product_id,
-                quantity_change=quantity_change,  # O'zgarish (+ yoki -)
+                quantity_change=quantity_change,
                 operation_type="adjustment",
                 document_type="StockAdjustmentDoc",
                 document_id=doc.id,
@@ -1246,22 +1234,48 @@ async def qoldiqlar_tovar_hujjat_revert(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """Tovar qoldiq hujjati tasdiqini bekor qilish (faqat admin) — ombor qoldig'ini kamaytirish"""
+    """Tovar qoldiq hujjati tasdiqini bekor qilish (faqat admin) — qo'llangan deltani teskari qilish"""
     doc = db.query(StockAdjustmentDoc).filter(StockAdjustmentDoc.id == doc_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Hujjat topilmadi")
     if doc.status != "confirmed":
         raise HTTPException(status_code=400, detail="Faqat tasdiqlangan hujjatning tasdiqini bekor qilish mumkin")
+    # Sanash hujjati qatori abs. qoldiq; revert item.quantity ni ayirmasligi kerak
+    # (100 tura, 100 ga tasdiq, revert → 0 bo'lib ketardi). Hujjat harakatlarining
+    # yig'indisini teskarilash keyingi savdo/o'tkazishni saqlab qoladi.
+    movements = (
+        db.query(StockMovement)
+        .filter(
+            StockMovement.document_type == "StockAdjustmentDoc",
+            StockMovement.document_id == doc.id,
+        )
+        .all()
+    )
+    applied_by_key = {}
+    for mov in movements:
+        key = (mov.warehouse_id, mov.product_id)
+        applied_by_key[key] = applied_by_key.get(key, 0.0) + (mov.quantity_change or 0)
+    seen = set()
     for item in doc.items:
-        stock = db.query(Stock).filter(
-            Stock.warehouse_id == item.warehouse_id,
-            Stock.product_id == item.product_id,
-        ).first()
-        if stock:
-            stock.quantity = (stock.quantity or 0) - item.quantity
-            if stock.quantity < 0:
-                stock.quantity = 0
-            stock.updated_at = datetime.now()
+        key = (item.warehouse_id, item.product_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        applied = applied_by_key.get(key, 0.0)
+        if applied == 0:
+            continue
+        create_stock_movement(
+            db=db,
+            warehouse_id=item.warehouse_id,
+            product_id=item.product_id,
+            quantity_change=-applied,
+            operation_type="adjustment",
+            document_type="StockAdjustmentDoc",
+            document_id=doc.id,
+            document_number=doc.number,
+            user_id=current_user.id if current_user else None,
+            note=f"Qoldiq tuzatish bekor: {doc.number}",
+        )
     doc.status = "draft"
     db.commit()
     return RedirectResponse(url=f"/qoldiqlar/tovar/hujjat/{doc_id}", status_code=303)
