@@ -201,7 +201,7 @@ async def executive_dashboard(request: Request, db: Session = Depends(get_db), c
     
     # Top 5 agentlar
     top_agents_query = db.query(
-        Agent.name,
+        Agent.full_name,
         func.sum(Order.total).label('total_sales'),
         func.count(Order.id).label('order_count')
     ).join(
@@ -209,13 +209,13 @@ async def executive_dashboard(request: Request, db: Session = Depends(get_db), c
     ).filter(
         func.date(Order.created_at) >= week_ago,
         Order.status == 'completed'
-    ).group_by(Agent.id, Agent.name).order_by(
+    ).group_by(Agent.id, Agent.full_name).order_by(
         func.sum(Order.total).desc()
     ).limit(5).all()
     
     top_agents = [
         {
-            'name': a.name,
+            'name': a.full_name,
             'sales': float(a.total_sales or 0),
             'orders': a.order_count
         }
@@ -548,9 +548,13 @@ async def agent_dashboard(request: Request, db: Session = Depends(get_db), curre
         AgentLocation.agent_id == agent.id
     ).order_by(AgentLocation.recorded_at.desc()).first()
     
+    if latest_location is not None:
+        location_text = f"{latest_location.latitude}, {latest_location.longitude}"
+    else:
+        location_text = agent.region or 'Noma\'lum'
     agent_info = {
         'name': agent.full_name,
-        'location': latest_location.address if latest_location and latest_location.address else agent.region or 'Noma\'lum'
+        'location': location_text
     }
     
     # Today's visits
@@ -1216,11 +1220,11 @@ async def delivery_dashboard(request: Request, db: Session = Depends(get_db), cu
         # Get latest location
         latest_location = db.query(DriverLocation).filter(
             DriverLocation.driver_id == driver.id
-        ).order_by(DriverLocation.timestamp.desc()).first()
+        ).order_by(DriverLocation.recorded_at.desc()).first()
         
         location_text = 'Noma\'lum'
-        if latest_location and latest_location.address:
-            location_text = latest_location.address[:30] + '...' if len(latest_location.address) > 30 else latest_location.address
+        if latest_location is not None:
+            location_text = f"{latest_location.latitude}, {latest_location.longitude}"
         
         status_color = 'success' if driver.is_active else 'secondary'
         status_text = 'Faol' if driver.is_active else 'Faol emas'
