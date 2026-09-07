@@ -4223,10 +4223,18 @@ async def delete_production(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """Ishlab chiqarish buyurtmasini o'chirish — faqat admin."""
+    """Ishlab chiqarish buyurtmasini o'chirish — faqat admin. Yakunlangan buyurtmani avval tasdiqdan qaytarish kerak."""
+    from urllib.parse import quote
     production = db.query(Production).filter(Production.id == prod_id).first()
     if not production:
         raise HTTPException(status_code=404, detail="Buyurtma topilmadi")
+    if production.status == "completed":
+        return RedirectResponse(
+            url="/production/orders?error=delete&detail=" + quote(
+                "Yakunlangan buyurtmani to'g'ridan-to'g'ri o'chirib bo'lmaydi. Avval tasdiqni bekor qiling."
+            ),
+            status_code=303,
+        )
     db.delete(production)
     db.commit()
     return RedirectResponse(url="/production/orders", status_code=303)
