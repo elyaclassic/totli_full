@@ -191,7 +191,7 @@
                         {% else %}
                         <span class="text-muted">-</span>
                         {% endif %}
-                        {% if current_user and current_user.role == 'admin' %}
+                        {% if current_user and current_user.role == 'admin' and prod.status != 'completed' %}
                         <form method="POST" action="/production/{{ prod.id }}/delete" style="display: inline;" class="ms-1"
                             onsubmit="return confirm('Buyurtmani butunlay o\'chirishni xohlaysizmi? Bu amalni qaytarib bo\'lmaydi.');">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token_from_request(request) }}">
