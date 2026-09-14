@@ -3655,6 +3655,7 @@ async def production_recipe_detail(request: Request, recipe_id: int, db: Session
         raise HTTPException(status_code=404, detail="Retsept topilmadi")
     
     materials = db.query(Product).filter(Product.type.in_(["hom_ashyo", "yarim_tayyor", "tayyor"])).all()
+    warehouses = db.query(Warehouse).all()
     try:
         recipe_stages = sorted(recipe.stages, key=lambda s: s.stage_number) if recipe.stages else []
     except Exception:
@@ -3665,6 +3666,7 @@ async def production_recipe_detail(request: Request, recipe_id: int, db: Session
         "current_user": current_user,
         "recipe": recipe,
         "materials": materials,
+        "warehouses": warehouses,
         "recipe_stages": recipe_stages,
         "page_title": f"Retsept: {recipe.name}"
     })
@@ -3927,8 +3929,15 @@ async def create_production(
     current_user: User = Depends(get_current_user)
 ):
     """Ishlab chiqarish yaratish: 1-ombor (xom ashyo) dan oladi, 2-ombor (yarim tayyor) ga yozadi."""
+    src_wh = db.query(Warehouse).filter(Warehouse.id == warehouse_id).first()
+    if not src_wh:
+        raise HTTPException(status_code=400, detail="Xom ashyo ombori topilmadi")
     if output_warehouse_id is None:
         output_warehouse_id = warehouse_id
+    else:
+        out_wh = db.query(Warehouse).filter(Warehouse.id == output_warehouse_id).first()
+        if not out_wh:
+            raise HTTPException(status_code=400, detail="Chiqish ombori topilmadi")
     from sqlalchemy.orm import joinedload
     recipe = db.query(Recipe).options(joinedload(Recipe.stages)).filter(Recipe.id == recipe_id).first()
     if not recipe:

@@ -445,7 +445,28 @@
                 </div>
                 <div class="modal-body">
                     <input type="hidden" name="recipe_id" value="{{ recipe.id }}">
-                    <input type="hidden" name="warehouse_id" value="1">
+                    <div class="mb-3">
+                        <label class="form-label">1-ombor: Xom ashyo ombori <span class="text-danger">*</span></label>
+                        {% set wh_list = warehouses or [] %}
+                        {% if not wh_list %}
+                        <div class="alert alert-warning py-2 mb-0"><small><i class="bi bi-exclamation-triangle"></i> <a href="/info/warehouses">Ma'lumotnomalar → Omborlar</a> orqali ombor qo'shing.</small></div>
+                        {% endif %}
+                        <select class="form-select" name="warehouse_id" required title="Xom ashyo shu ombordan olinadi" {% if not wh_list %}disabled{% endif %}>
+                            <option value="">Tanlang...</option>
+                            {% for wh in wh_list %}
+                            <option value="{{ wh.id }}">{{ wh.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">2-ombor: Yarim tayyor mahsulot ombori <span class="text-danger">*</span></label>
+                        <select class="form-select" name="output_warehouse_id" required title="Tayyor mahsulot shu omborga yoziladi" {% if not wh_list %}disabled{% endif %}>
+                            <option value="">Tanlang...</option>
+                            {% for wh in wh_list %}
+                            <option value="{{ wh.id }}">{{ wh.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
                     <div class="mb-3">
                         {% set _unit = recipe.product.unit.code if recipe.product and recipe.product.unit else 'kg' %}
                         <label class="form-label" for="produce_quantity">Miqdor ({{ _unit }})</label>
