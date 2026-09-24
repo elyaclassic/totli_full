@@ -4065,6 +4065,29 @@ def _recipe_max_stage(recipe) -> int:
     return max(s.stage_number for s in recipe.stages)
 
 
+def _claim_production_for_stock(db, production) -> bool:
+    """Draft yoki jarayondagi buyurtmani ombor harakati uchun band qilish.
+
+    Ikkinchi tasdiqlash (sahifani yangilab POST ni qayta yuborish yoki ikki marta bosish)
+    qoldiqni qayta yozmasligi uchun holatni bir tranzaksiyada `completing` ga o'tkazadi.
+    Muvaffaqiyatsiz ombor harakatida chaqiruvchi rollback qilishi kerak.
+    """
+    if production.status not in ("draft", "in_progress"):
+        return False
+    claimed = (
+        db.query(Production)
+        .filter(
+            Production.id == production.id,
+            Production.status.in_(("draft", "in_progress")),
+        )
+        .update({Production.status: "completing"}, synchronize_session=False)
+    )
+    if not claimed:
+        return False
+    production.status = "completing"
+    return True
+
+
 @app.post("/production/{prod_id}/complete-stage")
 async def complete_production_stage(
     prod_id: int,
@@ -4096,8 +4119,11 @@ async def complete_production_stage(
     current = getattr(production, "current_stage", None) or 1
     # Eski buyurtma 4 bosqichda qolgan, retsept endi 2 bosqich — bosqichni bosganda darhol yakunlash
     if current > max_stage:
+        if not _claim_production_for_stock(db, production):
+            return RedirectResponse(url="/production/orders", status_code=303)
         err = _do_complete_production_stock(db, production, recipe)
         if err:
+            db.rollback()
             return err
         production.status = "completed"
         production.current_stage = max_stage
@@ -4125,8 +4151,11 @@ async def complete_production_stage(
         production.status = "in_progress"
         db.commit()
         return RedirectResponse(url="/production/orders", status_code=303)
+    if not _claim_production_for_stock(db, production):
+        return RedirectResponse(url="/production/orders", status_code=303)
     err = _do_complete_production_stock(db, production, recipe)
     if err:
+        db.rollback()
         return err
     production.status = "completed"
     production.current_stage = max_stage
@@ -4144,8 +4173,11 @@ async def complete_production(prod_id: int, db: Session = Depends(get_db), curre
     recipe = db.query(Recipe).filter(Recipe.id == production.recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="Retsept topilmadi")
+    if not _claim_production_for_stock(db, production):
+        return RedirectResponse(url="/production/orders", status_code=303)
     err = _do_complete_production_stock(db, production, recipe)
     if err:
+        db.rollback()
         return err
     production.status = "completed"
     production.current_stage = _recipe_max_stage(recipe)
