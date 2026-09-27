@@ -43,6 +43,7 @@ from app.utils.auth import (
 )
 from app.utils.audit_log import log_audit
 from app.utils.notifications import check_low_stock_and_notify
+from app.utils.doc_numbers import set_unique_doc_number
 from app.deps import get_current_user, require_auth, require_admin
 from app.core import templates
 from app.routes import auth as auth_routes
@@ -536,19 +537,15 @@ async def qoldiqlar_kassa_hujjat_create(
         return RedirectResponse(url="/qoldiqlar/kassa/hujjat/new", status_code=303)
 
     today = datetime.now()
-    count = db.query(CashBalanceDoc).filter(
-        CashBalanceDoc.date >= today.replace(hour=0, minute=0, second=0)
-    ).count()
-    number = f"KLD-{today.strftime('%Y%m%d')}-{str(count + 1).zfill(4)}"
 
     doc = CashBalanceDoc(
-        number=number,
+        number="",
         date=today,
         user_id=current_user.id if current_user else None,
         status="draft",
     )
     db.add(doc)
-    db.flush()
+    set_unique_doc_number(db, doc, CashBalanceDoc, "KLD", when=today)
     for cid, bal in items_data:
         db.add(CashBalanceDocItem(doc_id=doc.id, cash_register_id=cid, balance=bal))
     db.commit()
@@ -685,19 +682,15 @@ async def qoldiqlar_kontragent_hujjat_create(
         return RedirectResponse(url="/qoldiqlar/kontragent/hujjat/new", status_code=303)
 
     today = datetime.now()
-    count = db.query(PartnerBalanceDoc).filter(
-        PartnerBalanceDoc.date >= today.replace(hour=0, minute=0, second=0)
-    ).count()
-    number = f"KNT-{today.strftime('%Y%m%d')}-{str(count + 1).zfill(4)}"
 
     doc = PartnerBalanceDoc(
-        number=number,
+        number="",
         date=today,
         user_id=current_user.id if current_user else None,
         status="draft",
     )
     db.add(doc)
-    db.flush()
+    set_unique_doc_number(db, doc, PartnerBalanceDoc, "KNT", when=today)
     for pid, bal in items_data:
         db.add(PartnerBalanceDocItem(doc_id=doc.id, partner_id=pid, balance=bal))
     db.commit()
@@ -964,16 +957,11 @@ async def qoldiqlar_tovar_hujjat_create(
             today = datetime.now()
     else:
         today = datetime.now()
-    count = db.query(StockAdjustmentDoc).filter(
-        StockAdjustmentDoc.date >= today.replace(hour=0, minute=0, second=0)
-    ).count()
-    number = f"QLD-{today.strftime('%Y%m%d')}-{str(count + 1).zfill(4)}"
-
     total_tannarx = sum(qty * cp for _, _, qty, cp, _ in items_data)
     total_sotuv = sum(qty * sp for _, _, qty, _, sp in items_data)
 
     doc = StockAdjustmentDoc(
-        number=number,
+        number="",
         date=today,
         user_id=current_user.id if current_user else None,
         status="draft",
@@ -981,7 +969,7 @@ async def qoldiqlar_tovar_hujjat_create(
         total_sotuv=total_sotuv,
     )
     db.add(doc)
-    db.flush()
+    set_unique_doc_number(db, doc, StockAdjustmentDoc, "QLD", when=today)
 
     for pid, wid, qty, cp, sp in items_data:
         db.add(StockAdjustmentDocItem(
@@ -1063,14 +1051,10 @@ async def qoldiqlar_tovar_import_excel(
                 status_code=303,
             )
         today = datetime.now()
-        count = db.query(StockAdjustmentDoc).filter(
-            StockAdjustmentDoc.date >= today.replace(hour=0, minute=0, second=0)
-        ).count()
-        number = f"QLD-{today.strftime('%Y%m%d')}-{str(count + 1).zfill(4)}"
         total_tannarx = sum(qty * cp for _, _, qty, cp, _ in items_data)
         total_sotuv = sum(qty * sp for _, _, qty, _, sp in items_data)
         doc = StockAdjustmentDoc(
-            number=number,
+            number="",
             date=today,
             user_id=current_user.id if current_user else None,
             status="draft",
@@ -1078,7 +1062,7 @@ async def qoldiqlar_tovar_import_excel(
             total_sotuv=total_sotuv,
         )
         db.add(doc)
-        db.flush()
+        set_unique_doc_number(db, doc, StockAdjustmentDoc, "QLD", when=today)
         for pid, wid, qty, cp, sp in items_data:
             db.add(StockAdjustmentDocItem(
                 doc_id=doc.id,
@@ -2012,14 +1996,10 @@ async def warehouse_import(
         
         # Bitta hujjat yaratish
         today = datetime.now()
-        count = db.query(StockAdjustmentDoc).filter(
-            StockAdjustmentDoc.date >= today.replace(hour=0, minute=0, second=0)
-        ).count()
-        number = f"QLD-{today.strftime('%Y%m%d')}-{str(count + 1).zfill(4)}"
         total_tannarx = sum(qty * cp for _, _, qty, cp, _ in items_data)
         total_sotuv = sum(qty * sp for _, _, qty, _, sp in items_data)
         doc = StockAdjustmentDoc(
-            number=number,
+            number="",
             date=today,
             user_id=current_user.id if current_user else None,
             status="draft",  # Qoralama holatida yaratiladi, keyin tasdiqlash mumkin
@@ -2027,7 +2007,7 @@ async def warehouse_import(
             total_sotuv=total_sotuv,
         )
         db.add(doc)
-        db.flush()
+        set_unique_doc_number(db, doc, StockAdjustmentDoc, "QLD", when=today)
         
         # Barcha mahsulotlarni hujjatga qo'shish
         for pid, wid, qty, cp, sp in items_data:
@@ -2206,12 +2186,8 @@ async def warehouse_transfer_create(
         return RedirectResponse(url="/warehouse/transfers/new?error=" + quote("Qayerdan va qayerga bir xil bo'lmasin."), status_code=303)
     form = await request.form()
     today = datetime.now()
-    count = db.query(WarehouseTransfer).filter(
-        WarehouseTransfer.date >= today.replace(hour=0, minute=0, second=0)
-    ).count()
-    number = f"OT-{today.strftime('%Y%m%d')}-{str(count + 1).zfill(4)}"
     transfer = WarehouseTransfer(
-        number=number,
+        number="",
         from_warehouse_id=from_warehouse_id,
         to_warehouse_id=to_warehouse_id,
         status="draft",
@@ -2219,6 +2195,7 @@ async def warehouse_transfer_create(
         note=note or None
     )
     db.add(transfer)
+    set_unique_doc_number(db, transfer, WarehouseTransfer, "OT", when=today)
     db.commit()
     db.refresh(transfer)
     for key, value in form.items():
@@ -2541,10 +2518,6 @@ async def purchase_create(
         raise HTTPException(status_code=400, detail="Kamida bitta mahsulot qo'shing (mahsulot, miqdor va narx).")
 
     today = datetime.now()
-    count = db.query(Purchase).filter(
-        Purchase.date >= today.replace(hour=0, minute=0, second=0)
-    ).count()
-    number = f"P-{today.strftime('%Y%m%d')}-{str(count + 1).zfill(4)}"
 
     total = sum(qty * pr for _, qty, pr in items_data)
     total_expenses = 0
@@ -2559,7 +2532,7 @@ async def purchase_create(
             total_expenses += amt
 
     purchase = Purchase(
-        number=number,
+        number="",
         partner_id=partner_id,
         warehouse_id=warehouse_id,
         total=total,
@@ -2567,7 +2540,7 @@ async def purchase_create(
         status="draft",
     )
     db.add(purchase)
-    db.flush()
+    set_unique_doc_number(db, purchase, Purchase, "P", when=today)
 
     for pid, qty, pr in items_data:
         item = PurchaseItem(
@@ -3935,13 +3908,9 @@ async def create_production(
         raise HTTPException(status_code=404, detail="Retsept topilmadi")
     max_stage = _recipe_max_stage(recipe)
     today = datetime.now()
-    count = db.query(Production).filter(
-        Production.date >= today.replace(hour=0, minute=0, second=0)
-    ).count()
-    number = f"PR-{today.strftime('%Y%m%d')}-{str(count + 1).zfill(3)}"
 
     production = Production(
-        number=number,
+        number="",
         recipe_id=recipe_id,
         warehouse_id=warehouse_id,
         output_warehouse_id=output_warehouse_id,
@@ -3955,6 +3924,7 @@ async def create_production(
         operator_id=int(operator_id) if operator_id else None,
     )
     db.add(production)
+    set_unique_doc_number(db, production, Production, "PR", width=3, when=today)
     db.commit()
     db.refresh(production)
     # Faqat retseptdagi bosqichlar sonicha yozuv (1..max_stage)
