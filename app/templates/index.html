@@ -85,6 +85,53 @@
     </div>
 </div>
 
+<!-- Haftalik savdo va top mahsulotlar (faqat Admin / Glassy ko'rinishlarida) -->
+<div class="theme-new-only mb-4">
+    <div class="row g-4">
+        <div class="col-md-8">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>Haftalik savdo</span>
+                    <small class="text-muted">so'm, oxirgi 7 kun</small>
+                </div>
+                <div class="card-body">
+                    {% if week_sales %}
+                    <div class="week-chart">
+                        {% for d in week_sales %}
+                        <div class="wc-col" title="{{ d.label }}: {{ '{:,.0f}'.format(d.total) }} so'm">
+                            <span class="wc-val">{% if d.total >= 1000000 %}{{ '%.1f'|format(d.total / 1000000) }} mln{% elif d.total > 0 %}{{ '{:,.0f}'.format(d.total) }}{% endif %}</span>
+                            <div class="wc-track"><div class="wc-bar{% if d.is_today %} today{% endif %}" style="height: {{ [d.pct, 3]|max }}%"></div></div>
+                            <span class="wc-label">{{ d.label }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-muted mb-0">Ma'lumot yo'q</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>Top mahsulotlar</span>
+                    <small class="text-muted">30 kun</small>
+                </div>
+                <div class="card-body top-list">
+                    {% for p in top_products %}
+                    <div class="tl-row">
+                        <div class="tl-head"><span class="fw-semibold">{{ p.name }}</span><span class="text-muted">{{ '{:,.0f}'.format(p.qty) }}</span></div>
+                        <div class="tl-track"><div class="tl-fill" style="width: {{ p.pct }}%"></div></div>
+                    </div>
+                    {% else %}
+                    <p class="text-muted mb-0">Hozircha sotuvlar yo'q</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Tezkor tugmalar -->
 <div class="row g-4 mb-4">
     <div class="col-12">

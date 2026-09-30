@@ -4,11 +4,12 @@ Bosh sahifa va /info redirect.
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core import templates
 from app.models.database import (
-    get_db, User, Product, Partner, Order, Stock,
+    get_db, User, Product, Partner, Order, OrderItem, Stock,
     CashRegister, Employee,
 )
 from app.deps import get_current_user, require_auth
@@ -61,6 +62,9 @@ async def home(
                         birthday_today_count += 1
             except Exception:
                 pass
+        # Yangi temalar uchun: oxirgi 7 kunlik savdo va 30 kunlik top mahsulotlar
+        week_sales = _week_sales(db, today)
+        top_products = _top_products(db, today)
         overdue_cutoff = datetime.now() - timedelta(days=7)
         overdue_debts_count = db.query(Order).filter(
             Order.type == "sale",
@@ -77,6 +81,8 @@ async def home(
         low_stock_count = 0
         birthday_today_count = 0
         overdue_debts_count = 0
+        week_sales = []
+        top_products = []
         if not error:
             error = "Statistika yuklanmadi"
     return templates.TemplateResponse("index.html", {
@@ -89,7 +95,65 @@ async def home(
         "low_stock_count": low_stock_count,
         "birthday_today_count": birthday_today_count,
         "overdue_debts_count": overdue_debts_count,
+        "week_sales": week_sales,
+        "top_products": top_products,
     })
+
+
+_WEEKDAYS_UZ = ["Du", "Se", "Ch", "Pa", "Ju", "Sh", "Ya"]
+
+
+def _week_sales(db: Session, today):
+    """Oxirgi 7 kun (bugun bilan) bo'yicha kunlik sotuv summalari.
+    Har bir element: {label, total, pct, is_today}; pct — eng katta kunga nisbatan (0-100)."""
+    try:
+        start = datetime.combine(today - timedelta(days=6), datetime.min.time())
+        orders = db.query(Order.date, Order.total).filter(
+            Order.type == "sale", Order.date >= start
+        ).all()
+        totals = {today - timedelta(days=i): 0.0 for i in range(7)}
+        for d, total in orders:
+            if d is None:
+                continue
+            key = d.date() if hasattr(d, "date") else d
+            if key in totals:
+                totals[key] += float(total or 0)
+        peak = max(totals.values()) or 1
+        days = sorted(totals.keys())
+        return [
+            {
+                "label": _WEEKDAYS_UZ[d.weekday()],
+                "total": totals[d],
+                "pct": round(totals[d] / peak * 100),
+                "is_today": d == today,
+            }
+            for d in days
+        ]
+    except Exception:
+        return []
+
+
+def _top_products(db: Session, today, limit: int = 5):
+    """Oxirgi 30 kunda eng ko'p sotilgan mahsulotlar (miqdor bo'yicha)."""
+    try:
+        start = datetime.combine(today - timedelta(days=30), datetime.min.time())
+        rows = (
+            db.query(Product.name, func.sum(OrderItem.quantity).label("qty"))
+            .join(OrderItem, OrderItem.product_id == Product.id)
+            .join(Order, Order.id == OrderItem.order_id)
+            .filter(Order.type == "sale", Order.date >= start)
+            .group_by(Product.id, Product.name)
+            .order_by(func.sum(OrderItem.quantity).desc())
+            .limit(limit)
+            .all()
+        )
+        peak = max((float(r.qty or 0) for r in rows), default=0) or 1
+        return [
+            {"name": r.name, "qty": float(r.qty or 0), "pct": round(float(r.qty or 0) / peak * 100)}
+            for r in rows
+        ]
+    except Exception:
+        return []
 
 
 @router.get("/info")
