@@ -2894,6 +2894,92 @@ async def partners_list(
     })
 
 
+def _clean_str(value) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _clean_float(value) -> Optional[float]:
+    text = _clean_str(value)
+    if text is None:
+        return None
+    try:
+        return float(text.replace(",", ".").replace(" ", ""))
+    except ValueError:
+        return None
+
+
+def _clean_int(value) -> Optional[int]:
+    text = _clean_str(value)
+    if text is None:
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        return None
+
+
+def _clean_date(value):
+    text = _clean_str(value)
+    if text is None:
+        return None
+    try:
+        return datetime.strptime(text[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _apply_partner_profile(
+    partner,
+    *,
+    legal_name="",
+    contact_person="",
+    phone2="",
+    landmark="",
+    latitude="",
+    longitude="",
+    visit_day="",
+    category="",
+    region="",
+    customer_type="",
+    sales_channel="",
+    product_categories="",
+    inn="",
+    account="",
+    bank="",
+    mfo="",
+    oked="",
+    pinfl="",
+    contract_number="",
+    contract_date="",
+    notes="",
+):
+    """Formadagi rekvizit va tashrif maydonlarini saqlash. Balans va kodga tegmaydi."""
+    partner.legal_name = _clean_str(legal_name)
+    partner.contact_person = _clean_str(contact_person)
+    partner.phone2 = _clean_str(phone2)
+    partner.landmark = _clean_str(landmark)
+    partner.latitude = _clean_float(latitude)
+    partner.longitude = _clean_float(longitude)
+    partner.visit_day = _clean_int(visit_day)
+    partner.category = _clean_str(category)
+    partner.region = _clean_str(region)
+    partner.customer_type = _clean_str(customer_type)
+    partner.sales_channel = _clean_str(sales_channel)
+    partner.product_categories = _clean_str(product_categories)
+    partner.inn = _clean_str(inn)
+    partner.account = _clean_str(account)
+    partner.bank = _clean_str(bank)
+    partner.mfo = _clean_str(mfo)
+    partner.oked = _clean_str(oked)
+    partner.pinfl = _clean_str(pinfl)
+    partner.contract_number = _clean_str(contract_number)
+    partner.contract_date = _clean_date(contract_date)
+    partner.notes = _clean_str(notes)
+
+
 @app.post("/partners/add")
 async def partner_add(
     request: Request,
@@ -2903,6 +2989,27 @@ async def partner_add(
     address: str = Form(""),
     credit_limit: float = Form(0),
     discount_percent: float = Form(0),
+    legal_name: str = Form(""),
+    contact_person: str = Form(""),
+    phone2: str = Form(""),
+    landmark: str = Form(""),
+    latitude: str = Form(""),
+    longitude: str = Form(""),
+    visit_day: str = Form(""),
+    category: str = Form(""),
+    region: str = Form(""),
+    customer_type: str = Form(""),
+    sales_channel: str = Form(""),
+    product_categories: str = Form(""),
+    inn: str = Form(""),
+    account: str = Form(""),
+    bank: str = Form(""),
+    mfo: str = Form(""),
+    oked: str = Form(""),
+    pinfl: str = Form(""),
+    contract_number: str = Form(""),
+    contract_date: str = Form(""),
+    notes: str = Form(""),
     db: Session = Depends(get_db)
 ):
     """Kontragent qo'shish"""
@@ -2926,6 +3033,30 @@ async def partner_add(
         credit_limit=credit_limit,
         discount_percent=discount_percent
     )
+    _apply_partner_profile(
+        partner,
+        legal_name=legal_name,
+        contact_person=contact_person,
+        phone2=phone2,
+        landmark=landmark,
+        latitude=latitude,
+        longitude=longitude,
+        visit_day=visit_day,
+        category=category,
+        region=region,
+        customer_type=customer_type,
+        sales_channel=sales_channel,
+        product_categories=product_categories,
+        inn=inn,
+        account=account,
+        bank=bank,
+        mfo=mfo,
+        oked=oked,
+        pinfl=pinfl,
+        contract_number=contract_number,
+        contract_date=contract_date,
+        notes=notes,
+    )
     db.add(partner)
     db.commit()
     return RedirectResponse(url="/partners", status_code=303)
@@ -2940,6 +3071,27 @@ async def partner_edit(
     address: str = Form(""),
     credit_limit: float = Form(0),
     discount_percent: float = Form(0),
+    legal_name: str = Form(""),
+    contact_person: str = Form(""),
+    phone2: str = Form(""),
+    landmark: str = Form(""),
+    latitude: str = Form(""),
+    longitude: str = Form(""),
+    visit_day: str = Form(""),
+    category: str = Form(""),
+    region: str = Form(""),
+    customer_type: str = Form(""),
+    sales_channel: str = Form(""),
+    product_categories: str = Form(""),
+    inn: str = Form(""),
+    account: str = Form(""),
+    bank: str = Form(""),
+    mfo: str = Form(""),
+    oked: str = Form(""),
+    pinfl: str = Form(""),
+    contract_number: str = Form(""),
+    contract_date: str = Form(""),
+    notes: str = Form(""),
     db: Session = Depends(get_db)
 ):
     """Kontragentni tahrirlash"""
@@ -2971,6 +3123,30 @@ async def partner_edit(
     partner.address = address
     partner.credit_limit = credit_limit
     partner.discount_percent = discount_percent
+    _apply_partner_profile(
+        partner,
+        legal_name=legal_name,
+        contact_person=contact_person,
+        phone2=phone2,
+        landmark=landmark,
+        latitude=latitude,
+        longitude=longitude,
+        visit_day=visit_day,
+        category=category,
+        region=region,
+        customer_type=customer_type,
+        sales_channel=sales_channel,
+        product_categories=product_categories,
+        inn=inn,
+        account=account,
+        bank=bank,
+        mfo=mfo,
+        oked=oked,
+        pinfl=pinfl,
+        contract_number=contract_number,
+        contract_date=contract_date,
+        notes=notes,
+    )
     
     db.commit()
     return RedirectResponse(url="/partners", status_code=303)
