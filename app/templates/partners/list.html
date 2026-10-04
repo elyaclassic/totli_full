@@ -99,6 +99,27 @@
                                     data-partner-address="{{ partner.address or '' }}"
                                     data-partner-credit="{{ partner.credit_limit if partner.credit_limit is not none else 0 }}"
                                     data-partner-discount="{{ partner.discount_percent if partner.discount_percent is not none else 0 }}"
+                                    data-partner-legal-name="{{ partner.legal_name or '' }}"
+                                    data-partner-contact-person="{{ partner.contact_person or '' }}"
+                                    data-partner-phone2="{{ partner.phone2 or '' }}"
+                                    data-partner-landmark="{{ partner.landmark or '' }}"
+                                    data-partner-notes="{{ (partner.notes or '')|replace('\n', ' ') }}"
+                                    data-partner-visit-day="{{ partner.visit_day if partner.visit_day is not none else '' }}"
+                                    data-partner-category="{{ partner.category or '' }}"
+                                    data-partner-region="{{ partner.region or '' }}"
+                                    data-partner-latitude="{{ partner.latitude if partner.latitude is not none else '' }}"
+                                    data-partner-longitude="{{ partner.longitude if partner.longitude is not none else '' }}"
+                                    data-partner-customer-type="{{ partner.customer_type or '' }}"
+                                    data-partner-sales-channel="{{ partner.sales_channel or '' }}"
+                                    data-partner-product-categories="{{ partner.product_categories or '' }}"
+                                    data-partner-inn="{{ partner.inn or '' }}"
+                                    data-partner-account="{{ partner.account or '' }}"
+                                    data-partner-bank="{{ partner.bank or '' }}"
+                                    data-partner-mfo="{{ partner.mfo or '' }}"
+                                    data-partner-oked="{{ partner.oked or '' }}"
+                                    data-partner-pinfl="{{ partner.pinfl or '' }}"
+                                    data-partner-contract-number="{{ partner.contract_number or '' }}"
+                                    data-partner-contract-date="{{ partner.contract_date.strftime('%Y-%m-%d') if partner.contract_date and partner.contract_date.strftime is defined else (partner.contract_date or '') }}"
                                     onclick="editPartnerFromData(this)">
                                     <i class="bi bi-pencil"></i>
                                 </button>
@@ -772,9 +793,13 @@
         var address = btn.getAttribute('data-partner-address') || '';
         var credit = btn.getAttribute('data-partner-credit') || '0';
         var discount = btn.getAttribute('data-partner-discount') || '0';
-        editPartner(id, name, type, phone, address, parseFloat(credit) || 0, parseFloat(discount) || 0);
+        editPartner(id, name, type, phone, address, parseFloat(credit) || 0, parseFloat(discount) || 0, btn);
     }
-    function editPartner(id, name, type, phone, address, credit_limit, discount_percent) {
+    function _partnerAttr(btn, name) {
+        if (!btn) return '';
+        return btn.getAttribute(name) || '';
+    }
+    function editPartner(id, name, type, phone, address, credit_limit, discount_percent, btn) {
         document.getElementById('editPartnerForm').action = '/partners/edit/' + id;
         document.getElementById('edit_name').value = name || '';
         document.getElementById('edit_type').value = type || 'customer';
@@ -783,29 +808,30 @@
         document.getElementById('edit_credit_limit').value = credit_limit != null ? credit_limit : 0;
         document.getElementById('edit_discount_percent').value = discount_percent != null ? discount_percent : 0;
 
-        // Clear other fields (will be populated from backend if needed)
-        document.getElementById('edit_legal_name').value = '';
-        document.getElementById('edit_contact_person').value = '';
-        document.getElementById('edit_phone2').value = '';
-        document.getElementById('edit_landmark').value = '';
-        document.getElementById('edit_notes').value = '';
-        document.getElementById('edit_visit_day').value = '';
-        document.getElementById('edit_category').value = '';
-        document.getElementById('edit_region').value = '';
-        document.getElementById('editPartnerLocation').value = '';
-        document.getElementById('editPartnerLatitude').value = '';
-        document.getElementById('editPartnerLongitude').value = '';
-        document.getElementById('edit_customer_type').value = '';
-        document.getElementById('edit_sales_channel').value = '';
-        document.getElementById('edit_product_categories').value = '';
-        document.getElementById('edit_inn').value = '';
-        document.getElementById('edit_account').value = '';
-        document.getElementById('edit_bank').value = '';
-        document.getElementById('edit_mfo').value = '';
-        document.getElementById('edit_oked').value = '';
-        document.getElementById('edit_pinfl').value = '';
-        document.getElementById('edit_contract_number').value = '';
-        document.getElementById('edit_contract_date').value = '';
+        document.getElementById('edit_legal_name').value = _partnerAttr(btn, 'data-partner-legal-name');
+        document.getElementById('edit_contact_person').value = _partnerAttr(btn, 'data-partner-contact-person');
+        document.getElementById('edit_phone2').value = _partnerAttr(btn, 'data-partner-phone2');
+        document.getElementById('edit_landmark').value = _partnerAttr(btn, 'data-partner-landmark');
+        document.getElementById('edit_notes').value = _partnerAttr(btn, 'data-partner-notes');
+        document.getElementById('edit_visit_day').value = _partnerAttr(btn, 'data-partner-visit-day');
+        document.getElementById('edit_category').value = _partnerAttr(btn, 'data-partner-category');
+        document.getElementById('edit_region').value = _partnerAttr(btn, 'data-partner-region');
+        var lat = _partnerAttr(btn, 'data-partner-latitude');
+        var lng = _partnerAttr(btn, 'data-partner-longitude');
+        document.getElementById('editPartnerLatitude').value = lat;
+        document.getElementById('editPartnerLongitude').value = lng;
+        document.getElementById('editPartnerLocation').value = (lat && lng) ? (lat + ', ' + lng) : '';
+        document.getElementById('edit_customer_type').value = _partnerAttr(btn, 'data-partner-customer-type');
+        document.getElementById('edit_sales_channel').value = _partnerAttr(btn, 'data-partner-sales-channel');
+        document.getElementById('edit_product_categories').value = _partnerAttr(btn, 'data-partner-product-categories');
+        document.getElementById('edit_inn').value = _partnerAttr(btn, 'data-partner-inn');
+        document.getElementById('edit_account').value = _partnerAttr(btn, 'data-partner-account');
+        document.getElementById('edit_bank').value = _partnerAttr(btn, 'data-partner-bank');
+        document.getElementById('edit_mfo').value = _partnerAttr(btn, 'data-partner-mfo');
+        document.getElementById('edit_oked').value = _partnerAttr(btn, 'data-partner-oked');
+        document.getElementById('edit_pinfl').value = _partnerAttr(btn, 'data-partner-pinfl');
+        document.getElementById('edit_contract_number').value = _partnerAttr(btn, 'data-partner-contract-number');
+        document.getElementById('edit_contract_date').value = _partnerAttr(btn, 'data-partner-contract-date');
 
         updateEditPartnerRequired();
         var modal = new bootstrap.Modal(document.getElementById('editPartnerModal'));
