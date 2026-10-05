@@ -13,6 +13,8 @@ from app.core import templates
 from app.models.database import (
     get_db,
     User,
+    Agent,
+    Driver,
     Warehouse,
     Unit,
     Category,
@@ -29,6 +31,7 @@ from app.models.database import (
 )
 from app.deps import require_auth, require_admin
 from app.utils.auth import hash_password
+from app.utils.mobile_accounts import ensure_agent, ensure_driver
 
 router = APIRouter(prefix="/info", tags=["info"])
 
@@ -858,20 +861,38 @@ async def info_users_add(
     full_name: str = Form(...),
     role: str = Form("user"),
     is_active: bool = Form(True),
+    phone: str = Form(""),
+    pwa_phone: str = Form(""),
+    vehicle_number: str = Form(""),
+    vehicle_type: str = Form(""),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
     existing = db.query(User).filter(User.username == username).first()
     if existing:
         raise HTTPException(status_code=400, detail=f"'{username}' login bilan foydalanuvchi allaqachon mavjud!")
+    login_phone = (pwa_phone or phone or "").strip()
     user = User(
         username=username,
         password_hash=hash_password(password),
         full_name=full_name,
         role=role,
+        phone=login_phone or None,
         is_active=is_active,
     )
     db.add(user)
+    db.flush()
+    if role == "agent":
+        ensure_agent(db, full_name, login_phone, is_active=is_active)
+    elif role == "driver":
+        ensure_driver(
+            db,
+            full_name,
+            login_phone,
+            is_active=is_active,
+            vehicle_number=vehicle_number,
+            vehicle_type=vehicle_type,
+        )
     db.commit()
     return RedirectResponse(url="/info/users", status_code=303)
 
