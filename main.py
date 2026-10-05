@@ -38,11 +38,12 @@ from app.models.database import (
     PartnerBalanceDoc, PartnerBalanceDocItem,
 )
 from app.utils.auth import (
-    hash_password, get_user_from_token,
+    hash_password, get_user_from_token, create_session_token,
     generate_csrf_token, verify_csrf_token,
 )
 from app.utils.audit_log import log_audit
 from app.utils.notifications import check_low_stock_and_notify
+from app.utils.mobile_accounts import ensure_agent, ensure_driver
 from app.deps import get_current_user, require_auth, require_admin
 from app.core import templates
 from app.routes import auth as auth_routes
@@ -3502,18 +3503,56 @@ async def employee_add(
     department: str = Form(""),
     phone: str = Form(""),
     salary: float = Form(0),
+    employee_type: str = Form("regular"),
+    pwa_phone: str = Form(""),
+    vehicle_number: str = Form(""),
+    vehicle_type: str = Form(""),
+    is_active: bool = Form(True),
     db: Session = Depends(get_db)
 ):
-    """Xodim qo'shish"""
+    """Xodim qo'shish. Agent/haydovchi turi PWA login uchun Agent yoki Driver yozuvini ham yaratadi."""
+    kind = (employee_type or "regular").strip()
+    login_phone = (pwa_phone or phone or "").strip()
+    if kind == "agent":
+        stored_phone = login_phone
+        stored_position = (position or "").strip() or "Agent"
+    elif kind == "driver":
+        stored_phone = login_phone
+        stored_position = (position or "").strip() or "Haydovchi"
+    else:
+        stored_phone = (phone or "").strip()
+        stored_position = position
     employee = Employee(
         full_name=full_name,
         code=code,
-        position=position,
+        position=stored_position,
         department=department,
-        phone=phone,
-        salary=salary
+        phone=stored_phone,
+        salary=salary,
+        is_active=is_active,
     )
     db.add(employee)
+    db.flush()
+    if kind == "agent":
+        ensure_agent(
+            db,
+            full_name,
+            stored_phone,
+            code=code,
+            is_active=is_active,
+            employee_id=employee.id,
+        )
+    elif kind == "driver":
+        ensure_driver(
+            db,
+            full_name,
+            stored_phone,
+            code=code,
+            is_active=is_active,
+            employee_id=employee.id,
+            vehicle_number=vehicle_number,
+            vehicle_type=vehicle_type,
+        )
     db.commit()
     return RedirectResponse(url="/employees", status_code=303)
 
