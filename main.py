@@ -43,6 +43,7 @@ from app.utils.auth import (
 )
 from app.utils.audit_log import log_audit
 from app.utils.notifications import check_low_stock_and_notify
+from app.utils.product_import import upsert_product_from_import
 from app.deps import get_current_user, require_auth, require_admin
 from app.core import templates
 from app.routes import auth as auth_routes
@@ -1445,20 +1446,18 @@ async def import_products(
                     db.add(unit)
                     db.commit()
                     db.refresh(unit)
-                product = db.query(Product).filter(Product.code == code).first()
-                if not product:
-                    product = Product(code=code, is_active=True)
-                    db.add(product)
+                if upsert_product_from_import(
+                    db,
+                    code=code,
+                    name=name,
+                    type_=type_,
+                    unit=unit,
+                    sale_price=sale_price,
+                    purchase_price=purchase_price,
+                ):
                     added += 1
                 else:
                     updated += 1
-                product.name = name
-                product.type = type_
-                product.is_active = True
-                product.category_id = None
-                product.unit_id = unit.id if unit else None
-                product.sale_price = sale_price
-                product.purchase_price = purchase_price
                 db.commit()
             except Exception:
                 db.rollback()
