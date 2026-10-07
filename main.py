@@ -3913,6 +3913,28 @@ async def production_new(request: Request, db: Session = Depends(get_db), curren
 
 from typing import List
 
+
+def _material_qty_overrides(product_ids, quantities):
+    """Product id -> quantity edited on the new-production page.
+
+    Invalid or negative values are left out so the recipe amount is used.
+    Zero is kept: the user explicitly chose to consume none of that material.
+    """
+    overrides = {}
+    for i, raw_pid in enumerate(product_ids or []):
+        if i >= len(quantities or []):
+            break
+        try:
+            pid = int(str(raw_pid).strip())
+            qty = float(str(quantities[i]).replace(",", ".").strip())
+        except (TypeError, ValueError):
+            continue
+        if qty < 0:
+            continue
+        overrides[pid] = qty
+    return overrides
+
+
 @app.post("/production/create")
 async def create_production(
     request: Request,
@@ -3962,14 +3984,23 @@ async def create_production(
         stage = ProductionStage(production_id=production.id, stage_number=stage_num)
         db.add(stage)
     db.commit()
-    # Retsept bo'yicha xom ashyo miqdorlarini shu buyurtma uchun yozish (keyin tahrirlash mumkin)
+    # Retsept bo'yicha xom ashyo miqdorlarini shu buyurtma uchun yozish.
+    # Yangi ishlab chiqarish sahifasidagi tahrirlangan miqdorlar (material_quantity)
+    # retsept formulasidan ustun. Boshqa yaratish formalari bu maydonlarni yubormaydi.
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if recipe:
+        form = await request.form()
+        overrides = _material_qty_overrides(
+            form.getlist("material_product_id") or form.getlist("material_product_id[]"),
+            form.getlist("material_quantity") or form.getlist("material_quantity[]"),
+        )
         for item in recipe.items:
+            edited = overrides.get(item.product_id)
+            used_qty = edited if edited is not None else (item.quantity or 0) * quantity
             pi = ProductionItem(
                 production_id=production.id,
                 product_id=item.product_id,
-                quantity=item.quantity * quantity
+                quantity=used_qty,
             )
             db.add(pi)
         db.commit()
