@@ -836,6 +836,13 @@ async def import_directions(file: UploadFile = File(...), db: Session = Depends(
     return RedirectResponse(url="/info/directions", status_code=303)
 
 
+def _checkbox_checked(value: Optional[str]) -> bool:
+    """Checked HTML checkbox posts on/true; an unchecked box omits the field."""
+    if value is None:
+        return False
+    return str(value).strip().lower() in ("1", "true", "on", "yes")
+
+
 # ---------- Users (admin) ----------
 @router.get("/users", response_class=HTMLResponse)
 async def info_users(
@@ -857,7 +864,7 @@ async def info_users_add(
     password: str = Form(...),
     full_name: str = Form(...),
     role: str = Form("user"),
-    is_active: bool = Form(True),
+    is_active: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
@@ -869,7 +876,7 @@ async def info_users_add(
         password_hash=hash_password(password),
         full_name=full_name,
         role=role,
-        is_active=is_active,
+        is_active=_checkbox_checked(is_active),
     )
     db.add(user)
     db.commit()
@@ -882,7 +889,7 @@ async def info_users_edit(
     username: str = Form(...),
     full_name: str = Form(...),
     role: str = Form("user"),
-    is_active: bool = Form(True),
+    is_active: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
@@ -895,7 +902,7 @@ async def info_users_edit(
     user.username = username
     user.full_name = full_name
     user.role = role
-    user.is_active = is_active
+    user.is_active = _checkbox_checked(is_active)
     db.commit()
     return RedirectResponse(url="/info/users", status_code=303)
 
