@@ -947,9 +947,43 @@ class Notification(Base):
     expires_at = Column(DateTime, nullable=True)
 
 
+# create_all does not ALTER existing tables. These columns are written by
+# production create and the home-page birthday query, but no Alembic revision
+# added them (only the one-off scripts add_production_machine_operator.py and
+# add_employee_birth_date.py). Without them, POST /production/create raises
+# "no such column: productions.machine_id".
+_RUNTIME_COLUMN_PATCHES = (
+    ("productions", "machine_id", "INTEGER"),
+    ("productions", "operator_id", "INTEGER"),
+    ("employees", "birth_date", "DATE"),
+)
+
+
+def ensure_runtime_columns(bind=None):
+    """Add columns that existing databases are missing. Idempotent; does not rewrite rows."""
+    from sqlalchemy import inspect, text
+
+    target = bind or engine
+    inspector = inspect(target)
+    existing_tables = set(inspector.get_table_names())
+    statements = []
+    for table, column, coltype in _RUNTIME_COLUMN_PATCHES:
+        if table not in existing_tables:
+            continue
+        have = {c["name"] for c in inspector.get_columns(table)}
+        if column not in have:
+            statements.append(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
+    if not statements:
+        return
+    with target.begin() as conn:
+        for sql in statements:
+            conn.execute(text(sql))
+
+
 # Bazani yaratish — faqat jadvallar yaratiladi, mavjud ma'lumotlar o'chirilmaydi (saqlanadi)
 def init_db():
     Base.metadata.create_all(bind=engine)
+    ensure_runtime_columns(engine)
     print("Database tayyor (mavjud ma'lumotlar saqlanadi).")
 
 
